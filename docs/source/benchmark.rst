@@ -116,10 +116,10 @@ validation, real-tissue reconstruction quality, or comparability across
 datasets with different preprocessing. The current real-data end-to-end suite
 is deferred and is not part of this candidate's evidence.
 
-Historical benchmark notebooks
-------------------------------
+Benchmark notebooks
+-------------------
 
-The executed notebooks remain unchanged in ``REVISE-legacy`` and do not expand
-the proof boundary above. The clean repository records their exact source
-commit, paths, and checksums in ``legacy-assets.json`` instead of linking them
-into the documentation build.
+The curated benchmark notebooks are tracked under ``reproduce/benchmark/``.
+Their embedded historical outputs do not expand the proof boundary above and
+do not establish that ``0.1.0rc1`` reran the paper datasets. Supporting assets
+that remain excluded are recorded in ``legacy-assets.json``.

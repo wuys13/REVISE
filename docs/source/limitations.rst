@@ -14,9 +14,9 @@ Data and biology
   localization accuracy, or biological parity between POT and TACCO.
 - Historical executed notebooks are preserved material. They are not treated
   as results reproduced by this candidate.
-- Official dataset/archive identifiers, a DOI/BibTeX record, named project
-  roles, release contacts, and the final canonical repository are pending owner
-  confirmation.
+- The paper data and reproduced results are published at
+  ``https://zenodo.org/records/17705737``. A final software-release citation,
+  named project roles, and release contacts remain pending owner confirmation.
 
 Scale
 -----

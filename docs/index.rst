@@ -15,10 +15,11 @@ strict documentation checks. Real-data end-to-end scientific validation is
 deferred. The documentation therefore makes no biological-validation or
 production-scale claim.
 
-External data identities, publication identifiers, project roles, and release
-contacts are pending owner confirmation. Historical notebooks and research
-assets remain in ``REVISE-legacy`` and are located through the exact source
-commit recorded in ``legacy-assets.json``.
+The paper data and reproduced results are published at
+``https://zenodo.org/records/17705737``. Curated notebooks are tracked in this
+repository; other historical research assets remain in ``REVISE-legacy`` and
+are located through the exact source commit recorded in ``legacy-assets.json``.
+Named project roles and release contacts remain pending owner confirmation.
 
 Start here
 ----------

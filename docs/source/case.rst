@@ -98,6 +98,7 @@ Their current compatibility copies are:
    output/sc_SVC_case/<sample-name>_<st-file-stem>/<select-ct>/sc_SVC_expr.h5ad
    output/sc_SVC_case/<sample-name>_<st-file-stem>/<select-ct>/sc_SVC_spatial.h5ad
 
-The notebooks and their data/results identities are not current RC scientific
-evidence. They remain in ``REVISE-legacy`` and can be recovered through the
-exact commit and paths described in :doc:`gallery`.
+The curated notebooks are tracked under ``reproduce/case/``. Their embedded
+outputs are historical material rather than current RC scientific evidence;
+other supporting assets remain recoverable through the exact commit and paths
+described in :doc:`gallery`.

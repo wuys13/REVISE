@@ -10,7 +10,6 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-
 MAX_TRACKED_BYTES = 5 * 1024 * 1024
 REQUIRED_PATHS = {
     ".github/workflows/ci.yml",
@@ -32,6 +31,7 @@ ALLOWED_TOP_LEVEL = {
     "MANIFEST.in",
     "MIGRATION.md",
     "README.md",
+    "application_sc_SVC_analysis_case.ipynb",
     "application_sc_SVC_recon.py",
     "application_sc_SVC_recon.sh",
     "application_sp_SVC_recon.py",
@@ -42,10 +42,12 @@ ALLOWED_TOP_LEVEL = {
     "constraints",
     "docs",
     "legacy-assets.json",
+    "logo",
     "png",
     "pyproject.toml",
     "reconstruct.py",
     "release",
+    "reproduce",
     "revise",
     "scripts",
     "tests",
@@ -58,12 +60,9 @@ FORBIDDEN_PREFIXES = (
     "docs/case/",
     "docs/plans/",
     "docs/superpowers/",
-    "logo/",
     "release/legacy/",
-    "reproduce/",
 )
 FORBIDDEN_EXACT = {
-    "application_sc_SVC_analysis_case.ipynb",
     "benchmark_identity_free_ablation.py",
     "release/0.1.0rc1/gallery-manifest.source.json",
     "release/0.1.0rc1/status.json",
@@ -76,6 +75,11 @@ FORBIDDEN_EXACT = {
     "tools/export_clean_repository.py",
     "tools/gallery_bundle.py",
 }
+ALLOWED_NOTEBOOK_EXACT = {"application_sc_SVC_analysis_case.ipynb"}
+ALLOWED_NOTEBOOK_PREFIXES = (
+    "reproduce/benchmark/",
+    "reproduce/case/",
+)
 
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
@@ -90,17 +94,11 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
 def _committed_tree(root: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
     count = _git(root, "rev-list", "--count", "HEAD")
     if count.returncode:
-        return [], ["repository must have one committed root"]
+        return [], ["repository must have at least one commit"]
     errors = []
     shallow = _git(root, "rev-parse", "--is-shallow-repository")
     if shallow.returncode or shallow.stdout.strip() != b"false":
         errors.append("shallow repositories are forbidden")
-    if count.stdout.strip() != b"1":
-        errors.append("clean repository must have exactly one commit")
-    commit = _git(root, "cat-file", "commit", "HEAD")
-    headers = commit.stdout.partition(b"\n\n")[0].splitlines()
-    if commit.returncode or any(line.startswith(b"parent ") for line in headers):
-        errors.append("clean repository commit must have no parent")
     if _git(root, "diff", "--quiet", "HEAD", "--").returncode:
         errors.append("clean repository has uncommitted tracked changes")
     tree = _git(root, "ls-tree", "-r", "-z", "HEAD")
@@ -126,11 +124,7 @@ def _committed_tree(root: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
     )
     reachable_ids = {line.split()[0] for line in reachable.stdout.splitlines()}
     all_ids = set(all_objects.stdout.splitlines())
-    if (
-        reachable.returncode
-        or all_objects.returncode
-        or reachable_ids != all_ids
-    ):
+    if reachable.returncode or all_objects.returncode or reachable_ids != all_ids:
         errors.append("clean repository contains objects outside the HEAD closure")
     return entries, errors
 
@@ -221,8 +215,13 @@ def validate_repository(root: Path) -> list[str]:
         contents[path] = content
         if len(content) > MAX_TRACKED_BYTES:
             errors.append(f"tracked file exceeds 5 MiB: {path}")
+        is_notebook = path.casefold().endswith(".ipynb")
+        is_allowed_notebook = is_notebook and (
+            path in ALLOWED_NOTEBOOK_EXACT or path.startswith(ALLOWED_NOTEBOOK_PREFIXES)
+        )
         if (
-            path.casefold().endswith(".ipynb")
+            (is_notebook and not is_allowed_notebook)
+            or (path.startswith("reproduce/") and not is_allowed_notebook)
             or path in FORBIDDEN_EXACT
             or path.startswith(FORBIDDEN_PREFIXES)
             or "/__pycache__/" in f"/{path}/"
@@ -232,10 +231,7 @@ def validate_repository(root: Path) -> list[str]:
             errors.append(f"forbidden tracked path: {path}")
         if path.split("/", 1)[0] not in ALLOWED_TOP_LEVEL:
             errors.append(f"unapproved top-level tracked path: {path}")
-        if (
-            path in {"MIGRATION.md", "README.md"}
-            or path.startswith("docs/source/")
-        ) and b"zenodo" in content.lower():
+        if path == "MIGRATION.md" and b"zenodo" in content.lower():
             errors.append(
                 f"Zenodo migration is not part of the clean repository: {path}"
             )

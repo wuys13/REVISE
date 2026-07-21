@@ -130,5 +130,6 @@ leaf runs. The shell launcher delegates multiple families to the bounded,
 foreground Python coordinator and returns nonzero when a child case fails.
 Existing application reconstruction scripts support historical notebook
 layouts, but they are compatibility paths rather than the installed quick
-start. Their external data identity and real-data results are pending owner
-confirmation.
+start. Curated notebooks are tracked under ``reproduce/``; their external data
+and reproduced results are published at
+``https://zenodo.org/records/17705737`` but are not current candidate evidence.

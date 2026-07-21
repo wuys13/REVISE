@@ -10,15 +10,6 @@
       "size": 475
     },
     {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "application_sc_SVC_analysis_case.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:application_sc_SVC_analysis_case.ipynb",
-      "sha256": "62b6a57884ba4e4f2dde4711e1f1875b2da5821f393ad71ae034022edb6be924",
-      "size": 2092413
-    },
-    {
       "category": "research_experiment",
       "kind": "file",
       "path": "benchmark_identity_free_ablation.py",
@@ -165,60 +156,6 @@
     {
       "category": "historical_figure",
       "kind": "file",
-      "path": "logo/REVISE.png",
-      "reason": "Large or unused historical figure retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:logo/REVISE.png",
-      "sha256": "7bbd515a26bbcde1734b19a1dc03ad049e9b1fa2adf391567de99b09e8be0902",
-      "size": 1616984
-    },
-    {
-      "category": "historical_figure",
-      "kind": "file",
-      "path": "logo/SVC.png",
-      "reason": "Large or unused historical figure retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:logo/SVC.png",
-      "sha256": "a1919be27ee5142960df9cfbe3468de9995d335c48bc36a8822ad36a60830370",
-      "size": 1034671
-    },
-    {
-      "category": "historical_figure",
-      "kind": "file",
-      "path": "logo/Sim2Real-ST.png",
-      "reason": "Large or unused historical figure retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:logo/Sim2Real-ST.png",
-      "sha256": "f68699ba6850257e854a85ab524269784461276abd50b2b3d9f6cfde77079885",
-      "size": 1173826
-    },
-    {
-      "category": "historical_figure",
-      "kind": "file",
-      "path": "png/REVISE_overview.png",
-      "reason": "Large or unused historical figure retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/REVISE_overview.png",
-      "sha256": "0b04f58c52717ce862b5e8223f0f9a5946bce9a09ded4fd064e5593da0f151c2",
-      "size": 526646
-    },
-    {
-      "category": "historical_figure",
-      "kind": "file",
-      "path": "png/ST_limitations.png",
-      "reason": "Large or unused historical figure retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/ST_limitations.png",
-      "sha256": "96a2cd3cea54c055244a9f47b01f6139587407eda96d529c207c727325d85a13",
-      "size": 254406
-    },
-    {
-      "category": "historical_figure",
-      "kind": "file",
-      "path": "png/SVC_applications.png",
-      "reason": "Large or unused historical figure retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/SVC_applications.png",
-      "sha256": "c91a9a940c81831acf1f39b43756a8cd62ce706b4b56b3624b3628b7b92aa804",
-      "size": 274270
-    },
-    {
-      "category": "historical_figure",
-      "kind": "file",
       "path": "png/revise-svc.png",
       "reason": "Large or unused historical figure retained with the legacy repository.",
       "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/revise-svc.png",
@@ -251,15 +188,6 @@
       "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:release/legacy/legacy-release-index.json",
       "sha256": "ac8b5d4acd71085f3ec99c1ad7d4d71a2605aec345303762efdac826c1e6168e",
       "size": 61885
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/benchmark/batch_benchmark.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/batch_benchmark.ipynb",
-      "sha256": "5f0355f77d791161ac4dfc9d13205304dcb73962c2feac411c6febbfb4c08233",
-      "size": 124241
     },
     {
       "category": "research_reproduction",
@@ -316,33 +244,6 @@
       "size": 1049
     },
     {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/benchmark/imputation_benchmark.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/imputation_benchmark.ipynb",
-      "sha256": "60b6bacd815e92a36a78e39412c31b2bec9cd179257294a8cf8a6227ce2e9eb4",
-      "size": 121015
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/benchmark/seg_benchmark.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/seg_benchmark.ipynb",
-      "sha256": "c0fd443c962af921c638f7f7314744806844b60ce0c6fe71ce5e9120b5fdc9ab",
-      "size": 84209
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/benchmark/spot_benchmark.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/spot_benchmark.ipynb",
-      "sha256": "8920e32d87f9988b08339bb3266c0c147e9e35d2ee60e02bc1047fe5b0d45439",
-      "size": 121537
-    },
-    {
       "category": "research_reproduction",
       "kind": "file",
       "path": "reproduce/case/CCI/cellphonedb.zip",
@@ -377,78 +278,6 @@
       "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/pathway/select_5.gmt",
       "sha256": "f3803e82677a1467ed2a1b6206f4bdbbed4846e5a944fcd8d3588ad9ff92f71b",
       "size": 5173
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_Fibroblast_analysis.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Fibroblast_analysis.ipynb",
-      "sha256": "dedbeadfaab125135f01f063cca784f702627e7e4d5869efd56ab3bd26129c37",
-      "size": 4587843
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_Fibroblast_recon.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Fibroblast_recon.ipynb",
-      "sha256": "3a47b9baa226fd638524be69b77cab42efd49cc88d51583ed15a29b97f4a0097",
-      "size": 41625
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_Monocyte_analysis.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Monocyte_analysis.ipynb",
-      "sha256": "555b825521ccb74186317e249d992e1b36c9820ac2918573a6f3f9fbfe531367",
-      "size": 2076304
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_Monocyte_recon.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Monocyte_recon.ipynb",
-      "sha256": "dc5903ea829f760bea565743777173db78b98d4e9ecc537bb3b4bcee7ea79de9",
-      "size": 464862
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_T_analysis.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_T_analysis.ipynb",
-      "sha256": "7d29f868ffdd7e9a1a5879cf6108458763410782dfc1975b49dfa032c1a3b2d4",
-      "size": 1866650
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_T_recon.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_T_recon.ipynb",
-      "sha256": "176c98fe02afaefae7d41e9a6ced08e883deba68da7ea4255ccc9b1c47fd1466",
-      "size": 28459
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb",
-      "sha256": "e8ee7bf9372ea20cf0955a0968d2febbe41ce48632fa297b6c7e206cf11c7552",
-      "size": 1272176
-    },
-    {
-      "category": "historical_notebook",
-      "kind": "file",
-      "path": "reproduce/case/sp_SVC_case.ipynb",
-      "reason": "Notebook retained with the legacy repository.",
-      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sp_SVC_case.ipynb",
-      "sha256": "749b0ed90379f96eb99b8d02c18bb46116c2696594e025b70e34c6f2d5405964",
-      "size": 2963084
     },
     {
       "category": "legacy_test",

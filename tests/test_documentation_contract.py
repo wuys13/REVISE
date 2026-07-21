@@ -147,7 +147,10 @@ def test_benchmark_metric_documentation_states_the_implemented_boundaries():
     implementation = _read(ROOT / "revise/analysis/metrics.py")
 
     assert "min-max" in text
-    assert "total-normalize every observation in each input independently to ``1e4``" in text
+    assert (
+        "total-normalize every observation in each input independently to ``1e4``"
+        in text
+    )
     assert "sqrt(mse) / mean(ground truth)" in text
     assert "nrmse is therefore directional" in text
     assert "row order" in text
@@ -267,9 +270,7 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
 
 def test_spot_sr_and_scale_claims_do_not_exceed_candidate_evidence():
     text = " ".join(_joined().lower().split())
-    limitations = " ".join(
-        _read(ROOT / "docs/source/limitations.rst").lower().split()
-    )
+    limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").lower().split())
     installed_smoke = _read(ROOT / "tests/integration/test_installed_cli.py")
     graph_scale = _read(ROOT / "tests/test_graph_cluster_spatial_score.py")
     quota_scale = _read(ROOT / "tests/test_spot_sr_quota.py")
@@ -315,19 +316,17 @@ def test_application_pm_on_cell_contract_names_the_only_resolved_location():
     assert "columns must exactly match the normalized cell-type labels" in normalized
 
 
-def test_release_identity_and_external_data_claims_remain_owner_gated():
+def test_release_identity_and_public_data_claims_are_precise():
     text = _joined(CLAIM_DOCS)
     metadata = _read(ROOT / "pyproject.toml")
     project = tomllib.loads(metadata)["project"]
     template = json.loads(
         _read(ROOT / "release/0.1.0rc1/release-manifest.template.json")
     )
-    schema = json.loads(
-        _read(ROOT / "release/0.1.0rc1/release-manifest.schema.json")
-    )
+    schema = json.loads(_read(ROOT / "release/0.1.0rc1/release-manifest.schema.json"))
     lower = text.lower()
 
-    assert not re.search(r"zenodo\.org/(?:record|records)/\d+", text)
+    assert "https://zenodo.org/records/17705737" in text
     assert "pending owner confirmation" in lower
     assert not re.search(r"\b10\.\d{4,9}/[-._;()/:a-z0-9]+", lower)
     assert not re.search(r"\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b", lower)
@@ -347,14 +346,15 @@ def test_release_identity_and_external_data_claims_remain_owner_gated():
     )
 
 
-def test_historical_gallery_routes_to_the_legacy_asset_index():
+def test_gallery_distinguishes_curated_notebooks_from_legacy_assets():
     raw_gallery = _read(ROOT / "docs/source/gallery.rst")
     gallery = " ".join(raw_gallery.lower().split())
 
     assert "revise-legacy" in gallery
     assert "legacy-assets.json" in gallery
     assert "exact source commit" in gallery
-    assert "not included in the clean repository" in gallery
+    assert "curated notebooks are included in the clean repository" in gallery
+    assert "other historical assets" in gallery
     assert "../case/" not in raw_gallery
     assert "../benchmark/" not in raw_gallery
     assert "zenodo" not in gallery
@@ -376,7 +376,10 @@ def test_docs_version_and_support_match_validated_candidate_sources():
     assert template["docs"] == {"version": version, "channel": "candidate"}
     assert template["support"]["tested_python"] == ["3.10", "3.11"]
     assert 'requires-python = ">=3.10,<3.12"' in metadata
-    assert all((ROOT / f"constraints/python-{minor}.txt").is_file() for minor in ("3.10", "3.11"))
+    assert all(
+        (ROOT / f"constraints/python-{minor}.txt").is_file()
+        for minor in ("3.10", "3.11")
+    )
     assert version in _read(ROOT / "README.md")
     assert "sphinx-build -W --keep-going" in workflow
     assert 'author = "Pending owner confirmation"' in conf

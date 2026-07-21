@@ -8,7 +8,6 @@ import sys
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "tools" / "check_repository.py"
 
@@ -182,7 +181,43 @@ def test_clean_repository_rejects_a_zenodo_migration_plan(tmp_path: Path) -> Non
     assert "Zenodo migration is not part of the clean repository" in result.stderr
 
 
-def test_clean_repository_requires_one_root_commit(tmp_path: Path) -> None:
+def test_clean_repository_allows_a_zenodo_dataset_link(tmp_path: Path) -> None:
+    _clean_fixture(tmp_path)
+    (tmp_path / "README.md").write_text(
+        "Dataset: https://zenodo.org/records/17705737\n", encoding="utf-8"
+    )
+    _commit(tmp_path)
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_clean_repository_allows_curated_notebooks(tmp_path: Path) -> None:
+    _clean_fixture(tmp_path)
+    _write(tmp_path, "application_sc_SVC_analysis_case.ipynb", "{}\n")
+    _write(tmp_path, "reproduce/benchmark/seg_benchmark.ipynb", "{}\n")
+    _write(tmp_path, "reproduce/case/sp_SVC_case.ipynb", "{}\n")
+    _commit(tmp_path)
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_clean_repository_allows_readme_logo_assets(tmp_path: Path) -> None:
+    _clean_fixture(tmp_path)
+    logo = tmp_path / "logo" / "REVISE.png"
+    logo.parent.mkdir(parents=True)
+    logo.write_bytes(b"png fixture\n")
+    _commit(tmp_path)
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_clean_repository_allows_followup_commits(tmp_path: Path) -> None:
     _clean_fixture(tmp_path)
     _commit(tmp_path)
     (tmp_path / "README.md").write_text("second commit\n", encoding="utf-8")
@@ -190,8 +225,7 @@ def test_clean_repository_requires_one_root_commit(tmp_path: Path) -> None:
 
     result = _run(tmp_path)
 
-    assert result.returncode != 0
-    assert "clean repository must have exactly one commit" in result.stderr
+    assert result.returncode == 0, result.stderr
 
 
 def test_clean_repository_rejects_objects_reachable_only_from_an_extra_ref(

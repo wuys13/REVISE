@@ -26,9 +26,9 @@ the local Wheel path, for example:
 
    python -m pip install "/path/to/revise_svc-0.1.0rc1-py3-none-any.whl[tacco]"
 
-The candidate's PyPI locator and final canonical repository URL are pending
-owner confirmation. Do not assume that an unpinned public-package install
-produces these candidate bytes.
+PyPI currently publishes version ``0.0.32``. It predates this source candidate,
+so an unpinned public-package install does not provide these exact candidate
+bytes or their current unified CLI and optional dependency groups.
 
 Source Checkout
 ---------------
@@ -87,8 +87,7 @@ RST, and import-surface consistency; it is not a scientific run.
 Research data
 -------------
 
-The official benchmark/application archive identity and redistribution terms
-are pending owner confirmation. No numeric archive record is presented as
-official for this candidate. Real-data end-to-end testing remains deferred
-until the other candidate gates are complete and the owner authorizes the data
-download.
+The paper benchmark/application datasets and reproduced results are published
+at ``https://zenodo.org/records/17705737``. This identifies the research data;
+it does not prove that the current candidate reran those datasets. Real-data
+end-to-end testing remains deferred until the owner authorizes the download.
