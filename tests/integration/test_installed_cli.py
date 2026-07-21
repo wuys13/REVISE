@@ -99,7 +99,15 @@ def installed_cli(tmp_path_factory):
     assert create.returncode == 0, create.stderr
     python = venv / "bin" / "python"
     install = _run(
-        [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "--no-deps",
+            str(wheel),
+        ],
         cwd=tmp_path,
         env=env,
     )
