@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "release": {
+    "project": "revise-svc",
+    "version": "0.1.0rc1",
+    "channel": "candidate"
+  },
+  "source": {
+    "repository": "https://github.com/wuys13/REVISE"
+  },
+  "build": {
+    "backend": "setuptools.build_meta",
+    "isolation": false
+  },
+  "artifacts": [],
+  "ci": {},
+  "docs": {
+    "version": "0.1.0rc1",
+    "channel": "candidate"
+  },
+  "support": {
+    "tested_python": ["3.10", "3.11"],
+    "tested_platforms": [
+      {
+        "runner": "ubuntu-latest",
+        "os": "Linux",
+        "architecture": "X64"
+      }
+    ],
+    "available_extras": ["cci", "dev", "pathway", "spatialdata", "tacco", "trajectory"],
+    "tested_extras": ["tacco"]
+  },
+  "limitations": [
+    {
+      "id": "real-data-e2e-deferred",
+      "statement": "Real-data end-to-end scientific validation is deferred and is not evidence for this candidate.",
+      "source": "docs/source/limitations.rst"
+    },
+    {
+      "id": "ubuntu-only-ci",
+      "statement": "The declared installed-artifact CI matrix targets Ubuntu runners only.",
+      "source": ".github/workflows/ci.yml"
+    },
+    {
+      "id": "partial-dependency-constraints",
+      "statement": "The tested constraint files pin release-critical dependencies but are not complete transitive lock files.",
+      "source": "constraints/python-3.11.txt"
+    }
+  ]
+}

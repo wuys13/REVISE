@@ -1,0 +1,505 @@
+{
+  "excluded_assets": [
+    {
+      "category": "migration_record",
+      "kind": "file",
+      "path": "SUCCESSOR.md",
+      "reason": "The successor pointer belongs only to the renamed legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:SUCCESSOR.md",
+      "sha256": "fb39726318a886531fbaf19ba4bbb269584e72887b49b4d85fcdd9bc6e901672",
+      "size": 475
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "application_sc_SVC_analysis_case.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:application_sc_SVC_analysis_case.ipynb",
+      "sha256": "62b6a57884ba4e4f2dde4711e1f1875b2da5821f393ad71ae034022edb6be924",
+      "size": 2092413
+    },
+    {
+      "category": "research_experiment",
+      "kind": "file",
+      "path": "benchmark_identity_free_ablation.py",
+      "reason": "Standalone research ablation is not part of the supported product interface.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:benchmark_identity_free_ablation.py",
+      "sha256": "cb97b60e83e9ab98d20e9b4a1c76c60c9695060ff4c1610666ad78ab7a7d3727",
+      "size": 46119
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/benchmark/batch_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/benchmark/batch_benchmark.ipynb",
+      "sha256": "4ce8a52047371c4b1591debfa9bdfa6d63b743b0b60213533193e8869cfb0a24",
+      "size": 47
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/benchmark/imputation_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/benchmark/imputation_benchmark.ipynb",
+      "sha256": "77c5a20c56672b4c896fff8bf757d510020f34ce5f94c5da43c9aa186fd2e1fd",
+      "size": 52
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/benchmark/seg_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/benchmark/seg_benchmark.ipynb",
+      "sha256": "2ff2ba8602a1108a5a1936b096042d44469ecf82a4a4140a7c3fe71c5433fb0e",
+      "size": 45
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/benchmark/spot_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/benchmark/spot_benchmark.ipynb",
+      "sha256": "7d562f629e1c9c624a36ef8b98c0bff2f7834121f6af764de4c96255db2d9e4d",
+      "size": 46
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/case/sc_SVC_case_Fibroblast.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/case/sc_SVC_case_Fibroblast.ipynb",
+      "sha256": "52beee261e58289e06efe477cb7ff52531d12b14312aeabc6a781ea4f4017d64",
+      "size": 58
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/case/sc_SVC_case_Monocyte.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/case/sc_SVC_case_Monocyte.ipynb",
+      "sha256": "a2558e6b9fa358743129504bf3a1f98efdd8e7f122bf1acaa623f4ba15436ece",
+      "size": 56
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/case/sc_SVC_case_T.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/case/sc_SVC_case_T.ipynb",
+      "sha256": "9388b092d1778bbc8218217f58a1dba1e3c6693e4870528a606656c48fd4f5e7",
+      "size": 49
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/case/sc_SVC_case_Visium_mouse_brain.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/case/sc_SVC_case_Visium_mouse_brain.ipynb",
+      "sha256": "d005ad782f5240b45fc28437dc25163e6da996aa2473f74aaa2acb1bde3bea46",
+      "size": 57
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "symlink",
+      "path": "docs/case/sp_SVC_case.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/case/sp_SVC_case.ipynb",
+      "sha256": "32335dab1728b4d4e88f8b7c98085349cad33c09e19b4f5ca838503e20449edc",
+      "size": 38
+    },
+    {
+      "category": "implementation_history",
+      "kind": "file",
+      "path": "docs/plans/2026-07-21-001-refactor-revise-release-contract-plan.md",
+      "reason": "Internal implementation plan retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/plans/2026-07-21-001-refactor-revise-release-contract-plan.md",
+      "sha256": "9a0e3ee9f9c8f304e861ac3514f6a330c050e03516fbe9d24714e3d15d18406b",
+      "size": 62395
+    },
+    {
+      "category": "implementation_history",
+      "kind": "file",
+      "path": "docs/plans/2026-07-21-002-clean-repository-export-plan.md",
+      "reason": "Internal implementation plan retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/plans/2026-07-21-002-clean-repository-export-plan.md",
+      "sha256": "ba6cc0c9bc3639d18e8fa6f7d3755bed33954099e7954af3349e4179849772df",
+      "size": 4453
+    },
+    {
+      "category": "implementation_history",
+      "kind": "file",
+      "path": "docs/superpowers/plans/2026-07-13-unified-reconstruct-tacco-local-ot.md",
+      "reason": "Internal implementation plan retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/superpowers/plans/2026-07-13-unified-reconstruct-tacco-local-ot.md",
+      "sha256": "109e2cef23007acd116bcb840c1ab0aed357bf7e137bb02398ae4fc85d6dd941",
+      "size": 8703
+    },
+    {
+      "category": "implementation_history",
+      "kind": "file",
+      "path": "docs/superpowers/plans/2026-07-15-tacco-correctness.md",
+      "reason": "Internal implementation plan retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/superpowers/plans/2026-07-15-tacco-correctness.md",
+      "sha256": "a19171fc43b454a23aeb8d71a6f79cb79e9361ab1df6f8cdd767b72802bcc974",
+      "size": 47454
+    },
+    {
+      "category": "implementation_history",
+      "kind": "file",
+      "path": "docs/superpowers/specs/2026-07-13-unified-reconstruct-tacco-local-ot-design.md",
+      "reason": "Internal implementation plan retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/superpowers/specs/2026-07-13-unified-reconstruct-tacco-local-ot-design.md",
+      "sha256": "36eeeb758a10a5a50d73f07a8bc94e5276856245c57c912be7138783a08b6201",
+      "size": 4594
+    },
+    {
+      "category": "implementation_history",
+      "kind": "file",
+      "path": "docs/superpowers/specs/2026-07-15-tacco-correctness-design.md",
+      "reason": "Internal implementation plan retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:docs/superpowers/specs/2026-07-15-tacco-correctness-design.md",
+      "sha256": "3c2ef52b764682032c0889872829e4f9462397896d981fd6dd4e59d6595fba13",
+      "size": 23381
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "logo/REVISE.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:logo/REVISE.png",
+      "sha256": "7bbd515a26bbcde1734b19a1dc03ad049e9b1fa2adf391567de99b09e8be0902",
+      "size": 1616984
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "logo/SVC.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:logo/SVC.png",
+      "sha256": "a1919be27ee5142960df9cfbe3468de9995d335c48bc36a8822ad36a60830370",
+      "size": 1034671
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "logo/Sim2Real-ST.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:logo/Sim2Real-ST.png",
+      "sha256": "f68699ba6850257e854a85ab524269784461276abd50b2b3d9f6cfde77079885",
+      "size": 1173826
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "png/REVISE_overview.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/REVISE_overview.png",
+      "sha256": "0b04f58c52717ce862b5e8223f0f9a5946bce9a09ded4fd064e5593da0f151c2",
+      "size": 526646
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "png/ST_limitations.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/ST_limitations.png",
+      "sha256": "96a2cd3cea54c055244a9f47b01f6139587407eda96d529c207c727325d85a13",
+      "size": 254406
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "png/SVC_applications.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/SVC_applications.png",
+      "sha256": "c91a9a940c81831acf1f39b43756a8cd62ce706b4b56b3624b3628b7b92aa804",
+      "size": 274270
+    },
+    {
+      "category": "historical_figure",
+      "kind": "file",
+      "path": "png/revise-svc.png",
+      "reason": "Large or unused historical figure retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:png/revise-svc.png",
+      "sha256": "441d72b99adcf119b9beeb6a8c437f09aa86c9ddc3fd39f14035a53dc094a22f",
+      "size": 320802
+    },
+    {
+      "category": "implementation_ledger",
+      "kind": "file",
+      "path": "release/0.1.0rc1/status.json",
+      "reason": "Internal migration coordination state is not a product contract.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:release/0.1.0rc1/status.json",
+      "sha256": "4b06499a7410a8a84f1880b0ff4a59ed2bb33a833646aee1d897a1bcf2af4fd4",
+      "size": 17526
+    },
+    {
+      "category": "implementation_ledger",
+      "kind": "file",
+      "path": "release/clean-export-allowlist.txt",
+      "reason": "Internal migration coordination state is not a product contract.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:release/clean-export-allowlist.txt",
+      "sha256": "8f5465b0d979427e1ac56b04ffe3d6d24e7ce550bbb08dc54340c945706a9b09",
+      "size": 4311
+    },
+    {
+      "category": "legacy_release_evidence",
+      "kind": "file",
+      "path": "release/legacy/legacy-release-index.json",
+      "reason": "Observed legacy release evidence remains with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:release/legacy/legacy-release-index.json",
+      "sha256": "ac8b5d4acd71085f3ec99c1ad7d4d71a2605aec345303762efdac826c1e6168e",
+      "size": 61885
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/benchmark/batch_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/batch_benchmark.ipynb",
+      "sha256": "5f0355f77d791161ac4dfc9d13205304dcb73962c2feac411c6febbfb4c08233",
+      "size": 124241
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/benchmark/benchmark_batch_effect.sh",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/benchmark_batch_effect.sh",
+      "sha256": "f4faa8cf2a34d512ea70f6652824724508044db9bf09ce126db6b60934074599",
+      "size": 1052
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/benchmark/benchmark_bin2cell.sh",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/benchmark_bin2cell.sh",
+      "sha256": "6e21cc66cf7efbd86b54f54248a16adff07e6427e06c825650fbc88c6cfbf3bf",
+      "size": 1235
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/benchmark/benchmark_gene_dropout.sh",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/benchmark_gene_dropout.sh",
+      "sha256": "e0f893b53d56637452b257a3e5ff6291cd45e3b8442fe7e2906d92a87242e80f",
+      "size": 1052
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/benchmark/benchmark_gene_panel.sh",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/benchmark_gene_panel.sh",
+      "sha256": "d143f96ac911fe093def0f4ba88f1336770ca57ec02b6841af00c821832f1684",
+      "size": 1051
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/benchmark/benchmark_segmentation.sh",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/benchmark_segmentation.sh",
+      "sha256": "c25a4c13ef944ef91d6e09ddf71ab1fe9efa3c4b2354d210a8daad578fd8caa7",
+      "size": 1239
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/benchmark/benchmark_spot_size.sh",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/benchmark_spot_size.sh",
+      "sha256": "350b34f662ec06c7925865d2bdb2fbc29e30b947131334ada7678b993c523700",
+      "size": 1049
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/benchmark/imputation_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/imputation_benchmark.ipynb",
+      "sha256": "60b6bacd815e92a36a78e39412c31b2bec9cd179257294a8cf8a6227ce2e9eb4",
+      "size": 121015
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/benchmark/seg_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/seg_benchmark.ipynb",
+      "sha256": "c0fd443c962af921c638f7f7314744806844b60ce0c6fe71ce5e9120b5fdc9ab",
+      "size": 84209
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/benchmark/spot_benchmark.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/benchmark/spot_benchmark.ipynb",
+      "sha256": "8920e32d87f9988b08339bb3266c0c147e9e35d2ee60e02bc1047fe5b0d45439",
+      "size": 121537
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/case/CCI/cellphonedb.zip",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/CCI/cellphonedb.zip",
+      "sha256": "b726745421b6c8f091f9b464e1d20fc676908d18a6669a969eb08877f6dff07f",
+      "size": 115911
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/case/pathway/HYPOXIA_related_pathways.gmt",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/pathway/HYPOXIA_related_pathways.gmt",
+      "sha256": "0cc471a9ddacf034a5a2b4f4fd96f5191fba0480d512a8c1a63b69f6c95767e9",
+      "size": 6008
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/case/pathway/h.all.v2025.1.Hs.symbols.gmt",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/pathway/h.all.v2025.1.Hs.symbols.gmt",
+      "sha256": "f22066af72e215ccb7b89d88e492c07e1eef17534c2ca7b0f9902cfecbbdd8e9",
+      "size": 48689
+    },
+    {
+      "category": "research_reproduction",
+      "kind": "file",
+      "path": "reproduce/case/pathway/select_5.gmt",
+      "reason": "Research reproduction asset retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/pathway/select_5.gmt",
+      "sha256": "f3803e82677a1467ed2a1b6206f4bdbbed4846e5a944fcd8d3588ad9ff92f71b",
+      "size": 5173
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_Fibroblast_analysis.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Fibroblast_analysis.ipynb",
+      "sha256": "dedbeadfaab125135f01f063cca784f702627e7e4d5869efd56ab3bd26129c37",
+      "size": 4587843
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_Fibroblast_recon.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Fibroblast_recon.ipynb",
+      "sha256": "3a47b9baa226fd638524be69b77cab42efd49cc88d51583ed15a29b97f4a0097",
+      "size": 41625
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_Monocyte_analysis.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Monocyte_analysis.ipynb",
+      "sha256": "555b825521ccb74186317e249d992e1b36c9820ac2918573a6f3f9fbfe531367",
+      "size": 2076304
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_Monocyte_recon.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Monocyte_recon.ipynb",
+      "sha256": "dc5903ea829f760bea565743777173db78b98d4e9ecc537bb3b4bcee7ea79de9",
+      "size": 464862
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_T_analysis.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_T_analysis.ipynb",
+      "sha256": "7d29f868ffdd7e9a1a5879cf6108458763410782dfc1975b49dfa032c1a3b2d4",
+      "size": 1866650
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_T_recon.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_T_recon.ipynb",
+      "sha256": "176c98fe02afaefae7d41e9a6ced08e883deba68da7ea4255ccc9b1c47fd1466",
+      "size": 28459
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb",
+      "sha256": "e8ee7bf9372ea20cf0955a0968d2febbe41ce48632fa297b6c7e206cf11c7552",
+      "size": 1272176
+    },
+    {
+      "category": "historical_notebook",
+      "kind": "file",
+      "path": "reproduce/case/sp_SVC_case.ipynb",
+      "reason": "Notebook retained with the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:reproduce/case/sp_SVC_case.ipynb",
+      "sha256": "749b0ed90379f96eb99b8d02c18bb46116c2696594e025b70e34c6f2d5405964",
+      "size": 2963084
+    },
+    {
+      "category": "legacy_test",
+      "kind": "file",
+      "path": "tests/test_legacy_release_index.py",
+      "reason": "Legacy live-state evidence contract.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:tests/test_legacy_release_index.py",
+      "sha256": "68954a453617e818058958b31061d10ced8c82d055fb93b65353876f28b76690",
+      "size": 9005
+    },
+    {
+      "category": "legacy_test",
+      "kind": "file",
+      "path": "tests/test_release_state.py",
+      "reason": "Internal implementation-ledger contract.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:tests/test_release_state.py",
+      "sha256": "74d271375294bb0a069aea27c225b9ea736c87e723e7ad22abaf8d4396f9d154",
+      "size": 13267
+    },
+    {
+      "category": "legacy_test",
+      "kind": "file",
+      "path": "tests/test_repository_export.py",
+      "reason": "One-time source-export contract retained in the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:tests/test_repository_export.py",
+      "sha256": "1092354628fbebca197ce649760a7f70a5435de9dcf475a36c66127c49930753",
+      "size": 11174
+    },
+    {
+      "category": "migration_tool",
+      "kind": "file",
+      "path": "tools/check_release_state.py",
+      "reason": "Internal implementation-ledger validator.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:tools/check_release_state.py",
+      "sha256": "6621574f4851f1a9ee288170ee8318b4bfa64c57dcd5998c9ccda8e4ee594440",
+      "size": 14012
+    },
+    {
+      "category": "migration_tool",
+      "kind": "file",
+      "path": "tools/export_clean_repository.py",
+      "reason": "One-time exporter retained in the legacy repository.",
+      "retrieval": "git -C REVISE-legacy show f31a9a329b880262817a299f31f682cafbaf77f3:tools/export_clean_repository.py",
+      "sha256": "27aecacb1b12bd282a893d5768df6e82fa6105565fdeb99234105cfbb46b7f4b",
+      "size": 15924
+    }
+  ],
+  "schema_version": 1,
+  "source": {
+    "commit": "f31a9a329b880262817a299f31f682cafbaf77f3",
+    "repository": "https://github.com/wuys13/REVISE-legacy",
+    "repository_name": "REVISE-legacy"
+  }
+}

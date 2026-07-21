@@ -1,0 +1,529 @@
+from __future__ import annotations
+
+import copy
+import math
+from numbers import Real
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Tuple
+
+try:
+    import yaml
+except ImportError as exc:  # pragma: no cover
+    raise ImportError("PyYAML is required for revise config loading") from exc
+
+
+APPLICATION_DEFAULT_CF = {
+    "hST": "bin2cell",
+    "iST": "segmentation",
+    "sST": "spot_size",
+}
+
+TOP_LEVEL_KEYS = {"version", "defaults", "router", "profiles", "locked_params", "schemas"}
+DEFAULT_SECTION_KEYS = {
+    "runtime",
+    "io",
+    "columns",
+    "preprocess",
+    "graph",
+    "ot",
+    "plot",
+    "reconstruct",
+    "benchmark",
+    "sc",
+    "impute",
+    "posterior_conditioning",
+}
+RUNTIME_KEYS = {
+    "seed",
+    "deterministic",
+    "compatibility_mode",
+    "platform",
+    "confounding",
+    "mode",
+    "task",
+    "svc_kind",
+    "strategy",
+    "platform_adapter",
+    "cf_strategy",
+}
+IO_KEYS = {
+    "data_root",
+    "output_root",
+    "sample_name",
+    "st_file",
+    "sc_ref_file",
+    "gt_svc_file",
+    "seg_method",
+    "spot_size",
+    "patient_key",
+    "sample_size",
+    "save_outputs",
+    "input_format",
+    "spatialdata_path",
+    "spatialdata_reader",
+    "spatialdata_table",
+    "spatialdata_spatial_element",
+    "spatialdata_coordinate_system",
+}
+COLUMNS_KEYS = {"cell_type_col", "sub_cell_type_col", "confidence_col", "unknown_key"}
+PREPROCESS_KEYS = {"st_min_counts", "st_min_cells", "sc_min_counts", "sc_min_cells", "st_min_transcripts"}
+GRAPH_KEYS = {"method", "alpha", "n_neighbors", "exp_neighbors", "spatial_neighbors"}
+OT_KEYS = {"ga", "lr", "impute"}
+OT_PHASE_KEYS = {"solver", "pot"}
+OT_LEAF_KEYS = {"reg", "reg_m", "reg_type"}
+OT_SOLVERS = {"pot", "tacco"}
+OT_REG_TYPES = {"entropy", "kl"}
+PLOT_KEYS = {"enabled", "cluster_resolutions", "min_genes", "min_cells", "sample_size"}
+RECONSTRUCT_KEYS = {"alpha"}
+BENCHMARK_KEYS = {"evaluate"}
+SC_KEYS = {
+    "select_ct",
+    "resolutions",
+    "select_resolution",
+    "hyperresolution",
+    "match_spot_sum",
+    "svc_completeness",
+    "sr_graph_agg_enabled",
+    "sr_graph_agg_low_conf_only",
+    "sr_graph_agg_low_conf_quantile",
+    "sr_graph_agg_anchor_only",
+    "sr_graph_agg_anchor_high_conf_quantile",
+    "sr_graph_agg_confidence_mode",
+    "sr_graph_agg_conf_weighted_alpha",
+    "sr_graph_agg_conf_alpha_min",
+    "sr_graph_agg_conf_alpha_max",
+    "sr_graph_agg_conf_alpha_power",
+    "sr_noise_enabled",
+    "sr_noise_lambda",
+    "sr_noise_k",
+    "sr_noise_weight",
+    "sr_noise_preserve_total_counts",
+    "sr_noise_seed",
+}
+SC_HYPER_KEYS = {"enabled", "strategy", "resolutions", "select_resolution"}
+IMPUTE_KEYS = {
+    "merge_subcluster_method",
+    "subcluster_resolution",
+    "in_panel_subcluster_resolution",
+    "prune",
+    "n_neighbors",
+    "method",
+}
+POSTERIOR_CONDITIONING_KEYS = {
+    "enabled",
+    "mode",
+    "posterior_key",
+    "beta",
+    "min_affinity",
+    "cost_strength",
+    "strict",
+}
+ROUTE_LEAF_KEYS = {"mode", "task", "svc_kind", "strategy", "platform_adapter", "cf_strategy"}
+LOCKED_PARAMS_KEYS = {"expose_in_cli", "keys"}
+
+
+class ConfigError(ValueError):
+    """Unified configuration error."""
+
+
+def _ensure_mapping(value: Any, ctx: str) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ConfigError(f"{ctx} must be a mapping")
+    return value
+
+
+def _reject_unknown_keys(mapping: Dict[str, Any], allowed: set[str], ctx: str) -> None:
+    unknown = sorted(set(mapping.keys()) - allowed)
+    if unknown:
+        raise ConfigError(f"Unknown keys in {ctx}: {unknown}")
+
+
+def _validate_solver(value: Any, ctx: str) -> None:
+    if not isinstance(value, str) or value not in OT_SOLVERS:
+        raise ConfigError(
+            f"{ctx} must be a string in {sorted(OT_SOLVERS)}; got {value!r}"
+        )
+
+
+def _validate_pot_values(pot: Dict[str, Any], ctx: str) -> None:
+    reg = pot["reg"]
+    if isinstance(reg, bool) or not isinstance(reg, Real) or not math.isfinite(reg) or reg <= 0:
+        raise ConfigError(f"{ctx}.reg must be a finite real number greater than 0; got {reg!r}")
+
+    reg_m = pot["reg_m"]
+    if (
+        isinstance(reg_m, bool)
+        or not isinstance(reg_m, Real)
+        or not math.isfinite(reg_m)
+        or reg_m < 0
+    ):
+        raise ConfigError(
+            f"{ctx}.reg_m must be a finite real number greater than or equal to 0; "
+            f"got {reg_m!r}"
+        )
+
+    reg_type = pot["reg_type"]
+    if not isinstance(reg_type, str) or reg_type not in OT_REG_TYPES:
+        raise ConfigError(
+            f"{ctx}.reg_type must be a string in {sorted(OT_REG_TYPES)}; got {reg_type!r}"
+        )
+
+
+def _validate_ot_section(ot_cfg: Dict[str, Any], ctx: str, *, resolved: bool = False) -> None:
+    if "global" in ot_cfg:
+        raise ConfigError(f"{ctx}.global is no longer supported; replace ot.global -> ot.ga.pot")
+    if "local" in ot_cfg:
+        raise ConfigError(f"{ctx}.local is no longer supported; replace ot.local -> ot.lr.pot")
+    _reject_unknown_keys(ot_cfg, OT_KEYS, ctx)
+    for name in ("ga", "lr"):
+        if name not in ot_cfg:
+            if resolved:
+                raise ConfigError(f"Missing required OT section: {ctx}.{name}")
+            continue
+        phase = _ensure_mapping(ot_cfg[name], f"{ctx}.{name}")
+        _reject_unknown_keys(phase, OT_PHASE_KEYS, f"{ctx}.{name}")
+        if resolved and set(phase) != OT_PHASE_KEYS:
+            missing = sorted(OT_PHASE_KEYS - set(phase))
+            raise ConfigError(f"Missing required OT keys in {ctx}.{name}: {missing}")
+        if "solver" in phase:
+            _validate_solver(phase["solver"], f"{ctx}.{name}.solver")
+        if "pot" in phase:
+            pot = _ensure_mapping(phase["pot"], f"{ctx}.{name}.pot")
+            _reject_unknown_keys(pot, OT_LEAF_KEYS, f"{ctx}.{name}.pot")
+            if resolved and set(pot) != OT_LEAF_KEYS:
+                missing = sorted(OT_LEAF_KEYS - set(pot))
+                raise ConfigError(f"Missing required OT keys in {ctx}.{name}.pot: {missing}")
+            if resolved:
+                _validate_pot_values(pot, f"{ctx}.{name}.pot")
+
+    if "impute" not in ot_cfg:
+        if resolved:
+            raise ConfigError(f"Missing required OT section: {ctx}.impute")
+    else:
+        impute = _ensure_mapping(ot_cfg["impute"], f"{ctx}.impute")
+        _reject_unknown_keys(impute, OT_LEAF_KEYS, f"{ctx}.impute")
+        if resolved and set(impute) != OT_LEAF_KEYS:
+            missing = sorted(OT_LEAF_KEYS - set(impute))
+            raise ConfigError(f"Missing required OT keys in {ctx}.impute: {missing}")
+        if resolved:
+            _validate_pot_values(impute, f"{ctx}.impute")
+
+
+def _validate_sc_section(sc_cfg: Dict[str, Any], ctx: str) -> None:
+    _reject_unknown_keys(sc_cfg, SC_KEYS, ctx)
+    hyper = sc_cfg.get("hyperresolution")
+    if hyper is not None:
+        hyper_map = _ensure_mapping(hyper, f"{ctx}.hyperresolution")
+        _reject_unknown_keys(hyper_map, SC_HYPER_KEYS, f"{ctx}.hyperresolution")
+
+
+def _validate_sections(section_map: Dict[str, Any], ctx: str) -> None:
+    if "annotate" in section_map:
+        raise ConfigError(
+            f"{ctx}.annotate is no longer supported; replace annotate.mode -> ot.ga.solver"
+        )
+    if "local_ot" in section_map:
+        raise ConfigError(
+            f"{ctx}.local_ot is no longer supported; replace local_ot.method -> ot.lr.solver"
+        )
+    _reject_unknown_keys(section_map, DEFAULT_SECTION_KEYS, ctx)
+    for section, value in section_map.items():
+        value_map = _ensure_mapping(value, f"{ctx}.{section}")
+        if section == "runtime":
+            if "ot_solver" in value_map:
+                raise ConfigError(
+                    f"{ctx}.runtime.ot_solver is no longer supported; replace "
+                    "ot_solver -> ot.ga.solver + ot.lr.solver"
+                )
+            _reject_unknown_keys(value_map, RUNTIME_KEYS, f"{ctx}.runtime")
+        elif section == "io":
+            _reject_unknown_keys(value_map, IO_KEYS, f"{ctx}.io")
+        elif section == "columns":
+            _reject_unknown_keys(value_map, COLUMNS_KEYS, f"{ctx}.columns")
+        elif section == "preprocess":
+            _reject_unknown_keys(value_map, PREPROCESS_KEYS, f"{ctx}.preprocess")
+        elif section == "graph":
+            _reject_unknown_keys(value_map, GRAPH_KEYS, f"{ctx}.graph")
+        elif section == "ot":
+            _validate_ot_section(value_map, f"{ctx}.ot")
+        elif section == "plot":
+            _reject_unknown_keys(value_map, PLOT_KEYS, f"{ctx}.plot")
+        elif section == "reconstruct":
+            _reject_unknown_keys(value_map, RECONSTRUCT_KEYS, f"{ctx}.reconstruct")
+        elif section == "benchmark":
+            _reject_unknown_keys(value_map, BENCHMARK_KEYS, f"{ctx}.benchmark")
+        elif section == "sc":
+            _validate_sc_section(value_map, f"{ctx}.sc")
+        elif section == "impute":
+            _reject_unknown_keys(value_map, IMPUTE_KEYS, f"{ctx}.impute")
+        elif section == "posterior_conditioning":
+            _reject_unknown_keys(
+                value_map,
+                POSTERIOR_CONDITIONING_KEYS,
+                f"{ctx}.posterior_conditioning",
+            )
+
+
+def _validate_router(router: Dict[str, Any]) -> None:
+    for platform, conf_map in router.items():
+        conf_map = _ensure_mapping(conf_map, f"router.{platform}")
+        for confounding, route in conf_map.items():
+            route_map = _ensure_mapping(route, f"router.{platform}.{confounding}")
+            if "ot_solver" in route_map:
+                raise ConfigError(
+                    f"router.{platform}.{confounding}.ot_solver is no longer supported; "
+                    "replace ot_solver -> ot.ga.solver + ot.lr.solver"
+                )
+            _reject_unknown_keys(route_map, ROUTE_LEAF_KEYS, f"router.{platform}.{confounding}")
+            required = {
+                "mode",
+                "task",
+                "svc_kind",
+                "strategy",
+                "platform_adapter",
+                "cf_strategy",
+            }
+            missing = sorted(k for k in required if route_map.get(k) in (None, ""))
+            if missing:
+                raise ConfigError(
+                    f"Missing required route keys in router.{platform}.{confounding}: {missing}"
+                )
+
+
+def _validate_locked_params(locked: Dict[str, Any]) -> None:
+    _reject_unknown_keys(locked, LOCKED_PARAMS_KEYS, "locked_params")
+    if "keys" in locked and not isinstance(locked["keys"], list):
+        raise ConfigError("locked_params.keys must be a list")
+
+
+def _validate_raw_config(raw: Dict[str, Any]) -> None:
+    _reject_unknown_keys(raw, TOP_LEVEL_KEYS, "config root")
+
+    defaults = _ensure_mapping(raw.get("defaults", {}), "defaults")
+    _validate_sections(defaults, "defaults")
+
+    profiles = _ensure_mapping(raw.get("profiles", {}), "profiles")
+    for name, profile_cfg in profiles.items():
+        _validate_sections(_ensure_mapping(profile_cfg, f"profiles.{name}"), f"profiles.{name}")
+
+    router = _ensure_mapping(raw.get("router", {}), "router")
+    _validate_router(router)
+
+    locked = _ensure_mapping(raw.get("locked_params", {}), "locked_params")
+    _validate_locked_params(locked)
+
+
+def load_raw_config(path: str | Path) -> Dict[str, Any]:
+    config_path = Path(path)
+    if not config_path.exists():
+        raise ConfigError(f"Config file not found: {config_path}")
+    with config_path.open("r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    if not isinstance(raw, dict):
+        raise ConfigError("Config root must be a mapping")
+    _validate_raw_config(raw)
+    return raw
+
+
+def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    out = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = deep_merge(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
+
+
+def parse_set_overrides(overrides: Iterable[str]) -> List[Tuple[str, Any]]:
+    parsed: List[Tuple[str, Any]] = []
+    for item in overrides:
+        if "=" not in item:
+            raise ConfigError(f"Invalid --set override: '{item}'. Expected key=value")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ConfigError(f"Invalid --set override with empty key: '{item}'")
+        parsed.append((key, yaml.safe_load(value)))
+    return parsed
+
+
+def get_by_dotted_path(config: Dict[str, Any], dotted_key: str) -> Any:
+    cur: Any = config
+    for part in dotted_key.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            raise KeyError(dotted_key)
+        cur = cur[part]
+    return cur
+
+
+def set_by_dotted_path(config: Dict[str, Any], dotted_key: str, value: Any, create_missing: bool = False) -> None:
+    parts = dotted_key.split(".")
+    cur: Dict[str, Any] = config
+    for part in parts[:-1]:
+        if part not in cur:
+            if not create_missing:
+                raise KeyError(dotted_key)
+            cur[part] = {}
+        if not isinstance(cur[part], dict):
+            raise KeyError(dotted_key)
+        cur = cur[part]
+
+    leaf = parts[-1]
+    if leaf not in cur and not create_missing:
+        raise KeyError(dotted_key)
+    cur[leaf] = value
+
+
+def _resolve_runtime_route(raw_config: Dict[str, Any], merged: Dict[str, Any]) -> Dict[str, Any]:
+    runtime = merged.setdefault("runtime", {})
+    platform = runtime.get("platform")
+    if not platform:
+        raise ConfigError("runtime.platform is required")
+
+    confounding = runtime.get("confounding")
+    if not confounding and platform in APPLICATION_DEFAULT_CF:
+        confounding = APPLICATION_DEFAULT_CF[platform]
+        runtime["confounding"] = confounding
+
+    if platform == "sim2real" and not confounding:
+        raise ConfigError("runtime.confounding is required when runtime.platform=sim2real")
+
+    router = raw_config.get("router", {})
+    route = router.get(platform, {}).get(confounding)
+    if route is None:
+        available = sorted(router.get(platform, {}).keys())
+        raise ConfigError(
+            f"No route found for platform={platform}, confounding={confounding}. "
+            f"Available confounding values for {platform}: {available}"
+        )
+
+    runtime.update(route)
+    return route
+
+
+def _validate_runtime(merged: Dict[str, Any]) -> None:
+    runtime = merged.get("runtime", {})
+    required = ["platform", "confounding", "mode", "task", "svc_kind", "strategy"]
+    missing = [k for k in required if runtime.get(k) in (None, "")]
+    if missing:
+        raise ConfigError(f"Missing runtime keys after router resolution: {missing}")
+
+
+def _validate_resolved_config(merged: Dict[str, Any]) -> None:
+    """Strictly validate the complete config after every merge and route update."""
+    _validate_sections(merged, "resolved")
+    _validate_ot_section(
+        _ensure_mapping(merged.get("ot", {}), "resolved.ot"),
+        "resolved.ot",
+        resolved=True,
+    )
+    _validate_runtime(merged)
+    sc_cfg = _ensure_mapping(merged.get("sc", {}), "resolved.sc")
+    if sc_cfg.get("svc_completeness") is not True:
+        raise ConfigError("sc.svc_completeness must be exactly true")
+
+
+def _legacy_override_replacement(key: str) -> str | None:
+    if key == "annotate" or key.startswith("annotate."):
+        return "annotate.mode -> ot.ga.solver"
+    if key == "local_ot" or key.startswith("local_ot."):
+        return "local_ot.method -> ot.lr.solver"
+    if key == "runtime.ot_solver" or key.startswith("runtime.ot_solver."):
+        return "runtime/router ot_solver -> ot.ga.solver + ot.lr.solver"
+    if key == "ot.global" or key.startswith("ot.global."):
+        return "ot.global -> ot.ga.pot"
+    if key == "ot.local" or key.startswith("ot.local."):
+        return "ot.local -> ot.lr.pot"
+    return None
+
+
+def _paths_overlap(left: str, right: str) -> bool:
+    return (
+        left == right
+        or left.startswith(f"{right}.")
+        or right.startswith(f"{left}.")
+    )
+
+
+def merge_unified_config(
+    raw_config: Dict[str, Any],
+    profile: str | None,
+    runtime_overrides: Dict[str, Any],
+    io_overrides: Dict[str, Any],
+    set_overrides: Iterable[str],
+) -> Dict[str, Any]:
+    # Merge order is intentionally strict and explicit:
+    # 1) defaults
+    # 2) selected profile overrides
+    # 3) runtime/io CLI overrides
+    # 4) generic --set dotted-key overrides
+    #
+    # This mirrors the design spec and makes provenance deterministic.
+    defaults = raw_config.get("defaults", {})
+    if not isinstance(defaults, dict):
+        raise ConfigError("defaults must be a mapping")
+
+    merged = copy.deepcopy(defaults)
+
+    if profile:
+        profiles = raw_config.get("profiles", {})
+        if profile not in profiles:
+            raise ConfigError(f"Unknown profile: {profile}")
+        merged = deep_merge(merged, profiles[profile])
+
+    if "ot_solver" in runtime_overrides:
+        raise ConfigError(
+            "runtime/router ot_solver -> ot.ga.solver + ot.lr.solver"
+        )
+
+    for key, value in runtime_overrides.items():
+        if value is None:
+            continue
+        set_by_dotted_path(merged, f"runtime.{key}", value, create_missing=False)
+
+    for key, value in io_overrides.items():
+        if value is None:
+            continue
+        set_by_dotted_path(merged, f"io.{key}", value, create_missing=False)
+
+    locked_config = raw_config.get("locked_params", {})
+    locked_keys = set(locked_config.get("keys", []))
+    expose_locked = bool(locked_config.get("expose_in_cli", False))
+
+    for key, value in parse_set_overrides(set_overrides):
+        replacement = _legacy_override_replacement(key)
+        if replacement:
+            raise ConfigError(f"Legacy --set key '{key}' is no longer supported; replace {replacement}")
+        # Locked parameters guard low-level OT/solver knobs from accidental
+        # CLI drift in paper/rebuttal-style runs.
+        if not expose_locked and any(_paths_overlap(key, locked) for locked in locked_keys):
+            raise ConfigError(
+                f"Override rejected for locked parameter '{key}'. "
+                "These low-level parameters are intentionally hidden from CLI."
+            )
+        try:
+            set_by_dotted_path(merged, key, value, create_missing=False)
+        except KeyError as exc:
+            raise ConfigError(f"Unknown --set key: {key}") from exc
+
+    _resolve_runtime_route(raw_config, merged)
+    _validate_resolved_config(merged)
+    return merged
+
+
+def infer_default_profile(raw_config: Dict[str, Any], runtime_overrides: Dict[str, Any]) -> str | None:
+    """Pick a profile based on explicit runtime route, if a direct match exists."""
+    runtime = runtime_overrides
+    if not runtime.get("platform"):
+        return None
+
+    profiles = raw_config.get("profiles", {})
+    for name, profile_cfg in profiles.items():
+        pr = profile_cfg.get("runtime", {})
+        if runtime.get("platform") and pr.get("platform") != runtime.get("platform"):
+            continue
+        if runtime.get("confounding") and pr.get("confounding") != runtime.get("confounding"):
+            continue
+        return name
+    return None

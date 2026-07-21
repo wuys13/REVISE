@@ -1,0 +1,13 @@
+# Release-critical constraints for the CPython 3.10 / Ubuntu gate.
+# This is a tested constraint set, not a complete transitive lock file.
+setuptools==80.9.0
+wheel==0.45.1
+pytest==8.4.1
+jsonschema==4.25.1
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.15.3
+anndata==0.11.4
+PyYAML==6.0.3
+POT==0.9.5
+tacco==0.5.0

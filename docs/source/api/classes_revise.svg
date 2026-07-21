@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-labelledby="title desc">
+  <title id="title">REVISE current API architecture</title>
+  <desc id="desc">Current REVISE pipeline, configuration, backend, and output model relationships.</desc>
+  <style>
+    .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 8; }
+    .primary { fill: #e0f2fe; stroke: #0369a1; }
+    .runner { fill: #fef3c7; stroke: #a16207; }
+    .text { font-family: Inter, Helvetica, Arial, sans-serif; font-size: 14px; fill: #0f172a; }
+    .small { font-size: 12px; fill: #475569; }
+    .arrow { stroke: #475569; stroke-width: 1.5; marker-end: url(#arrow); fill: none; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569" />
+    </marker>
+  </defs>
+  <rect x="40" y="40" width="190" height="70" class="box primary" />
+  <text x="135" y="70" text-anchor="middle" class="text">REVISEPipeline</text>
+  <text x="135" y="92" text-anchor="middle" class="small">revise.framework</text>
+  <rect x="310" y="40" width="210" height="70" class="box" />
+  <text x="415" y="70" text-anchor="middle" class="text">Unified Config</text>
+  <text x="415" y="92" text-anchor="middle" class="small">revise/revise.yaml</text>
+  <rect x="610" y="40" width="230" height="70" class="box" />
+  <text x="725" y="70" text-anchor="middle" class="text">Pipeline Context</text>
+  <text x="725" y="92" text-anchor="middle" class="small">revise.recon.context</text>
+  <rect x="40" y="180" width="230" height="80" class="box" />
+  <text x="155" y="212" text-anchor="middle" class="text">Unified Lifecycle</text>
+  <text x="155" y="236" text-anchor="middle" class="small">revise.recon.pipeline</text>
+  <rect x="330" y="180" width="240" height="80" class="box runner" />
+  <text x="450" y="212" text-anchor="middle" class="text">Backend Strategies</text>
+  <text x="450" y="236" text-anchor="middle" class="small">adapters, runners, kernels</text>
+  <rect x="640" y="180" width="200" height="80" class="box primary" />
+  <text x="740" y="212" text-anchor="middle" class="text">SVC Output</text>
+  <text x="740" y="236" text-anchor="middle" class="small">revise.svc.SVC</text>
+  <path d="M230 75 H310" class="arrow" />
+  <path d="M520 75 H610" class="arrow" />
+  <path d="M725 110 V150 H155 V180" class="arrow" />
+  <path d="M270 220 H330" class="arrow" />
+  <path d="M570 220 H640" class="arrow" />
+</svg>

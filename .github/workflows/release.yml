@@ -1,0 +1,74 @@
+name: Release candidate
+
+on:
+  push:
+    tags: ["v0.1.0rc1"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-dist
+          path: ${{ runner.temp }}/release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gate-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-assets
+      - name: Install manifest validator
+        run: >-
+          python -m pip install
+          -c constraints/python-3.11.txt
+          jsonschema
+      - name: Create detached final manifest
+        env:
+          ASSET_DIR: ${{ runner.temp }}/release-assets
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >-
+          python tools/create_release_manifest.py
+          --assets-dir "${ASSET_DIR}"
+          --build-report "${ASSET_DIR}/build-report.json"
+          --output "${ASSET_DIR}/release-manifest.json"
+          --tag "${GITHUB_REF_NAME}"
+          --run-id "${GITHUB_RUN_ID}"
+          --run-attempt "${GITHUB_RUN_ATTEMPT}"
+          --run-url "${RUN_URL}"
+          --gate "unit=${ASSET_DIR}/gate-unit.json"
+          --gate "integration=${ASSET_DIR}/gate-integration.json"
+          --gate "installed_cli=${ASSET_DIR}/gate-installed_cli.json"
+          --gate "package=${ASSET_DIR}/gate-package.json"
+          --gate "docs=${ASSET_DIR}/gate-docs.json"
+          --gate "repository=${ASSET_DIR}/gate-repository.json"
+          --gate "tacco=${ASSET_DIR}/gate-tacco.json"
+      - name: Publish exact verified candidate assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET_DIR: ${{ runner.temp }}/release-assets
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          "${ASSET_DIR}"/*.whl
+          "${ASSET_DIR}"/*.tar.gz
+          "${ASSET_DIR}/build-report.json"
+          "${ASSET_DIR}"/gate-*.json
+          "${ASSET_DIR}/release-manifest.json"
+          --prerelease
+          --verify-tag
+          --title "REVISE ${GITHUB_REF_NAME}"
