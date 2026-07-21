@@ -394,6 +394,7 @@ def test_constraint_matrix_and_workflows_encode_the_release_boundary():
         assert "wheel==0.45.1" in content
         assert "POT==0.9.5" in content
         assert "zarr==2.18.3" in content
+        assert "numcodecs==0.13.1" in content
 
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     matrix = ci["jobs"]["test"]["strategy"]["matrix"]["python-version"]
