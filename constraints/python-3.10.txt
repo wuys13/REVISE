@@ -8,6 +8,7 @@ numpy==2.2.6
 pandas==2.3.3
 scipy==1.15.3
 anndata==0.11.4
+zarr==2.18.7
 PyYAML==6.0.3
 POT==0.9.5
 tacco==0.5.0

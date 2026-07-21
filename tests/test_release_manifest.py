@@ -11,7 +11,6 @@ import jsonschema
 import pytest
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ROOT = ROOT / "release" / "0.1.0rc1"
 SCHEMA_PATH = RELEASE_ROOT / "release-manifest.schema.json"
@@ -394,6 +393,7 @@ def test_constraint_matrix_and_workflows_encode_the_release_boundary():
         assert "setuptools==80.9.0" in content
         assert "wheel==0.45.1" in content
         assert "POT==0.9.5" in content
+        assert "zarr==2.18.7" in content
 
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     matrix = ci["jobs"]["test"]["strategy"]["matrix"]["python-version"]
