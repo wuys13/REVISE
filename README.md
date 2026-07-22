@@ -56,9 +56,9 @@ Every application reconstruction publishes the same stable filename:
 <output-root>/<sample-name>/SVC.h5ad
 ```
 
-The run's `provenance.json` records whether that result is an `sp-SVC` or
-`sc-SVC`, together with the resolved route, configuration, inputs, stages, and
-artifacts.
+The run's `provenance.json` records whether that result comes from the `hST`,
+`iST`, or `sST` route, together with the resolved configuration, inputs,
+stages, and artifacts.
 
 ## Installation
 
@@ -139,10 +139,10 @@ revise-reconstruct \
   --output-root output
 ```
 
-`--platform` selects the internal reconstruction route. The public result is
-always `output/sample/SVC.h5ad`; its `sp-SVC` or `sc-SVC` classification is
-recorded in `provenance.json`. From a source checkout, `python reconstruct.py`
-delegates to the same command implementation.
+`--platform` selects the reconstruction route. The public result is always
+`output/sample/SVC.h5ad`; its `hST`, `iST`, or `sST` classification is recorded
+in `provenance.json`. From a source checkout, `python reconstruct.py` delegates
+to the same command implementation.
 
 The paper-compatible wrappers are retained only for reproducing historical
 notebooks. They keep their legacy output names and are not part of the

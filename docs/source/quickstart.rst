@@ -95,7 +95,7 @@ All application routes publish:
    <output-root>/<sample-name>/SVC.h5ad
 
 The file links to the canonical run's ``provenance.json``. The manifest's
-``result.type`` identifies the result as ``sp-SVC`` or ``sc-SVC`` and records
+``result.type`` identifies the result as ``hST``, ``iST``, or ``sST`` and records
 the route, stages, configuration, inputs, and artifacts.
 
 Paper reproduction compatibility

@@ -123,8 +123,8 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
 @pytest.mark.parametrize(
     ("platform", "profile", "svc_kind", "output_key", "expected_type"),
     [
-        ("hST", "application_sp", "sp", "sp_svc", "sp-SVC"),
-        ("sST", "application_sc_sst", "sc", "sc_svc_dec", "sc-SVC"),
+        ("hST", "application_sp", "sp", "sp_svc", "hST"),
+        ("sST", "application_sc_sst", "sc", "sc_svc_dec", "sST"),
     ],
 )
 def test_public_result_links_to_manifest_and_registers_artifact(

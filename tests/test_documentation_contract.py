@@ -119,6 +119,9 @@ def test_public_docs_use_the_single_svc_result_contract():
     assert "<output-root>/<sample-name>/SVC.h5ad" in text
     assert 'output_dir / "SVC.h5ad"' in cli
     assert "result.type" in text
+    assert "Public 2.0 result type" in text
+    for result_type in ("hST", "iST", "sST"):
+        assert f"``result.type`` as ``{result_type}``" in text
     assert "sp-SVC" in text
     assert "sc-SVC" in text
     assert "provenance.json" in text

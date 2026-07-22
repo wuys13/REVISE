@@ -307,7 +307,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         assert manifest["run"]["status"] == "succeeded"
         assert manifest["result"] == {
             "filename": "SVC.h5ad",
-            "type": "sp-SVC",
+            "type": "hST",
         }
         assert manifest["stages"][3]["status"] == "succeeded"
         public_artifacts = [

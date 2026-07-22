@@ -2,8 +2,8 @@ Reconstruction Routes
 =====================
 
 The installed/source interface selects an internal route with ``--platform``.
-The public 1.x result remains an sp-SVC or sc-SVC and always uses the stable
-filename ``SVC.h5ad``.
+The public 2.0 result always uses the stable filename ``SVC.h5ad`` and records
+its platform classification separately.
 
 hST route
 ---------
@@ -21,7 +21,7 @@ hST selects the sp-SVC application profile:
      --output-root output
 
 The public result is ``output/sample/SVC.h5ad`` and its manifest records
-``result.type`` as ``sp-SVC``.
+``result.type`` as ``hST``.
 
 iST route
 ---------
@@ -43,7 +43,7 @@ one result:
      --ist-mapping mean
 
 The public result is ``output/sample/SVC.h5ad`` and its manifest records
-``result.type`` as ``sc-SVC``. ``--ist-mapping random`` uses the CLI seed to
+``result.type`` as ``iST``. ``--ist-mapping random`` uses the CLI seed to
 choose a same-cluster reference expression row instead of the cluster mean.
 
 sST route
@@ -62,7 +62,7 @@ sST selects the spot super-resolution sc-SVC route:
      --output-root output
 
 The public result is ``output/sample/SVC.h5ad`` and its manifest records
-``result.type`` as ``sc-SVC``. Missing curated spot-to-cell and PM-on-cell
+``result.type`` as ``sST``. Missing curated spot-to-cell and PM-on-cell
 inputs use the quota and seeded random assignment described in
 :doc:`concepts`.
 

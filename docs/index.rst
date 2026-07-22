@@ -33,7 +33,7 @@ Every application reconstruction publishes:
    <output-root>/<sample-name>/SVC.h5ad
 
 The result links to the run's ``provenance.json``. Its ``result.type`` records
-``sp-SVC`` or ``sc-SVC``; the manifest also records the internal route,
+``hST``, ``iST``, or ``sST``; the manifest also records the internal route,
 configuration, stages, inputs, and artifacts.
 
 .. toctree::

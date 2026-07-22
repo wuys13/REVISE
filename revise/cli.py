@@ -20,7 +20,7 @@ iST 的内部流程会生成空间和表达两个 AnnData。最终文件严格�
 4. 表达映射可使用同 cluster 均值（默认）或带随机种子的随机单细胞表达。
 
 最终文件统一写入 ``<output-root>/<sample-name>/SVC.h5ad``，运行 manifest
-记录结果是 sp-SVC 还是 sc-SVC。Pipeline 自身的中间 H5AD 持久化会被关闭，
+记录结果来自 hST、iST 还是 sST。Pipeline 自身的中间 H5AD 持久化会被关闭，
 但运行日志和 provenance 仍由 REVISE 保存。
 """
 
@@ -51,10 +51,6 @@ ROUTES = {
     "hST": ("application_sp", "bin2cell", "sp_svc"),
     "iST": ("application_sc", "segmentation", None),
     "sST": ("application_sc_sst", "spot_size", "sc_svc_dec"),
-}
-PUBLIC_SVC_TYPES = {
-    "sp": "sp-SVC",
-    "sc": "sc-SVC",
 }
 PLATFORM_SVC_KINDS = {
     "hST": "sp",
@@ -351,7 +347,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             f"Platform {args.platform!r} requires SVC type {expected_kind!r}; "
             f"strategy returned {svc.svc_kind!r}"
         )
-    result_type = PUBLIC_SVC_TYPES[expected_kind]
+    result_type = args.platform
     # 所有平台都从 SVC 标准载体的 artifacts 取结果，不依赖 run_dir 中的临时文件。
     outputs = dict(svc.artifacts.get("outputs", {}))
 

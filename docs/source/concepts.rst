@@ -14,16 +14,16 @@ Routes and result types
 
    * - Platform
      - Input rows
-     - Public 1.x result type
+     - Public 2.0 result type
    * - ``hST``
      - high-definition bins or pseudo-cells
-     - ``sp-SVC``
+     - ``hST``
    * - ``iST``
      - segmented imaging-ST cells
-     - ``sc-SVC``
+     - ``iST``
    * - ``sST``
      - spot-level observations
-     - ``sc-SVC``
+     - ``sST``
 
 The common result location is ``<output-root>/<sample-name>/SVC.h5ad``. Its
 ``provenance.json`` records the public result type separately from the
