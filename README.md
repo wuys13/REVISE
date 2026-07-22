@@ -15,7 +15,7 @@ REVISE (REconstruction via Vision-integrated Spatial Estimation) reconstructs
 and a matched single-cell RNA-seq reference. Spatial or morphology-derived
 priors can be used when available.
 
-## Start Here: Install and Reconstruct an SVC
+## Quick start
 
 REVISE supports Python 3.10 and 3.11. A clean environment is recommended.
 
