@@ -8,11 +8,13 @@ this order:
 1. package defaults;
 2. the selected profile;
 3. runtime and IO overrides;
-4. repeated dotted ``--set KEY=VALUE`` overrides.
+4. dedicated high-level options such as ``--ot-method``.
 
 Unknown keys and incomplete OT sections fail validation rather than being
 silently ignored. The merged configuration is written into the canonical run
-evidence.
+evidence. For advanced settings, copy ``revise/revise.yaml``, edit the relevant
+profile, and select that file with ``--config``. There is no generic CLI
+key/value override surface.
 
 GA and LR OT selection
 ----------------------
@@ -40,16 +42,20 @@ one high-level switch:
 
    revise-reconstruct ... --ot-method tacco
 
-This appends both ``ot.ga.solver=tacco`` and ``ot.lr.solver=tacco`` to the
+This selects TACCO for both ``ot.ga.solver`` and ``ot.lr.solver`` in the
 resolved request. ``--ot-method pot`` does the same for POT. When the option is
 omitted, the configuration retains the two stage values independently. A mixed
-diagnostic request can therefore use:
+diagnostic request can therefore be written in a custom configuration:
 
-.. code-block:: bash
+.. code-block:: yaml
 
-   revise-reconstruct ... \
-     --set ot.ga.solver=tacco \
-     --set ot.lr.solver=pot
+   ot:
+     ga:
+       solver: tacco
+     lr:
+       solver: pot
+
+Run the normal command with ``--config path/to/custom-revise.yaml``.
 
 TACCO behavior
 --------------
@@ -86,15 +92,14 @@ The resolved route profile remains the source of truth:
          reg_m: 0.0
          reg_type: entropy
 
-Locked parameters cannot be overridden by ``--set``. Change the governed
-profile and its tests when a paper-facing low-level value needs to change.
+Locked parameters have no generic CLI bypass. Change the governed profile and
+its tests when a paper-facing low-level value needs to change.
 
 Runtime and IO
 --------------
 
-The canonical CLI manages ``runtime.seed`` and ``io.save_outputs`` itself so a
-conflicting ``--set`` cannot make the command summary disagree with the actual
-run. Common IO values are:
+The canonical CLI manages task identity, ``runtime.seed``, and its public
+inputs and outputs through dedicated parameters. Common IO values are:
 
 .. code-block:: yaml
 
@@ -119,7 +124,7 @@ Programmatic callers use the same merge and validation path:
 
    from revise.framework import REVISEPipeline
 
-   pipeline = REVISEPipeline()
+   pipeline = REVISEPipeline(config_path="path/to/custom-revise.yaml")
    result = pipeline.run(
        profile="application_sp",
        runtime_overrides={"platform": "sp_svc", "confounding": "bin2cell"},
@@ -130,7 +135,6 @@ Programmatic callers use the same merge and validation path:
            "st_file": "st.h5ad",
            "sc_ref_file": "sc_ref.h5ad",
        },
-       set_overrides=["ot.ga.solver=pot", "ot.lr.solver=pot"],
    )
 
 Direct API use returns an ``SVC`` carrier. The single public result file is a

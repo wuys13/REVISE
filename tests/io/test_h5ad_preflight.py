@@ -165,7 +165,7 @@ def test_all_declared_profiles_resolve_one_explicit_input_matrix(
         profile=profile,
         runtime_overrides={},
         io_overrides={"data_root": str(tmp_path), "sample_name": "sample"},
-        set_overrides=[],
+        algorithm_overrides={},
     )
     runtime = merged["runtime"]
 

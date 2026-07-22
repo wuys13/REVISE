@@ -138,8 +138,9 @@ data/
   composition assignment is driven by the broad column.
 - `--sc-mapping mean|random`: for `sc-SVC`, map each reconstructed spatial row
   to its cluster mean expression or to a seeded same-cluster reference row.
-- `--set KEY=VALUE`: advanced configuration override. High-level CLI options
-  cannot be contradicted through `--set`.
+
+For advanced algorithm configuration, copy `revise/revise.yaml`, edit the
+relevant profile, and pass it with `--config`.
 
 Run `revise-reconstruct --help` for the complete command contract.
 
@@ -293,7 +294,6 @@ svc = pipeline.run(
         "sc_ref_file": "adata_sc_all_reanno.h5ad",
         "patient_key": "Patient",
     },
-    set_overrides=["sc.select_ct=T"],
 )
 ```
 

@@ -10,6 +10,7 @@ from zipfile import ZipFile
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 from anndata import AnnData
 from anndata import read_h5ad
 from packaging.requirements import Requirement
@@ -192,6 +193,29 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
     assert help_result.returncode == 0, help_result.stderr
     assert "--ot-method" in help_result.stdout
     assert "--dry-run" in help_result.stdout
+    assert "--set" not in help_result.stdout
+
+    removed_set = _run(
+        [
+            str(command),
+            "--svc-type",
+            "sp-SVC",
+            "--sample-name",
+            "sample",
+            "--st-file",
+            "st.h5ad",
+            "--sc-ref-file",
+            "sc.h5ad",
+            "--data-root",
+            "data",
+            "--set",
+            "graph.method=pca",
+        ],
+        cwd=installed_cli["root"],
+        env=env,
+    )
+    assert removed_set.returncode == 2
+    assert "unrecognized arguments: --set" in removed_set.stderr
 
     version = _run(
         [str(command), "--version"],
@@ -253,6 +277,22 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
     data_root = installed_cli["root"] / "pot-data"
     data_root.mkdir()
     _write_inputs(data_root)
+    config = yaml.safe_load((ROOT / "revise/revise.yaml").read_text(encoding="utf-8"))
+    config["defaults"]["preprocess"].update(
+        st_min_counts=1,
+        st_min_cells=1,
+        sc_min_counts=1,
+        sc_min_cells=1,
+    )
+    config["defaults"]["graph"].update(
+        method="pca",
+        n_neighbors=5,
+        exp_neighbors=5,
+    )
+    config["defaults"]["posterior_conditioning"]["enabled"] = False
+    config["defaults"]["plot"]["enabled"] = False
+    config_path = installed_cli["root"] / "minimal-pot.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     common = [
         "--svc-type",
         "sp-SVC",
@@ -266,24 +306,8 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         str(data_root),
         "--ot-method",
         "pot",
-        "--set",
-        "preprocess.st_min_counts=1",
-        "--set",
-        "preprocess.st_min_cells=1",
-        "--set",
-        "preprocess.sc_min_counts=1",
-        "--set",
-        "preprocess.sc_min_cells=1",
-        "--set",
-        "graph.method=pca",
-        "--set",
-        "graph.n_neighbors=5",
-        "--set",
-        "graph.exp_neighbors=5",
-        "--set",
-        "posterior_conditioning.enabled=false",
-        "--set",
-        "plot.enabled=false",
+        "--config",
+        str(config_path),
     ]
     runs = []
     for name, prefix in (

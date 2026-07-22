@@ -45,13 +45,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Validate resolved inputs and dependencies without reconstruction",
     )
-    parser.add_argument(
-        "--set",
-        dest="set_overrides",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-    )
     return parser
 
 

@@ -8,7 +8,6 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Iterable
 from typing import NamedTuple
 from typing import TYPE_CHECKING
 
@@ -49,13 +48,6 @@ APPLICATION_ROUTES = {
 }
 
 REVISEPipeline = None
-MANAGED_SET_KEYS = {
-    "io.save_outputs",
-    "runtime.seed",
-}
-SC_MANAGED_SET_KEYS = {
-    "sc.select_ct",
-}
 
 
 def _copy_value(value):
@@ -204,50 +196,23 @@ def merge_sc_svc(
     return merged
 
 
-def _override_keys(overrides: Iterable[str]) -> set[str]:
-    return {
-        item.split("=", 1)[0].strip()
-        for item in overrides
-        if "=" in item and item.split("=", 1)[0].strip()
-    }
-
-
-def _build_set_overrides(args: argparse.Namespace) -> list[str]:
-    managed = set(MANAGED_SET_KEYS)
-    values = ["io.save_outputs=false"]
+def _build_algorithm_overrides(args: argparse.Namespace) -> dict:
+    overrides = {}
     if args.ot_method is not None:
-        managed.update({"ot.ga.solver", "ot.lr.solver"})
-        values.extend(
-            (
-                f"ot.ga.solver={args.ot_method}",
-                f"ot.lr.solver={args.ot_method}",
-            )
-        )
+        overrides["ot"] = {
+            "ga": {"solver": args.ot_method},
+            "lr": {"solver": args.ot_method},
+        }
+    columns = {}
     if args.cell_type_col is not None:
-        managed.add("columns.cell_type_col")
-        values.append(f"columns.cell_type_col={args.cell_type_col}")
+        columns["cell_type_col"] = args.cell_type_col
     if args.sub_cell_type_col is not None:
-        managed.add("columns.sub_cell_type_col")
-        values.append(f"columns.sub_cell_type_col={args.sub_cell_type_col}")
+        columns["sub_cell_type_col"] = args.sub_cell_type_col
+    if columns:
+        overrides["columns"] = columns
     if args.svc_type == "sc-SVC":
-        managed.update(SC_MANAGED_SET_KEYS)
-        values.append(f"sc.select_ct={args.select_ct}")
-    conflicts = sorted(
-        user_key
-        for user_key in _override_keys(args.set_overrides)
-        if any(
-            user_key == managed_key
-            or user_key.startswith(f"{managed_key}.")
-            or managed_key.startswith(f"{user_key}.")
-            for managed_key in managed
-        )
-    )
-    if conflicts:
-        raise ValueError(
-            "Conflicting high-level CLI option and --set override for: "
-            + ", ".join(conflicts)
-        )
-    return values + list(args.set_overrides)
+        overrides["sc"] = {"select_ct": args.select_ct}
+    return overrides
 
 
 def _run_pipeline(
@@ -269,7 +234,7 @@ def _run_pipeline(
     if args.seed is not None:
         runtime_overrides["seed"] = args.seed
 
-    svc = pipeline.run(
+    svc = pipeline._run_with_algorithm_overrides(
         profile=route.profile,
         runtime_overrides=runtime_overrides,
         io_overrides={
@@ -279,8 +244,9 @@ def _run_pipeline(
             "st_file": args.st_file,
             "sc_ref_file": args.sc_ref_file,
             "patient_key": args.patient_key,
+            "save_outputs": False,
         },
-        set_overrides=_build_set_overrides(args),
+        algorithm_overrides=_build_algorithm_overrides(args),
         dry_run=dry_run,
         finalize_callback=finalize_callback,
     )

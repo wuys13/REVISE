@@ -85,11 +85,19 @@ def _attach_posterior_conditioning_conf(conf, cfg: Dict[str, Any]) -> None:
     conf.posterior_conditioning_strict = bool(pcfg.get("strict", False))
 
 
+def _resolve_runtime_seed(ctx) -> int:
+    runtime = getattr(ctx, "runtime", None) or ctx.merged_config.get("runtime", {})
+    seed = runtime.get("seed", 42)
+    if seed is None:
+        return int(np.random.randint(0, np.iinfo(np.int32).max))
+    return int(seed)
+
+
 def _resolve_sample_seed(ctx) -> int:
     """Use parity-compatible seed when compatibility mode is requested."""
     if ctx.compatibility_mode:
         return 0
-    return int(ctx.runtime.get("seed", 42))
+    return _resolve_runtime_seed(ctx)
 
 
 def _subsample_obs(adata, n_obs: int, seed: int):
@@ -833,7 +841,7 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
             rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=20)),
             rec_match_spot_sum=bool(_cfg_get(cfg, "sc", "match_spot_sum", default=False)),
             svc_completeness=_cfg_get(cfg, "sc", "svc_completeness"),
-            sr_assignment_seed=int((getattr(ctx, "runtime", None) or cfg.get("runtime", {})).get("seed", 42)),
+            sr_assignment_seed=_resolve_runtime_seed(ctx),
             **_ot_runner_kwargs(cfg),
         )
         _attach_posterior_conditioning_conf(conf, cfg)
@@ -957,7 +965,7 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
             spot_size=int(io_cfg.get("spot_size", 50)),
             case_subdir=case_subdir,
             svc_completeness=_cfg_get(cfg, "sc", "svc_completeness"),
-            sr_assignment_seed=int((getattr(ctx, "runtime", None) or cfg.get("runtime", {})).get("seed", 42)),
+            sr_assignment_seed=_resolve_runtime_seed(ctx),
             rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=20)),
             rec_graph_exp_neighbor_num=int(_cfg_get(cfg, "graph", "exp_neighbors", default=10)),
             rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=20)),

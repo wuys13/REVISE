@@ -40,6 +40,7 @@ def test_parser_exposes_only_the_three_1x_svc_types():
     actions = {option: action for action in parser._actions for option in action.option_strings}
 
     assert "--platform" not in actions
+    assert "--set" not in actions
     assert actions["--svc-type"].choices == ("sp-SVC", "sc-SVC", "sc-SVC-sr")
 
 
@@ -53,17 +54,25 @@ def test_parser_accepts_each_1x_svc_type(svc_type):
     assert not hasattr(args, "platform")
 
 
+def test_parser_rejects_removed_set_option():
+    from revise.application.cli import parse_args
+
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(_required_args("sp-SVC") + ["--set", "graph.method=pca"])
+
+    assert exc_info.value.code == 2
+
+
 def test_omitted_cli_config_values_leave_the_yaml_in_control():
     from revise.application.cli import parse_args
-    from revise.application.service import _build_set_overrides
+    from revise.application.service import _build_algorithm_overrides
 
     args = parse_args(_required_args("sp-SVC"))
 
     assert args.seed is None
     assert args.cell_type_col is None
     assert args.sub_cell_type_col is None
-    overrides = _build_set_overrides(args)
-    assert not any(value.startswith("columns.") for value in overrides)
+    assert _build_algorithm_overrides(args) == {}
 
 
 def test_application_routes_use_internal_ids_without_2x_vocabulary():
@@ -116,7 +125,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
         def __init__(self, config_path):
             captured["config_path"] = config_path
 
-        def run(self, **kwargs):
+        def _run_with_algorithm_overrides(self, **kwargs):
             captured.update(kwargs)
             return SimpleNamespace()
 
@@ -135,7 +144,6 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
         select_ct="all",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
-        set_overrides=[],
     )
 
     actual_profile, actual_output_key, _ = service._run_pipeline(args)
@@ -149,10 +157,19 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
     if seed is not None:
         expected_runtime["seed"] = seed
     assert captured["runtime_overrides"] == expected_runtime
+    assert captured["io_overrides"]["save_outputs"] is False
+    assert captured["algorithm_overrides"] == {
+        "ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}},
+        "columns": {
+            "cell_type_col": "Level1",
+            "sub_cell_type_col": "Level2",
+        },
+        **({"sc": {"select_ct": "all"}} if svc_type == "sc-SVC" else {}),
+    }
 
 
 def test_sc_svc_sr_forwards_configured_cell_type_columns_without_sc_only_selection():
-    from revise.application.service import _build_set_overrides
+    from revise.application.service import _build_algorithm_overrides
 
     args = SimpleNamespace(
         svc_type="sc-SVC-sr",
@@ -160,18 +177,20 @@ def test_sc_svc_sr_forwards_configured_cell_type_columns_without_sc_only_selecti
         select_ct="T",
         cell_type_col="major_type",
         sub_cell_type_col="minor_type",
-        set_overrides=[],
     )
 
-    overrides = _build_set_overrides(args)
+    overrides = _build_algorithm_overrides(args)
 
-    assert "columns.cell_type_col=major_type" in overrides
-    assert "columns.sub_cell_type_col=minor_type" in overrides
-    assert not any(value.startswith("sc.select_ct=") for value in overrides)
+    assert overrides == {
+        "columns": {
+            "cell_type_col": "major_type",
+            "sub_cell_type_col": "minor_type",
+        }
+    }
 
 
 def test_sp_svc_forwards_configured_annotation_columns():
-    from revise.application.service import _build_set_overrides
+    from revise.application.service import _build_algorithm_overrides
 
     args = SimpleNamespace(
         svc_type="sp-SVC",
@@ -179,13 +198,16 @@ def test_sp_svc_forwards_configured_annotation_columns():
         select_ct="all",
         cell_type_col="major_type",
         sub_cell_type_col="minor_type",
-        set_overrides=[],
     )
 
-    overrides = _build_set_overrides(args)
+    overrides = _build_algorithm_overrides(args)
 
-    assert "columns.cell_type_col=major_type" in overrides
-    assert "columns.sub_cell_type_col=minor_type" in overrides
+    assert overrides == {
+        "columns": {
+            "cell_type_col": "major_type",
+            "sub_cell_type_col": "minor_type",
+        }
+    }
 
 
 def test_root_application_wrapper_delegates_to_package_cli():

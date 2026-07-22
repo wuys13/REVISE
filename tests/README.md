@@ -33,8 +33,9 @@ environment variables documented in their modules and CI jobs.
 | `backend/test_spot_sr_min_cells.py` | `revise/backend/adapters.py` | Spot-SR gene filtering and overlap checks | Spot-SR preprocessing edits | Synthetic matrices |
 | `backend/test_spot_sr_quota.py` | `revise/backend/kernels/spot_sr.py` | Rounded quota repair and large component smoke | Spot-SR allocation edits | Quota correctness only |
 | `backend/test_tacco_global_freshness.py` | TACCO global anchoring | Freshness and failure behavior | TACCO edits | Synthetic solver interaction |
+| `benchmark/test_cli_contract.py` | `revise/benchmark/cli.py` | Public benchmark options produce typed algorithm configuration without a generic override flag; process-scoped seeds become explicit per-leaf seeds | Benchmark CLI/config edits | Argument, seed, and wrapper contract only |
 | `benchmark/test_launcher.py` | `reproduce/benchmark_main.sh`, `revise/benchmark/launcher.py` | Bounded parallel launch and failure propagation | Benchmark launcher edits | Fake worker processes |
-| `config/test_ot_config.py` | `revise/config/` plus OT application wiring | Schema, profiles, locked overrides, and solver mapping | Config/OT edits | Resolved configuration, not real runs |
+| `config/test_ot_config.py` | `revise/config/` plus OT application wiring | Schema, profiles, locked algorithm parameters, and solver mapping | Config/OT edits | Resolved configuration, not real runs |
 | `io/test_h5ad_preflight.py` | `revise/io/` and input resolution | H5AD roles, axes, labels, overlap, and dependency preflight | Input-contract edits | Metadata and bounded synthetic values |
 | `preprocess/test_cli.py` | `revise/preprocess/` | Histology-prior console entry | Preprocess packaging edits | Static entry contract only |
 | `preprocess/test_histology_priors.py` | `revise/preprocess/histology_priors.py`, `revise/backend/ops/meta.py` | Segmentation centers persist in the standard cell-location table and missing centers use spot coordinates | Histology/SR input edits | Synthetic coordinates only |

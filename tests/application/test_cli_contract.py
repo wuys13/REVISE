@@ -88,7 +88,7 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         def __init__(self, config_path):
             captured["config_path"] = config_path
 
-        def run(self, **kwargs):
+        def _run_with_algorithm_overrides(self, **kwargs):
             captured.update(kwargs)
             return SimpleNamespace()
 
@@ -111,7 +111,6 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         select_ct="all",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
-        set_overrides=[],
     )
 
     service._run_pipeline(args, finalize_callback=callback)

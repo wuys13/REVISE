@@ -67,6 +67,21 @@ def test_1x_case_notebooks_use_current_routes_and_vocabulary():
     assert "legacy_mode" not in notebooks
     for term in ("hST", "iST", "sST"):
         assert term not in notebooks
+    assert "algorithm_overrides" not in notebooks
+
+
+def test_visium_case_custom_config_preserves_profile_defaults():
+    notebook = json.loads(
+        _read(ROOT / "reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb")
+    )
+    source = "\n".join(
+        line
+        for cell in notebook["cells"]
+        for line in cell.get("source", [])
+    )
+
+    for section in ("preprocess", "graph", "sc"):
+        assert f'case_profile.setdefault("{section}", {{}}).update(' in source
 
 
 def test_quickstart_matches_application_input_resolution_and_route_fields():
@@ -162,8 +177,8 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert "does not fall back" in text.lower()
     assert "annotate.mode" not in text
     assert "local_ot.method" not in text
-    assert 'f"ot.ga.solver={args.ot_method}"' in service
-    assert 'f"ot.lr.solver={args.ot_method}"' in service
+    assert '"ga": {"solver": args.ot_method}' in service
+    assert '"lr": {"solver": args.ot_method}' in service
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
 
 
@@ -192,6 +207,24 @@ def test_benchmark_metric_documentation_states_the_implemented_boundaries():
     assert implementation.count("target_sum=1e4") == 2
     assert "nrmse = np.sqrt(mse) / np.mean(expr_gt)" in implementation
     assert "structural_similarity as ssim" in implementation
+
+
+def test_benchmark_docs_describe_dedicated_configuration_controls():
+    text = " ".join(_read(ROOT / "docs/source/benchmark.rst").split())
+
+    for option in (
+        "--posterior-mode",
+        "--posterior-key",
+        "--posterior-beta",
+        "--posterior-min-affinity",
+        "--posterior-cost-strength",
+        "--posterior-strict",
+        "--sr-refinement-preset",
+    ):
+        assert option in text
+    assert "applied after the selected profile or custom ``--config``" in text
+    assert "defaults to ``cost``" in text
+    assert "--set" not in text
 
 
 def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path):
@@ -237,7 +270,6 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
             posterior_cost_strength=None,
             posterior_strict=False,
             sr_refinement_preset=None,
-            set_overrides=[],
         )
 
     observed = {}

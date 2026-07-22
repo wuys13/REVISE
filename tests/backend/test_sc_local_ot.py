@@ -309,10 +309,9 @@ def test_unified_cli_switches_global_and_local_methods_together(method):
         select_ct="all",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
-        set_overrides=[],
     )
 
-    overrides = service._build_set_overrides(args)
+    overrides = service._build_algorithm_overrides(args)
 
-    assert f"ot.ga.solver={method}" in overrides
-    assert f"ot.lr.solver={method}" in overrides
+    assert overrides["ot"]["ga"]["solver"] == method
+    assert overrides["ot"]["lr"]["solver"] == method

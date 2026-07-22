@@ -4,7 +4,7 @@ import copy
 import math
 from numbers import Real
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List
 
 try:
     import yaml
@@ -117,7 +117,8 @@ POSTERIOR_CONDITIONING_KEYS = {
     "strict",
 }
 ROUTE_LEAF_KEYS = {"mode", "task", "svc_kind", "strategy"}
-LOCKED_PARAMS_KEYS = {"expose_in_cli", "keys"}
+LOCKED_PARAMS_KEYS = {"keys"}
+ALGORITHM_IDENTITY_PATHS = {"sc.hyperresolution"}
 
 
 class ConfigError(ValueError):
@@ -331,28 +332,6 @@ def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]
     return out
 
 
-def parse_set_overrides(overrides: Iterable[str]) -> List[Tuple[str, Any]]:
-    parsed: List[Tuple[str, Any]] = []
-    for item in overrides:
-        if "=" not in item:
-            raise ConfigError(f"Invalid --set override: '{item}'. Expected key=value")
-        key, value = item.split("=", 1)
-        key = key.strip()
-        if not key:
-            raise ConfigError(f"Invalid --set override with empty key: '{item}'")
-        parsed.append((key, yaml.safe_load(value)))
-    return parsed
-
-
-def get_by_dotted_path(config: Dict[str, Any], dotted_key: str) -> Any:
-    cur: Any = config
-    for part in dotted_key.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            raise KeyError(dotted_key)
-        cur = cur[part]
-    return cur
-
-
 def set_by_dotted_path(config: Dict[str, Any], dotted_key: str, value: Any, create_missing: bool = False) -> None:
     parts = dotted_key.split(".")
     cur: Dict[str, Any] = config
@@ -426,20 +405,6 @@ def _validate_resolved_config(merged: Dict[str, Any]) -> None:
         raise ConfigError("sc.svc_completeness must be exactly true")
 
 
-def _legacy_override_replacement(key: str) -> str | None:
-    if key == "annotate" or key.startswith("annotate."):
-        return "annotate.mode -> ot.ga.solver"
-    if key == "local_ot" or key.startswith("local_ot."):
-        return "local_ot.method -> ot.lr.solver"
-    if key == "runtime.ot_solver" or key.startswith("runtime.ot_solver."):
-        return "runtime/router ot_solver -> ot.ga.solver + ot.lr.solver"
-    if key == "ot.global" or key.startswith("ot.global."):
-        return "ot.global -> ot.ga.pot"
-    if key == "ot.local" or key.startswith("ot.local."):
-        return "ot.local -> ot.lr.pot"
-    return None
-
-
 def _paths_overlap(left: str, right: str) -> bool:
     return (
         left == right
@@ -448,18 +413,29 @@ def _paths_overlap(left: str, right: str) -> bool:
     )
 
 
+def _leaf_paths(values: Dict[str, Any], prefix: str = "") -> List[str]:
+    paths: List[str] = []
+    for key, value in values.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            paths.extend(_leaf_paths(value, path))
+        else:
+            paths.append(path)
+    return paths
+
+
 def merge_unified_config(
     raw_config: Dict[str, Any],
     profile: str | None,
     runtime_overrides: Dict[str, Any],
     io_overrides: Dict[str, Any],
-    set_overrides: Iterable[str],
+    algorithm_overrides: Dict[str, Any],
 ) -> Dict[str, Any]:
     # Merge order is intentionally strict and explicit:
     # 1) defaults
     # 2) selected profile overrides
     # 3) runtime/io CLI overrides
-    # 4) generic --set dotted-key overrides
+    # 4) trusted, structured algorithm overrides
     #
     # This mirrors the design spec and makes provenance deterministic.
     defaults = raw_config.get("defaults", {})
@@ -480,7 +456,7 @@ def merge_unified_config(
         )
 
     for key, value in runtime_overrides.items():
-        if value is None:
+        if value is None and key != "seed":
             continue
         set_by_dotted_path(merged, f"runtime.{key}", value, create_missing=False)
 
@@ -491,23 +467,30 @@ def merge_unified_config(
 
     locked_config = raw_config.get("locked_params", {})
     locked_keys = set(locked_config.get("keys", []))
-    expose_locked = bool(locked_config.get("expose_in_cli", False))
-
-    for key, value in parse_set_overrides(set_overrides):
-        replacement = _legacy_override_replacement(key)
-        if replacement:
-            raise ConfigError(f"Legacy --set key '{key}' is no longer supported; replace {replacement}")
-        # Locked parameters guard low-level OT/solver knobs from accidental
-        # CLI drift in paper/rebuttal-style runs.
-        if not expose_locked and any(_paths_overlap(key, locked) for locked in locked_keys):
+    forbidden_sections = sorted(set(algorithm_overrides) & {"runtime", "io"})
+    if forbidden_sections:
+        raise ConfigError(
+            "algorithm_overrides cannot modify run identity sections: "
+            + ", ".join(forbidden_sections)
+        )
+    override_paths = _leaf_paths(algorithm_overrides)
+    identity_paths = sorted(
+        guarded
+        for guarded in ALGORITHM_IDENTITY_PATHS
+        if any(_paths_overlap(key, guarded) for key in override_paths)
+    )
+    if identity_paths:
+        raise ConfigError(
+            "algorithm_overrides cannot modify run identity through: "
+            + ", ".join(identity_paths)
+        )
+    for key in override_paths:
+        if any(_paths_overlap(key, locked) for locked in locked_keys):
             raise ConfigError(
                 f"Override rejected for locked parameter '{key}'. "
-                "These low-level parameters are intentionally hidden from CLI."
+                "These low-level parameters are governed by the selected profile."
             )
-        try:
-            set_by_dotted_path(merged, key, value, create_missing=False)
-        except KeyError as exc:
-            raise ConfigError(f"Unknown --set key: {key}") from exc
+    merged = deep_merge(merged, algorithm_overrides)
 
     _resolve_runtime_route(raw_config, merged)
     _validate_resolved_config(merged)

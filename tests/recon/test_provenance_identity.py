@@ -308,6 +308,7 @@ def test_pipeline_manifest_uses_location_independent_identities(tmp_path):
     assert manifests[0]["data_fingerprint"] is not None
     for manifest, config in zip(manifests, configs):
         expected_specs = resolve_input_specs(config["runtime"], config["io"])
+        assert manifest["runtime_seed"] == config["runtime"]["seed"]
         assert manifest["config_hash"] == hash_jsonable(
             canonical_config_projection(config)
         )
@@ -376,14 +377,14 @@ def test_fingerprint_failure_persists_terminal_manifest(monkeypatch, tmp_path):
 def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
     output_root = tmp_path / "output"
     with pytest.raises(ValueError, match="Out of range float values"):
-        REVISEPipeline().run(
+        REVISEPipeline()._run_with_algorithm_overrides(
             profile="application_sp",
             io_overrides={
                 "data_root": str(tmp_path / "data"),
                 "output_root": str(output_root),
                 "sample_name": "sample",
             },
-            set_overrides=["graph.alpha=.nan"],
+            algorithm_overrides={"graph": {"alpha": float("nan")}},
             dry_run=True,
         )
 

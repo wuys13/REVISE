@@ -353,7 +353,7 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         profile=profile,
         runtime_overrides={},
         io_overrides={},
-        set_overrides=(),
+        algorithm_overrides={},
     )
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path)
@@ -392,3 +392,61 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         getattr(adapters, strategy_name)().prepare_context(ctx)
 
     assert captured["conf"].sr_assignment_seed == 731
+
+
+def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed_is_none(
+    adapters,
+    monkeypatch,
+    tmp_path,
+):
+    raw = load_raw_config(CONFIG_PATH)
+    merged = merge_unified_config(
+        raw_config=raw,
+        profile="benchmark_sr_batch",
+        runtime_overrides={"seed": None},
+        io_overrides={},
+        algorithm_overrides={},
+    )
+    merged["io"]["data_root"] = str(tmp_path)
+    merged["io"]["output_root"] = str(tmp_path)
+
+    runner_stub = types.ModuleType("revise.backend.runners.sc_svc_sr_benchmark")
+    runner_stub.ScSVCSr = object
+    monkeypatch.setitem(
+        sys.modules,
+        "revise.backend.runners.sc_svc_sr_benchmark",
+        runner_stub,
+    )
+
+    captured = {}
+
+    def capture_conf(conf, _cfg):
+        captured["conf"] = conf
+
+    class StopAfterConfig(Exception):
+        pass
+
+    def stop_before_io(_ctx):
+        raise StopAfterConfig
+
+    monkeypatch.setattr(adapters, "_attach_posterior_conditioning_conf", capture_conf)
+    monkeypatch.setattr(adapters, "_input_service", stop_before_io)
+    ctx = SimpleNamespace(
+        merged_config=merged,
+        io=merged["io"],
+        columns=merged["columns"],
+        runtime=merged["runtime"],
+        route_key="sim2real:batch_effect",
+        run_dir=tmp_path,
+        logger=logging.getLogger("test-process-scope-sr-seed"),
+        compatibility_mode=True,
+    )
+
+    np.random.seed(731)
+    expected_seed = int(
+        np.random.RandomState(731).randint(0, np.iinfo(np.int32).max)
+    )
+    with pytest.raises(StopAfterConfig):
+        adapters.ScSvcSrBenchmarkStrategy().prepare_context(ctx)
+
+    assert captured["conf"].sr_assignment_seed == expected_seed

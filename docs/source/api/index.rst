@@ -30,7 +30,6 @@ extension points.
             "st_file": "Xenium.h5ad",
             "sc_ref_file": "adata_sc_all_reanno.h5ad",
         },
-        set_overrides=["sc.select_ct=T"],
     )
 
 Pipeline

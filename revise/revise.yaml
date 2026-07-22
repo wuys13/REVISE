@@ -346,7 +346,6 @@ profiles:
       sc_ref_file: real_sc_ref.h5ad
 
 locked_params:
-  expose_in_cli: false
   keys:
     - ot.ga.pot.reg
     - ot.ga.pot.reg_m

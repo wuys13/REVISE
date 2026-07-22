@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 from typing import Dict, List
 
+import numpy as np
+
 from revise.framework import REVISEPipeline
-from revise.utils import set_global_seed
 
 # Base settings aligned with Sim2Real-ST benchmark convention.
 SEG_METHODS = ["seg_1", "seg_2", "seg_3", "seg_4"]
@@ -20,22 +21,22 @@ DEFAULT_POSTERIOR_MODE = "cost"
 
 SR_REFINEMENT_PRESETS = {
     "none": {
-        "sc.sr_graph_agg_enabled": "false",
-        "sc.sr_graph_agg_low_conf_only": "false",
-        "sc.sr_graph_agg_anchor_only": "false",
-        "sc.sr_graph_agg_conf_weighted_alpha": "false",
+        "sr_graph_agg_enabled": False,
+        "sr_graph_agg_low_conf_only": False,
+        "sr_graph_agg_anchor_only": False,
+        "sr_graph_agg_conf_weighted_alpha": False,
     },
     "confidence_anchor": {
-        "sc.sr_graph_agg_enabled": "true",
-        "sc.sr_graph_agg_low_conf_only": "true",
-        "sc.sr_graph_agg_low_conf_quantile": "0.1",
-        "sc.sr_graph_agg_anchor_only": "true",
-        "sc.sr_graph_agg_anchor_high_conf_quantile": "0.9",
-        "sc.sr_graph_agg_confidence_mode": "auto",
-        "sc.sr_graph_agg_conf_weighted_alpha": "true",
-        "sc.sr_graph_agg_conf_alpha_min": "0.0",
-        "sc.sr_graph_agg_conf_alpha_max": "0.25",
-        "sc.sr_graph_agg_conf_alpha_power": "1.0",
+        "sr_graph_agg_enabled": True,
+        "sr_graph_agg_low_conf_only": True,
+        "sr_graph_agg_low_conf_quantile": 0.1,
+        "sr_graph_agg_anchor_only": True,
+        "sr_graph_agg_anchor_high_conf_quantile": 0.9,
+        "sr_graph_agg_confidence_mode": "auto",
+        "sr_graph_agg_conf_weighted_alpha": True,
+        "sr_graph_agg_conf_alpha_min": 0.0,
+        "sr_graph_agg_conf_alpha_max": 0.25,
+        "sr_graph_agg_conf_alpha_power": 1.0,
     },
 }
 
@@ -90,7 +91,10 @@ def get_args() -> argparse.Namespace:
         type=str,
         choices=["process", "run"],
         default=None,
-        help="Seed once for the whole script (`process`) or reset per case (`run`)",
+        help=(
+            "Derive one reproducible seed per case (`process`) or reuse the "
+            "base seed for every case (`run`)"
+        ),
     )
     parser.add_argument(
         "--posterior-mode",
@@ -132,97 +136,51 @@ def get_args() -> argparse.Namespace:
         default=None,
         help="SR-only graph refinement preset; use confidence_anchor for controlled SR posterior-OT ablations",
     )
-    parser.add_argument(
-        "--set",
-        dest="set_overrides",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-        help="Forward a dotted config override to REVISEPipeline.run(); may be repeated",
-    )
     return parser.parse_args()
 
 
-def _set_override_keys(overrides: List[str] | None) -> set[str]:
-    keys: set[str] = set()
-    for item in overrides or []:
-        if "=" not in item:
-            continue
-        key = item.split("=", 1)[0].strip()
-        if key:
-            keys.add(key)
-    return keys
-
-
-def _set_override_value(overrides: List[str] | None, dotted_key: str) -> str | None:
-    for item in overrides or []:
-        if "=" not in item:
-            continue
-        key, value = item.split("=", 1)
-        if key.strip() == dotted_key:
-            return value.strip().lower()
-    return None
-
-
-def _build_posterior_overrides(args: argparse.Namespace) -> Dict[str, str]:
-    overrides: Dict[str, str] = {}
+def _build_posterior_overrides(args: argparse.Namespace) -> Dict[str, object]:
+    values: Dict[str, object] = {}
     if args.posterior_mode is not None:
-        overrides["posterior_conditioning.enabled"] = (
-            "false" if args.posterior_mode == "off" else "true"
-        )
-        overrides["posterior_conditioning.mode"] = args.posterior_mode
+        values["enabled"] = args.posterior_mode != "off"
+        values["mode"] = args.posterior_mode
     if args.posterior_key is not None:
-        overrides["posterior_conditioning.posterior_key"] = args.posterior_key
+        values["posterior_key"] = args.posterior_key
     if args.posterior_beta is not None:
-        overrides["posterior_conditioning.beta"] = str(args.posterior_beta)
+        values["beta"] = args.posterior_beta
     if args.posterior_min_affinity is not None:
-        overrides["posterior_conditioning.min_affinity"] = str(args.posterior_min_affinity)
+        values["min_affinity"] = args.posterior_min_affinity
     if args.posterior_cost_strength is not None:
-        overrides["posterior_conditioning.cost_strength"] = str(args.posterior_cost_strength)
+        values["cost_strength"] = args.posterior_cost_strength
     if args.posterior_strict:
-        overrides["posterior_conditioning.strict"] = "true"
-    return overrides
+        values["strict"] = True
+    return {"posterior_conditioning": values} if values else {}
 
 
-def _build_sr_refinement_overrides(args: argparse.Namespace) -> Dict[str, str]:
+def _build_sr_refinement_overrides(args: argparse.Namespace) -> Dict[str, object]:
     if args.sr_refinement_preset is None:
         return {}
     if args.confounding not in SR_CONFOUNDINGS and args.sr_refinement_preset != "none":
         raise ValueError(
             "--sr-refinement-preset is only valid for batch_effect and spot_size benchmark routes"
         )
-    return dict(SR_REFINEMENT_PRESETS[args.sr_refinement_preset])
+    return {"sc": dict(SR_REFINEMENT_PRESETS[args.sr_refinement_preset])}
 
 
-def _build_cli_set_overrides(args: argparse.Namespace) -> List[str]:
-    high_level = {}
-    high_level.update(_build_posterior_overrides(args))
-    high_level.update(_build_sr_refinement_overrides(args))
-
-    user_set_keys = _set_override_keys(args.set_overrides)
-    conflicts = sorted(set(high_level) & user_set_keys)
-    if conflicts:
-        raise ValueError(
-            "Conflicting high-level CLI option and --set override for: "
-            + ", ".join(conflicts)
-        )
-
-    graphagg_value = _set_override_value(args.set_overrides, "sc.sr_graph_agg_enabled")
-    graphagg_disabled = graphagg_value == "false"
+def _build_algorithm_overrides(args: argparse.Namespace) -> Dict[str, object]:
     if (
         args.posterior_mode in {"cost", "reference"}
         and args.confounding in SR_CONFOUNDINGS
-        and (args.sr_refinement_preset == "none" or graphagg_disabled)
+        and args.sr_refinement_preset == "none"
     ):
         raise ValueError(
             "posterior-mode=cost/reference on SR benchmark routes requires graph aggregation; "
-            "use the profile default, --sr-refinement-preset confidence_anchor, "
-            "or --set sc.sr_graph_agg_enabled=true"
+            "use the profile default or --sr-refinement-preset confidence_anchor"
         )
 
-    return [f"{key}={value}" for key, value in high_level.items()] + list(
-        args.set_overrides or []
-    )
+    overrides = _build_posterior_overrides(args)
+    overrides.update(_build_sr_refinement_overrides(args))
+    return overrides
 
 
 def _run_case(
@@ -233,32 +191,26 @@ def _run_case(
     confounding: str,
     io_overrides: Dict[str, object],
     runtime_seed: int | None,
-    set_overrides: List[str] | None = None,
+    algorithm_overrides: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
     try:
         runtime_cfg = {
             "platform": platform,
             "confounding": confounding,
+            "seed": runtime_seed,
         }
-        run_set_overrides: List[str] = []
-        if runtime_seed is None:
-            # merge_unified_config ignores None runtime overrides, so use
-            # dotted-key override to explicitly disable per-run reseeding.
-            run_set_overrides.append("runtime.seed=null")
-        else:
-            runtime_cfg["seed"] = runtime_seed
-        run_set_overrides.extend(set_overrides or [])
-        svc = pipeline.run(
+        svc = pipeline._run_with_algorithm_overrides(
             profile=profile,
             runtime_overrides=runtime_cfg,
             io_overrides=io_overrides,
-            set_overrides=run_set_overrides,
+            algorithm_overrides=algorithm_overrides,
             dry_run=False,
         )
         summary = svc.summary()
         return {
             "ok": True,
             "profile": profile,
+            "seed": runtime_seed,
             "run_dir": svc.provenance.get("run_dir"),
             "summary": summary,
             "error": None,
@@ -267,6 +219,7 @@ def _run_case(
         return {
             "ok": False,
             "profile": profile,
+            "seed": runtime_seed,
             "run_dir": None,
             "summary": None,
             "error": f"{type(exc).__name__}: {exc}",
@@ -324,9 +277,16 @@ def _batch_spec(batch_num: int) -> tuple[str, str]:
 def _resolve_seed_scope(args: argparse.Namespace) -> str:
     if args.seed_scope is not None:
         return args.seed_scope
-    # Keep benchmark wrapper parity: seed once for the full script unless the
-    # caller explicitly requests per-run reseeding.
+    # Preserve distinct seeds across benchmark cases unless the caller asks to
+    # reuse the same seed for every run.
     return "process"
+
+
+def _runtime_seed_supplier(args: argparse.Namespace, seed_scope: str):
+    if seed_scope == "run":
+        return lambda: args.seed
+    seed_stream = np.random.RandomState(args.seed)
+    return lambda: int(seed_stream.randint(0, np.iinfo(np.int32).max))
 
 
 def main(args: argparse.Namespace | None = None) -> None:
@@ -338,13 +298,11 @@ def main(args: argparse.Namespace | None = None) -> None:
     results: List[Dict[str, object]] = []
     base_io = _base_io(args)
     seed_scope = _resolve_seed_scope(args)
-    runtime_seed = args.seed if seed_scope == "run" else None
+    next_runtime_seed = _runtime_seed_supplier(args, seed_scope)
     try:
-        cli_set_overrides = _build_cli_set_overrides(args)
+        algorithm_overrides = _build_algorithm_overrides(args)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    if seed_scope == "process" and args.seed is not None:
-        set_global_seed(seed=args.seed, deterministic=True)
 
     if args.confounding == "segmentation":
         st_file = args.st_file or "xenium_spot.h5ad"
@@ -366,8 +324,8 @@ def main(args: argparse.Namespace | None = None) -> None:
                 profile="benchmark_seg",
                 confounding="segmentation",
                 io_overrides=io_cfg,
-                runtime_seed=runtime_seed,
-                set_overrides=cli_set_overrides,
+                runtime_seed=next_runtime_seed(),
+                algorithm_overrides=algorithm_overrides,
             )
             _append_result(results, f"segmentation:{seg_method}", run_result)
 
@@ -391,8 +349,8 @@ def main(args: argparse.Namespace | None = None) -> None:
                 profile="benchmark_bin2cell",
                 confounding="bin2cell",
                 io_overrides=io_cfg,
-                runtime_seed=runtime_seed,
-                set_overrides=cli_set_overrides,
+                runtime_seed=next_runtime_seed(),
+                algorithm_overrides=algorithm_overrides,
             )
             _append_result(results, f"bin2cell:{seg_method}", run_result)
 
@@ -421,8 +379,8 @@ def main(args: argparse.Namespace | None = None) -> None:
                     profile="benchmark_sr_batch",
                     confounding="batch_effect",
                     io_overrides=io_cfg,
-                    runtime_seed=runtime_seed,
-                    set_overrides=cli_set_overrides,
+                    runtime_seed=next_runtime_seed(),
+                    algorithm_overrides=algorithm_overrides,
                 )
                 _append_result(results, f"batch_effect:{spot_size}_{batch_num}", run_result)
 
@@ -446,8 +404,8 @@ def main(args: argparse.Namespace | None = None) -> None:
                 profile="benchmark_sr_spot_size",
                 confounding="spot_size",
                 io_overrides=io_cfg,
-                runtime_seed=runtime_seed,
-                set_overrides=cli_set_overrides,
+                runtime_seed=next_runtime_seed(),
+                algorithm_overrides=algorithm_overrides,
             )
             _append_result(results, f"spot_size:{spot_size}_{batch_num}", run_result)
 
@@ -466,8 +424,8 @@ def main(args: argparse.Namespace | None = None) -> None:
             profile="benchmark_impute_panel",
             confounding="gene_panel",
             io_overrides=io_cfg,
-            runtime_seed=runtime_seed,
-            set_overrides=cli_set_overrides,
+            runtime_seed=next_runtime_seed(),
+            algorithm_overrides=algorithm_overrides,
         )
         _append_result(results, "gene_panel", run_result)
 
@@ -486,8 +444,8 @@ def main(args: argparse.Namespace | None = None) -> None:
             profile="benchmark_impute_dropout",
             confounding="gene_dropout",
             io_overrides=io_cfg,
-            runtime_seed=runtime_seed,
-            set_overrides=cli_set_overrides,
+            runtime_seed=next_runtime_seed(),
+            algorithm_overrides=algorithm_overrides,
         )
         _append_result(results, "gene_dropout", run_result)
 
@@ -505,7 +463,6 @@ def main(args: argparse.Namespace | None = None) -> None:
         "posterior_mode": args.posterior_mode,
         "posterior_strict": bool(args.posterior_strict),
         "sr_refinement_preset": args.sr_refinement_preset,
-        "set_overrides": cli_set_overrides,
         "ok": all(item["ok"] for item in results),
         "total_runs": len(results),
         "passed_runs": sum(1 for item in results if item["ok"]),

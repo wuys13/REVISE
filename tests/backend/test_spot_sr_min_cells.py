@@ -165,7 +165,7 @@ def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
         profile="application_sc_sr",
         runtime_overrides={},
         io_overrides={},
-        set_overrides=(),
+        algorithm_overrides={},
     )
     merged["io"].update(
         sample_name="sample",
@@ -216,10 +216,12 @@ def test_application_spot_sr_prepare_context_honors_configured_annotation_column
         profile="application_sc_sr",
         runtime_overrides={},
         io_overrides={},
-        set_overrides=(
-            "columns.cell_type_col=major_type",
-            "columns.sub_cell_type_col=minor_type",
-        ),
+        algorithm_overrides={
+            "columns": {
+                "cell_type_col": "major_type",
+                "sub_cell_type_col": "minor_type",
+            }
+        },
     )
     merged["io"].update(
         sample_name="sample",
@@ -290,7 +292,7 @@ def test_application_spot_sr_validates_overlap_after_gene_filtering(
         profile="application_sc_sr",
         runtime_overrides={},
         io_overrides={},
-        set_overrides=(),
+        algorithm_overrides={},
     )
     merged["io"].update(
         sample_name="sample",

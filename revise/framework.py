@@ -5,7 +5,7 @@ import signal
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 from revise.backend import ModeEvaluationPolicy
 from revise.backend import ModeValidationPolicy
@@ -98,15 +98,33 @@ class REVISEPipeline:
         profile: Optional[str] = None,
         runtime_overrides: Optional[Dict[str, Any]] = None,
         io_overrides: Optional[Dict[str, Any]] = None,
-        set_overrides: Optional[Iterable[str]] = None,
+        dry_run: bool = False,
+        finalize_callback=None,
+    ):
+        return self._run_with_algorithm_overrides(
+            profile=profile,
+            runtime_overrides=runtime_overrides,
+            io_overrides=io_overrides,
+            algorithm_overrides=None,
+            dry_run=dry_run,
+            finalize_callback=finalize_callback,
+        )
+
+    def _run_with_algorithm_overrides(
+        self,
+        *,
+        profile: Optional[str] = None,
+        runtime_overrides: Optional[Dict[str, Any]] = None,
+        io_overrides: Optional[Dict[str, Any]] = None,
+        algorithm_overrides: Optional[Dict[str, Any]] = None,
         dry_run: bool = False,
         finalize_callback=None,
     ):
         # 1) Resolve final runtime config from single YAML entry:
-        # defaults -> profile -> CLI runtime/io overrides -> --set overrides.
+        # defaults -> profile -> runtime/io overrides -> algorithm overrides.
         runtime_overrides = dict(runtime_overrides or {})
         io_overrides = dict(io_overrides or {})
-        set_overrides = list(set_overrides or [])
+        algorithm_overrides = dict(algorithm_overrides or {})
 
         if profile is None:
             profile = infer_default_profile(self.raw_config, runtime_overrides)
@@ -116,7 +134,7 @@ class REVISEPipeline:
             profile=profile,
             runtime_overrides=runtime_overrides,
             io_overrides=io_overrides,
-            set_overrides=set_overrides,
+            algorithm_overrides=algorithm_overrides,
         )
 
         runtime = merged_config["runtime"]
@@ -304,6 +322,7 @@ class REVISEPipeline:
             "route": ctx.route,
             "route_key": ctx.route_key,
             "run_dir": str(ctx.run_dir),
+            "runtime_seed": ctx.merged_config.get("runtime", {}).get("seed"),
             "config_hash": getattr(ctx, "config_hash", None),
             "data_fingerprint": getattr(ctx, "data_fingerprint", None),
             "data_fingerprint_error": copy.deepcopy(

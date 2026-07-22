@@ -30,6 +30,32 @@ determine the leaf runs inside that family:
 - spot size runs four fixed spot-size leaves;
 - gene panel and gene dropout each run one leaf.
 
+Dedicated configuration controls
+--------------------------------
+
+Benchmark variants use named options rather than a generic key/value override.
+These options are applied after the selected profile or custom ``--config``:
+
+- ``--posterior-mode off|cost|reference`` selects posterior conditioning and
+  defaults to ``cost``;
+- ``--posterior-key``, ``--posterior-beta``,
+  ``--posterior-min-affinity``, and ``--posterior-cost-strength`` set the
+  corresponding posterior inputs when provided;
+- ``--posterior-strict`` makes an unavailable active posterior mode fail;
+- ``--sr-refinement-preset confidence_anchor`` selects the controlled graph
+  refinement used by ``batch_effect`` and ``spot_size`` runs, while ``none``
+  disables that refinement.
+
+Because ``--posterior-mode`` has a CLI default, it overrides the corresponding
+profile value even when the flag is omitted. The other optional values leave
+their profile settings unchanged unless they are supplied explicitly.
+
+``--seed-scope process`` (the default) derives a reproducible effective seed
+for each leaf run from ``--seed``. Every effective seed is stored as
+``runtime.seed`` in that leaf's ``merged_config.json``, contributes to its
+``config_hash``, and is included in the benchmark report. Use
+``--seed-scope run`` to reuse the same ``--seed`` for every leaf instead.
+
 For the example above, ``seg_1`` is one of four outputs. Its primary
 compatibility metric table is shaped like:
 
