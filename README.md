@@ -15,20 +15,41 @@ REVISE (REconstruction via Vision-integrated Spatial Estimation) reconstructs
 and a matched single-cell RNA-seq reference. Spatial or morphology-derived
 priors can be used when available.
 
-## Start Here: Reconstruct an SVC
+## Start Here: Install and Reconstruct an SVC
 
-Provide one spatial-transcriptomics H5AD and one matched single-cell reference,
-then run [`reconstruct.py`](reconstruct.py). Choose the 1.x reconstruction type
-from your input rows: **hST-like bins/pseudo-cells → `sp-SVC`; iST segmented
-cells → `sc-SVC`; sST spots → `sc-SVC-sr`.** The labels hST, iST, and sST are
-data-selection guidance, not current CLI values.
+REVISE supports Python 3.10 and 3.11. A clean environment is recommended.
 
-First validate the resolved inputs without running reconstruction:
+<details>
+<summary><strong>Create an environment with uv or conda</strong></summary>
 
-This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`.
+With uv:
 
 ```bash
-python reconstruct.py \
+uv venv --python 3.11
+source .venv/bin/activate
+```
+
+Or with conda:
+
+```bash
+conda create -n revise python=3.11 -y
+conda activate revise
+```
+
+</details>
+
+Install REVISE:
+
+```bash
+pip install revise-svc
+```
+
+Provide one spatial-transcriptomics H5AD and one matched single-cell reference.
+The installed command is `revise-reconstruct`. First validate the resolved
+inputs without running reconstruction:
+
+```bash
+revise-reconstruct \
   --svc-type sp-SVC \
   --sample-name sample \
   --data-root data \
@@ -38,21 +59,17 @@ python reconstruct.py \
   --dry-run
 ```
 
-Replace `sp-SVC` using the guidance below. Remove `--dry-run` to reconstruct.
-The equivalent installed command is `revise-reconstruct`.
-
+This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`. Choose another
+`--svc-type` using the guidance below, then remove `--dry-run` to reconstruct.
 Every successful full reconstruction publishes:
 
 ```text
 output/sample/SVC.h5ad
 ```
 
-`--dry-run` does not publish `SVC.h5ad`. It checks the metadata-level input
-contract and required arrays; it does not fully scan expression values.
-
 The associated `provenance.json` records the selected type, resolved route,
-configuration, inputs, stages, and artifacts. Passing preflight does not prove
-that the complete reconstruction or a biological interpretation will succeed.
+configuration, inputs, stages, and artifacts. In a source checkout,
+[`python reconstruct.py`](reconstruct.py) provides the equivalent entry point.
 
 <details>
 <summary><strong>Which --svc-type should I choose?</strong></summary>
@@ -124,20 +141,45 @@ data/
 - `--set KEY=VALUE`: advanced configuration override. High-level CLI options
   cannot be contradicted through `--set`.
 
-Run `python reconstruct.py --help` for the complete command contract.
+Run `revise-reconstruct --help` for the complete command contract.
 
 </details>
 
-REVISE has two public workflows:
+<details>
+<summary><strong>Source installation, optional capabilities, and development setup</strong></summary>
 
-| Workflow | Goal | Entry points | Main results |
-| --- | --- | --- | --- |
-| **Benchmark** | Reproduce Sim2Real-ST evaluations across six confounding factors | [`reproduce/benchmark_main.py`](reproduce/benchmark_main.py), [`reproduce/benchmark_main.sh`](reproduce/benchmark_main.sh), [`reproduce/benchmark/`](reproduce/benchmark/) | Per-gene PCC, SSIM, MSE, and NRMSE |
-| **Application** | Reconstruct SVCs and perform real-data analyses | [`reconstruct.py`](reconstruct.py), `revise-reconstruct`, [`reproduce/case/`](reproduce/case/) | `SVC.h5ad`, run provenance, and notebook figures |
+To install the current repository source:
 
-Documentation: <https://revise-svc.readthedocs.io/en/latest/>
+```bash
+git clone https://github.com/wuys13/REVISE.git
+cd REVISE
+pip install .
+```
 
-Dataset and reproduced results: <https://zenodo.org/records/17705737>
+The base package contains reconstruction, the default OT implementation,
+clustering, and the core scientific stack. Install additional capabilities only
+when needed:
+
+| Capability | Installation | Purpose |
+| --- | --- | --- |
+| Additional OT implementation | `pip install "revise-svc[tacco]"` | Adds another selectable OT implementation, such as TACCO |
+| Pathway analysis | `pip install "revise-svc[pathway]"` | Dependencies used by pathway analysis notebooks |
+| Cell-cell interaction analysis | `pip install "revise-svc[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
+| Trajectory analysis | `pip install "revise-svc[trajectory]"` | Dependencies used by trajectory analysis notebooks |
+| SpatialData input | `pip install "revise-svc[spatialdata]"` | SpatialData/Zarr input support |
+
+For optional groups from a source checkout, replace `revise-svc` with `.`. For
+development:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Installation does not download research data or external analysis databases.
+
+</details>
+
+Detailed documentation: <https://revise-svc.readthedocs.io/en/latest/>
 
 ## What REVISE Covers
 
@@ -174,47 +216,17 @@ The run's `provenance.json` records whether that result is an `sp-SVC`,
 `sc-SVC`, or `sc-SVC-sr`, together with the resolved route, configuration,
 inputs, stages, and artifacts.
 
-## Installation
+## Reproduce
 
-The unified CLI and optional groups described below are the current source
-contract. Install that exact code from the repository:
+Paper datasets and reproduced results are available from
+<https://zenodo.org/records/17705737>. The repository keeps benchmark launchers
+and curated notebooks under [`reproduce/`](reproduce/); see
+[`reproduce/README.md`](reproduce/README.md) for the entry-point map.
 
-```bash
-git clone https://github.com/wuys13/REVISE.git
-cd REVISE
-python -m pip install .
-```
+<details>
+<summary><strong>Run the Sim2Real-ST benchmarks</strong></summary>
 
-The published package can be installed with `python -m pip install revise-svc`,
-but releases can lag the repository; check the installed version before
-expecting the current CLI or optional groups.
-
-The base source installation contains reconstruction, the default OT
-implementation, clustering, and the core scientific stack. Install additional
-capabilities only when needed:
-
-| Capability | Installation | Purpose |
-| --- | --- | --- |
-| Additional OT implementation | `python -m pip install ".[tacco]"` | Adds another selectable OT implementation, such as TACCO |
-| Pathway analysis | `python -m pip install ".[pathway]"` | Dependencies used by pathway analysis notebooks |
-| Cell-cell interaction analysis | `python -m pip install ".[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
-| Trajectory analysis | `python -m pip install ".[trajectory]"` | Dependencies used by trajectory analysis notebooks |
-| SpatialData input | `python -m pip install ".[spatialdata]"` | SpatialData/Zarr input support |
-
-After a matching package version is published, replace `.` with `revise-svc`
-in those commands. For development:
-
-```bash
-python -m pip install -e ".[dev]"
-```
-
-Installation does not download research data or external analysis databases.
-
-## Quick Start
-
-### Benchmark
-
-From a source checkout, run one Sim2Real-ST confounding family:
+From a source checkout, run one confounding family:
 
 ```bash
 python reproduce/benchmark_main.py \
@@ -234,16 +246,37 @@ bash reproduce/benchmark_main.sh
 
 The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
 
-### Application examples and notebooks
+</details>
+
+<details>
+<summary><strong>Open the application and downstream-analysis notebooks</strong></summary>
 
 ![SVC applications](png/SVC_applications.png)
 
 <p align="center">Biological insights enabled by SVC reconstruction</p>
 
-Application reconstruction and downstream analysis notebooks are under
-[`reproduce/case/`](reproduce/case/).
+Application reconstruction and downstream-analysis notebooks are under
+[`reproduce/case/`](reproduce/case/). Some require the optional `pathway`,
+`cci`, or `trajectory` installation groups and their corresponding external
+reference resources.
+
+</details>
+
+<details>
+<summary><strong>Reproduction scope and validation status</strong></summary>
+
+The notebooks preserve the paper workflows, but their presence does not mean
+that the current source checkout has rerun every real-data analysis. Real-data
+end-to-end validation remains a separate release step. Installation does not
+download the paper datasets, reproduced results, or external analysis
+databases.
+
+</details>
 
 ## Python API
+
+<details>
+<summary><strong>Run the reconstruction pipeline from Python</strong></summary>
 
 ```python
 from revise.framework import REVISEPipeline
@@ -264,17 +297,12 @@ svc = pipeline.run(
 )
 ```
 
-## Reproduction Notebooks
-
-The curated paper notebooks are tracked under [`reproduce/`](reproduce/).
-They require the corresponding data and, for some downstream analyses, the
-optional installation groups described above.
-
-Their presence preserves the paper workflows; it does not mean the current
-source checkout has rerun every real-data analysis. Real-data end-to-end
-validation remains a separate release step.
+</details>
 
 ## Repository Layout
+
+<details>
+<summary><strong>Show the top-level repository structure</strong></summary>
 
 - `revise/`: installable reconstruction and analysis package.
 - `reproduce/`: benchmark launchers and benchmark/application notebooks.
@@ -283,6 +311,8 @@ validation remains a separate release step.
 - `tests/`: behavioral, scientific-contract, packaging, and CLI tests.
 - `.github/`: continuous integration.
 - `constraints/`: tested Python 3.10/3.11 dependency constraints.
+
+</details>
 
 ## License
 
