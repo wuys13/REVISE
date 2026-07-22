@@ -27,14 +27,19 @@ production-scale pipeline limit, memory requirement, or throughput guarantee.
 Spot super-resolution localization
 -----------------------------------
 
-When the sc-SVC-sr fallback creates virtual-cell rows, they share the source spot
-centroid. With no ``PM_on_cell.csv`` matrix, proportions are converted with
-``np.round``, repaired to an exact quota, and placed into virtual-cell rows by
-a seeded random permutation.
+When segmentation-derived centers are present in
+``uns["revise_cell_locations"]``, sc-SVC-sr uses those x/y coordinates. Other
+virtual-cell rows share the source spot centroid. With no ``PM_on_cell.csv``
+matrix, proportions are converted with ``np.round``, repaired to an exact quota,
+and assigned to the existing virtual-cell rows by a seeded random permutation.
+Supplied centers must already use the same coordinate system and scale as
+``obsm["spatial"]``. The histology-prior preprocessor checks shared spot
+coordinates before writing the table, but a manually constructed H5AD must
+preserve this alignment itself.
 
-This proves quota composition and same-seed repeatability. It is not a nucleus
-or cell-localization result and does not establish sub-spot morphology, true
-cell identity, or biological position.
+This proves quota composition and same-seed repeatability. The random assignment
+is not a nucleus or cell-localization result and does not establish sub-spot
+morphology or which inferred cell type belongs to a supplied center.
 
 Metrics
 -------

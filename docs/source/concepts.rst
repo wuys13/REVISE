@@ -47,14 +47,21 @@ Every full pipeline request follows the same ordered stages:
 ``ot.ga.solver`` and ``ot.lr.solver`` select POT or TACCO for their respective
 stages. ``--ot-method`` is the convenience control that sets both stages.
 
-Spot super-resolution virtual cells and random placement
----------------------------------------------------------
+Spot super-resolution cell locations and random assignment
+-----------------------------------------------------------
 
 A sc-SVC-sr route needs a count of virtual cells per spot. If a curated
 ``uns["all_cells_in_spot"]`` mapping is absent, the input adapter estimates
-counts from spot transcript totals and creates virtual-cell rows. Those rows
-share the source spot coordinate; the fallback does not estimate sub-spot
-coordinates.
+counts from spot transcript totals and creates virtual-cell rows.
+
+Segmentation-derived cell centers use the optional standardized
+``uns["revise_cell_locations"]`` DataFrame. Its index contains unique
+``cell_id`` values, its columns are ``spot_name``, ``x``, and ``y``, and its
+cell-to-spot assignments must agree with ``uns["all_cells_in_spot"]``. The
+histology-prior preprocessor writes this table from segmented-cell centroids.
+Its x/y values must use the same coordinate system and scale as
+``obsm["spatial"]``. Rows without a supplied center use the source spot
+coordinate; REVISE does not invent a sub-spot coordinate for them.
 
 The LR contribution proportions are converted with ``np.round`` and then
 repaired in stable order until each spot has an exact quota equal to its virtual
@@ -68,8 +75,10 @@ existing virtual-cell rows inside each spot.
 
 The tested invariant is exact per-spot composition, plus repeatability for the
 same seed. Which virtual-cell row receives a type can change with the seed.
-This random assignment is not a nucleus or cell-localization result and cannot
-establish true within-spot cell identity or morphology-aware position.
+This random assignment changes which existing virtual-cell row receives a cell
+type; it does not generate an x/y coordinate. It is not a nucleus or
+cell-localization result and cannot establish which inferred type belongs to a
+supplied segmentation center.
 
 Inputs
 ------

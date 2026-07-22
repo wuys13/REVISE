@@ -9,9 +9,13 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 from scipy.spatial import cKDTree
-from skimage import io, measure
 
-from revise.utils.spot_sr_input import ALL_CELLS_IN_SPOT_KEY, ensure_all_cells_in_spot
+from revise.utils.spot_sr_input import (
+    ALL_CELLS_IN_SPOT_KEY,
+    CELL_LOCATIONS_KEY,
+    ensure_all_cells_in_spot,
+    validate_cell_locations,
+)
 
 
 HISTOLOGY_PRIOR_KEY = "revise_histology_prior"
@@ -42,8 +46,9 @@ class HistologyPriorResult:
     """Outputs from histology preprocessing.
 
     ``mapping`` is written to ``st_adata.uns["all_cells_in_spot"]``. The cell
-    and spot tables are returned for inspection or external reporting; the core
-    REVISE engine only consumes the standardized mapping.
+    and spot tables are returned for inspection or external reporting. The core
+    REVISE engine consumes the mapping and, when available, the standardized
+    segmented-cell centers in ``st_adata.uns["revise_cell_locations"]``.
     """
 
     mapping: Dict[str, List[str]]
@@ -54,6 +59,8 @@ class HistologyPriorResult:
 
 def read_histology_image(image_path: PathLike) -> np.ndarray:
     """Read a raw histology image from disk and validate its shape."""
+
+    from skimage import io
 
     path = Path(image_path)
     if not path.exists():
@@ -70,6 +77,8 @@ def read_histology_image(image_path: PathLike) -> np.ndarray:
 
 def read_labeled_mask(mask_path: PathLike) -> np.ndarray:
     """Read a labeled segmentation mask where 0 is background and labels are cells."""
+
+    from skimage import io
 
     path = Path(mask_path)
     if not path.exists():
@@ -99,6 +108,8 @@ def extract_labeled_mask_cells(
     cell_id_prefix:
         Prefix used to create stable cell ids from mask labels.
     """
+
+    from skimage import measure
 
     if min_area <= 0:
         raise ValueError("min_area must be positive")
@@ -291,6 +302,8 @@ def build_histology_prior_from_tables(
     provenance.
     """
 
+    _validate_spot_coordinates_against_adata(st_adata, spot_table)
+
     image_mapping = build_spot_cell_mapping(
         cell_table,
         spot_table,
@@ -313,6 +326,23 @@ def build_histology_prior_from_tables(
         min_cells_per_spot=min_cells_per_spot,
         max_cells_per_spot=max_cells_per_spot,
     )
+    cell_lookup = _validate_cell_table(cell_table).set_index("cell_id")
+    cell_to_spot = {
+        str(cell_id): str(spot_id)
+        for spot_id, cell_ids in complete_mapping.items()
+        for cell_id in cell_ids
+        if str(cell_id) in cell_lookup.index
+    }
+    locations = cell_lookup.loc[list(cell_to_spot), ["x", "y"]].copy()
+    locations.insert(
+        0,
+        "spot_name",
+        [cell_to_spot[cell_id] for cell_id in locations.index],
+    )
+    st_adata.uns[CELL_LOCATIONS_KEY] = validate_cell_locations(
+        locations,
+        all_cells_in_spot=complete_mapping,
+    )
 
     active_spots = set(st_adata.obs_names.astype(str))
     histology_mapped_spots = [
@@ -333,6 +363,8 @@ def build_histology_prior_from_tables(
         "n_image_mapped_spots": int(len(histology_mapped_spots)),
         "n_image_mapped_cells": int(mapped_cell_count),
         "n_fallback_spots": int(len(fallback_spots)),
+        "cell_locations_key": CELL_LOCATIONS_KEY,
+        "n_cell_locations": int(len(locations)),
         "n_spot_table_not_in_adata": int(
             len(set(spot_table["spot_id"].astype(str)) - active_spots)
         ),
@@ -527,6 +559,26 @@ def _validate_cell_table(cell_table: pd.DataFrame) -> pd.DataFrame:
     if not np.isfinite(cells.loc[:, ["x", "y"]].to_numpy(dtype=np.float64)).all():
         raise ValueError("Cell table contains non-finite coordinates")
     return cells.reset_index(drop=True)
+
+
+def _validate_spot_coordinates_against_adata(
+    st_adata: AnnData,
+    spot_table: pd.DataFrame,
+) -> None:
+    """Reject mixed coordinate frames before persisting segmented centers."""
+
+    spots = _validate_spot_table(spot_table).set_index("spot_id")
+    expected_spots = spot_table_from_adata(st_adata).set_index("spot_id")
+    shared = [spot_id for spot_id in expected_spots.index if spot_id in spots.index]
+    if not shared:
+        return
+    supplied = spots.loc[shared, ["x", "y"]].to_numpy(dtype=np.float64)
+    expected = expected_spots.loc[shared, ["x", "y"]].to_numpy(dtype=np.float64)
+    if not np.allclose(supplied, expected, rtol=1e-5, atol=1e-8):
+        raise ValueError(
+            "Spot-table x/y must match st_adata.obsm['spatial'] for shared spots "
+            "so segmented and fallback cell centers use one coordinate frame"
+        )
 
 
 def _find_column(table: pd.DataFrame, candidates: Tuple[str, ...]) -> Optional[str]:

@@ -66,8 +66,19 @@ Application command
      --output-root output
 
 Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
-sc-SVC-sr`` for spot super-resolution. sc-SVC also accepts ``--select-ct``,
-``--cell-type-col``, ``--sub-cell-type-col``, and ``--sc-mapping mean|random``.
+sc-SVC-sr`` for spot super-resolution. ``--cell-type-col`` selects the broad
+reference annotation on every route. ``--sub-cell-type-col`` selects the
+refined annotation required by both sc-SVC routes; the current sc-SVC-sr
+composition assignment uses the broad column. sc-SVC also accepts
+``--select-ct`` and ``--sc-mapping mean|random``.
+
+For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in
+``st_adata.uns["revise_cell_locations"]`` with a unique ``cell_id`` index and
+``spot_name/x/y`` columns. Its assignments agree with
+``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
+and scale as ``obsm["spatial"]``; rows without centers remain at the spot center.
+Without ``PM_on_cell.csv``, those coordinates are retained while inferred cell
+types are assigned to the existing rows by a seeded random permutation.
 
 After installation, the equivalent package command is:
 

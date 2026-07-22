@@ -134,6 +134,43 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
     }
 
 
+def test_sc_svc_sr_forwards_configured_cell_type_columns_without_sc_only_selection():
+    from revise.application.service import _build_set_overrides
+
+    args = SimpleNamespace(
+        svc_type="sc-SVC-sr",
+        ot_method=None,
+        select_ct="T",
+        cell_type_col="major_type",
+        sub_cell_type_col="minor_type",
+        set_overrides=[],
+    )
+
+    overrides = _build_set_overrides(args)
+
+    assert "columns.cell_type_col=major_type" in overrides
+    assert "columns.sub_cell_type_col=minor_type" in overrides
+    assert not any(value.startswith("sc.select_ct=") for value in overrides)
+
+
+def test_sp_svc_forwards_configured_annotation_columns():
+    from revise.application.service import _build_set_overrides
+
+    args = SimpleNamespace(
+        svc_type="sp-SVC",
+        ot_method=None,
+        select_ct="all",
+        cell_type_col="major_type",
+        sub_cell_type_col="minor_type",
+        set_overrides=[],
+    )
+
+    overrides = _build_set_overrides(args)
+
+    assert "columns.cell_type_col=major_type" in overrides
+    assert "columns.sub_cell_type_col=minor_type" in overrides
+
+
 def test_root_application_wrapper_delegates_to_package_cli():
     import reconstruct
     from revise.application import cli

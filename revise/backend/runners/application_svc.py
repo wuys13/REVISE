@@ -23,10 +23,20 @@ class ApplicationSVC(BaseSVCAnchor):
 
         sc.pp.filter_cells(self.sc_ref_adata, min_counts=self.config.prep_sc_min_counts)
         sc.pp.filter_genes(self.sc_ref_adata, min_cells=self.config.prep_sc_min_cells)
-        replace_columns = {k: k.replace("/", "_") for k in self.sc_ref_adata.obs['Level1'].unique().tolist() if '/' in k}
-        self.sc_ref_adata.obs['Level1'].replace(replace_columns, inplace=True)
-        replace_columns = {k: k.replace("/", "_") for k in self.sc_ref_adata.obs['Level2'].unique().tolist() if '/' in k}
-        self.sc_ref_adata.obs['Level2'].replace(replace_columns, inplace=True)
+        annotation_columns = {
+            str(getattr(self.config, "cell_type_col", "Level1")),
+            str(getattr(self.config, "sub_cell_type_col", "Level2")),
+        }
+        for column in annotation_columns:
+            if column not in self.sc_ref_adata.obs:
+                continue
+            self.sc_ref_adata.obs[column] = self.sc_ref_adata.obs[column].replace(
+                {
+                    value: value.replace("/", "_")
+                    for value in self.sc_ref_adata.obs[column].unique().tolist()
+                    if isinstance(value, str) and "/" in value
+                }
+            )
 
     def _adata_validate(self):
         """Validate that spatial and reference data have overlapping genes.

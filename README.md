@@ -15,6 +15,119 @@ REVISE (REconstruction via Vision-integrated Spatial Estimation) reconstructs
 and a matched single-cell RNA-seq reference. Spatial or morphology-derived
 priors can be used when available.
 
+## Start Here: Reconstruct an SVC
+
+Provide one spatial-transcriptomics H5AD and one matched single-cell reference,
+then run [`reconstruct.py`](reconstruct.py). Choose the 1.x reconstruction type
+from your input rows: **hST-like bins/pseudo-cells → `sp-SVC`; iST segmented
+cells → `sc-SVC`; sST spots → `sc-SVC-sr`.** The labels hST, iST, and sST are
+data-selection guidance, not current CLI values.
+
+First validate the resolved inputs without running reconstruction:
+
+This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`.
+
+```bash
+python reconstruct.py \
+  --svc-type sp-SVC \
+  --sample-name sample \
+  --data-root data \
+  --st-file st.h5ad \
+  --sc-ref-file sc_ref.h5ad \
+  --output-root output \
+  --dry-run
+```
+
+Replace `sp-SVC` using the guidance below. Remove `--dry-run` to reconstruct.
+The equivalent installed command is `revise-reconstruct`.
+
+Every successful full reconstruction publishes:
+
+```text
+output/sample/SVC.h5ad
+```
+
+`--dry-run` does not publish `SVC.h5ad`. It checks the metadata-level input
+contract and required arrays; it does not fully scan expression values.
+
+The associated `provenance.json` records the selected type, resolved route,
+configuration, inputs, stages, and artifacts. Passing preflight does not prove
+that the complete reconstruction or a biological interpretation will succeed.
+
+<details>
+<summary><strong>Which --svc-type should I choose?</strong></summary>
+
+| Your ST data | Typical platform and input rows | `--svc-type` | What REVISE reconstructs |
+| --- | --- | --- | --- |
+| **hST-like** high-resolution sequencing data | Visium HD; each row is a bin or pseudo-cell | `sp-SVC` | Reference-annotated expression with spatial refinement for the retained high-resolution units |
+| **iST** imaging-based data | iST-like segmented-cell inputs, such as Xenium, CosMx, or MERFISH | `sc-SVC` | Segmented-cell positions combined with reference-informed cell-state refinement and gene completion |
+| **sST** spot-based data | Visium; each row is a multi-cell spot | `sc-SVC-sr` | Reference-informed virtual-cell expression and cell-type composition within each spot |
+
+`sc-SVC-sr` does not by itself infer true sub-spot cell positions. When the ST
+H5AD contains segmentation-derived cell centers, REVISE uses them. Virtual
+cells without a supplied center remain at their source spot center.
+
+</details>
+
+<details>
+<summary><strong>Input file layout and AnnData requirements</strong></summary>
+
+The example command resolves these paths:
+
+```text
+data/
+├── sample_st.h5ad
+└── sc_ref.h5ad
+```
+
+`--sample-name sample` and `--st-file st.h5ad` resolve to
+`data/sample_st.h5ad`; the reference resolves directly to
+`data/sc_ref.h5ad`.
+
+- Both inputs must have non-empty `X`, unique `obs_names`, unique `var_names`,
+  and at least one shared gene.
+- The ST input must contain finite two-dimensional coordinates in
+  `obsm["spatial"]`.
+- The reference must contain the broad annotation selected by
+  `--cell-type-col` (default `obs["Level1"]`) on every route. `sc-SVC` and
+  `sc-SVC-sr` also require the refined annotation selected by
+  `--sub-cell-type-col` (default `obs["Level2"]`).
+- If the reference contains the default `Patient` column, at least one row must
+  match `--sample-name`; use `--patient-key` to select another column.
+- For sST inputs with segmentation-derived centers, the optional
+  `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
+  index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
+  `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
+  scale as `obsm["spatial"]`. Missing centers fall back to the spot center.
+  Without a `PM_on_cell.csv`, these coordinates are retained while cell types
+  are assigned to the existing rows by a seeded random permutation of each
+  spot's inferred quota.
+
+</details>
+
+<details>
+<summary><strong>Frequently used reconstruction parameters</strong></summary>
+
+- `--seed`: controls deterministic random choices; default `42`.
+- `--ot-method pot|tacco`: selects one OT implementation for both Global
+  Anchoring and Local Refinement. TACCO requires the optional installation
+  group described below.
+- `--select-ct`: for `sc-SVC`, reconstruct one broad cell type or use the
+  default `all`.
+- `--cell-type-col`: selects the broad reference annotation column for all
+  three routes.
+- `--sub-cell-type-col`: selects the refined annotation required by `sc-SVC`
+  and `sc-SVC-sr`. `sc-SVC-sr` validates this column, but its current
+  composition assignment is driven by the broad column.
+- `--sc-mapping mean|random`: for `sc-SVC`, map each reconstructed spatial row
+  to its cluster mean expression or to a seeded same-cluster reference row.
+- `--set KEY=VALUE`: advanced configuration override. High-level CLI options
+  cannot be contradicted through `--set`.
+
+Run `python reconstruct.py --help` for the complete command contract.
+
+</details>
+
 REVISE has two public workflows:
 
 | Workflow | Goal | Entry points | Main results |
@@ -121,28 +234,11 @@ bash reproduce/benchmark_main.sh
 
 The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
 
-### Application
+### Application examples and notebooks
 
 ![SVC applications](png/SVC_applications.png)
 
 <p align="center">Biological insights enabled by SVC reconstruction</p>
-
-Prepare an ST AnnData file and a matched single-cell reference, then run from
-the repository root:
-
-```bash
-python reconstruct.py \
-  --svc-type sp-SVC \
-  --sample-name sample \
-  --data-root data \
-  --st-file st.h5ad \
-  --sc-ref-file sc_ref.h5ad \
-  --output-root output
-```
-
-`--svc-type` accepts `sp-SVC`, `sc-SVC`, or `sc-SVC-sr`. The public result is
-always `output/sample/SVC.h5ad`, and the selected result type is recorded in
-`provenance.json`. The equivalent installed command is `revise-reconstruct`.
 
 Application reconstruction and downstream analysis notebooks are under
 [`reproduce/case/`](reproduce/case/).

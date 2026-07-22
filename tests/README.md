@@ -23,6 +23,7 @@ environment variables documented in their modules and CI jobs.
 | `application/test_cli_dry_run.py` | `revise/application/cli.py` | Source CLI preflight without reconstruction | Application/config edits | No scientific stages |
 | `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
 | `application/test_service.py` | `revise/application/service.py` | sc-SVC merge and `SVC.h5ad` publication | Result-assembly edits | No kernels or real data |
+| `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
 | `backend/test_graph_cluster_spatial_score.py` | `revise/backend/` graph code | Graph aggregation, clustering, and scale smoke | Graph/backend edits | Component scale, not full pipeline |
 | `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | sc-SVC LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
@@ -36,6 +37,7 @@ environment variables documented in their modules and CI jobs.
 | `config/test_ot_config.py` | `revise/config/` plus OT application wiring | Schema, profiles, locked overrides, and solver mapping | Config/OT edits | Resolved configuration, not real runs |
 | `io/test_h5ad_preflight.py` | `revise/io/` and input resolution | H5AD roles, axes, labels, overlap, and dependency preflight | Input-contract edits | Metadata and bounded synthetic values |
 | `preprocess/test_cli.py` | `revise/preprocess/` | Histology-prior console entry | Preprocess packaging edits | Static entry contract only |
+| `preprocess/test_histology_priors.py` | `revise/preprocess/histology_priors.py`, `revise/backend/ops/meta.py` | Segmentation centers persist in the standard cell-location table and missing centers use spot coordinates | Histology/SR input edits | Synthetic coordinates only |
 | `recon/test_cross_process_determinism.py` | `revise/recon/` and deterministic utilities | Same-seed identities across processes | Determinism edits | Synthetic components |
 | `recon/test_failure_provenance.py` | `revise/recon/context.py`, `revise/framework.py` | Failure/interruption manifests and publication compensation | Lifecycle edits | Catchable failures, not power loss |
 | `recon/test_lifecycle_trace.py` | `revise/recon/pipeline.py` | Fixed stage order and trace transitions | Pipeline-stage edits | Synthetic strategy |

@@ -7,7 +7,13 @@ from tqdm import tqdm
 from revise.backend.ops.topology import get_adjacency_graph
 
 
-def get_sc_obs(spot_names, all_cells_in_spot, spatial_coords):
+def get_sc_obs(
+    spot_names,
+    all_cells_in_spot,
+    spatial_coords,
+    *,
+    cell_locations=None,
+):
     """
     Create DataFrame mapping spots to their constituent cells, with spatial coordinates.
 
@@ -43,6 +49,19 @@ def get_sc_obs(spot_names, all_cells_in_spot, spatial_coords):
         })
         sc_obs = pd.concat([sc_obs, spot_sc_obs], axis=0)
     sc_obs.reset_index(drop=True, inplace=True)
+    sc_obs[["x", "y"]] = sc_obs[["x", "y"]].astype(np.float64)
+    if cell_locations is not None:
+        from revise.utils.spot_sr_input import validate_cell_locations
+
+        locations = validate_cell_locations(
+            cell_locations,
+            all_cells_in_spot=all_cells_in_spot,
+        )
+        if not locations.empty:
+            cell_ids = sc_obs["cell_id"].astype(str)
+            known = cell_ids.isin(locations.index)
+            aligned = locations.reindex(cell_ids[known])
+            sc_obs.loc[known, ["x", "y"]] = aligned[["x", "y"]].to_numpy()
     return sc_obs
 
 def get_true_cell_type(SVC_obs, adata_sc):

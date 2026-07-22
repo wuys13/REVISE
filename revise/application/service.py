@@ -53,10 +53,12 @@ MANAGED_SET_KEYS = {
     "io.save_outputs",
     "runtime.seed",
 }
-SC_MANAGED_SET_KEYS = {
-    "sc.select_ct",
+COLUMN_SET_KEYS = {
     "columns.cell_type_col",
     "columns.sub_cell_type_col",
+}
+SC_MANAGED_SET_KEYS = {
+    "sc.select_ct",
 }
 
 
@@ -225,15 +227,16 @@ def _build_set_overrides(args: argparse.Namespace) -> list[str]:
                 f"ot.lr.solver={args.ot_method}",
             )
         )
+    managed.update(COLUMN_SET_KEYS)
+    values.extend(
+        (
+            f"columns.cell_type_col={args.cell_type_col}",
+            f"columns.sub_cell_type_col={args.sub_cell_type_col}",
+        )
+    )
     if args.svc_type == "sc-SVC":
         managed.update(SC_MANAGED_SET_KEYS)
-        values.extend(
-            (
-                f"sc.select_ct={args.select_ct}",
-                f"columns.cell_type_col={args.cell_type_col}",
-                f"columns.sub_cell_type_col={args.sub_cell_type_col}",
-            )
-        )
+        values.append(f"sc.select_ct={args.select_ct}")
     conflicts = sorted(
         user_key
         for user_key in _override_keys(args.set_overrides)

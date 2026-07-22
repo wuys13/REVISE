@@ -2,6 +2,7 @@
 
 from revise.preprocess.histology_priors import (
     ALL_CELLS_IN_SPOT_KEY,
+    CELL_LOCATIONS_KEY,
     HISTOLOGY_PRIOR_KEY,
     HistologyPriorResult,
     build_histology_prior_h5ad,
@@ -15,6 +16,7 @@ from revise.preprocess.histology_priors import (
 
 __all__ = [
     "ALL_CELLS_IN_SPOT_KEY",
+    "CELL_LOCATIONS_KEY",
     "HISTOLOGY_PRIOR_KEY",
     "HistologyPriorResult",
     "build_histology_prior_h5ad",

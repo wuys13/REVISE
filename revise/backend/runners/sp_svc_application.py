@@ -8,7 +8,6 @@ from tqdm import tqdm
 
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
-from revise.analysis.metrics import compute_clustering_metrics
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.posterior_conditioning import (
     condition_cost_matrix,
@@ -196,7 +195,11 @@ class SpSVC(ApplicationSVC):
 
         svc_recon_adata = self.st_adata.copy()
         self.logger.info(f"before trim: {svc_recon_adata.X.data.shape}")
-        svc_recon_adata, celltype_genes = trim_sp_adata(svc_recon_adata, self.sc_ref_adata, "Level1")
+        svc_recon_adata, celltype_genes = trim_sp_adata(
+            svc_recon_adata,
+            self.sc_ref_adata,
+            self.config.cell_type_col,
+        )
         self.logger.info(f"after trim: {svc_recon_adata.X.data.shape}")
 
         svc_recon_adata.obsm = self.st_adata.obsm.copy()
@@ -346,6 +349,8 @@ class SpSVC(ApplicationSVC):
         computes clustering at multiple resolutions, and generates UMAP
         and spatial scatter plots saved to the result directory.
         """
+        from revise.analysis.metrics import compute_clustering_metrics
+
         adata = adata.copy()
         sc.pp.filter_cells(adata, min_genes=self.config.plot_min_genes)
         sc.pp.filter_genes(adata, min_cells=self.config.plot_min_cells)

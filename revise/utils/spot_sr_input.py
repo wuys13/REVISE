@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import numpy as np
@@ -10,6 +11,7 @@ from scipy.spatial import cKDTree
 
 
 ALL_CELLS_IN_SPOT_KEY = "all_cells_in_spot"
+CELL_LOCATIONS_KEY = "revise_cell_locations"
 ESTIMATED_CELL_COUNT_COL = "estimated_cell_count"
 
 
@@ -134,7 +136,78 @@ def _validate_all_cells_in_spot(
             f"st_adata.uns['{key}'] contains empty cell lists for {len(empty)} "
             f"active spots; examples: {preview}"
         )
+    mapped_ids = [cell_id for cells in normalized.values() for cell_id in cells]
+    if len(mapped_ids) != len(set(mapped_ids)):
+        duplicates = sorted(
+            cell_id
+            for cell_id, count in Counter(mapped_ids).items()
+            if count > 1
+        )
+        raise ValueError(
+            f"st_adata.uns['{key}'] must contain unique cell ids; "
+            f"duplicates: {duplicates[:5]}"
+        )
     return normalized
+
+
+def validate_cell_locations(
+    raw_locations,
+    *,
+    all_cells_in_spot: Mapping[Any, Any],
+    key: str = CELL_LOCATIONS_KEY,
+) -> pd.DataFrame:
+    """Validate optional segmented-cell centers embedded in an ST AnnData."""
+
+    if not isinstance(raw_locations, pd.DataFrame):
+        raise TypeError(f"st_adata.uns['{key}'] must be a pandas DataFrame")
+    required = ["spot_name", "x", "y"]
+    missing = [column for column in required if column not in raw_locations.columns]
+    if missing:
+        raise KeyError(f"st_adata.uns['{key}'] is missing columns: {missing}")
+
+    locations = raw_locations.loc[:, required].copy()
+    locations.index = locations.index.astype(str)
+    locations.index.name = "cell_id"
+    if locations.index.has_duplicates:
+        raise ValueError(f"st_adata.uns['{key}'] must have unique cell_id index values")
+    locations["spot_name"] = locations["spot_name"].astype(str)
+    try:
+        locations[["x", "y"]] = locations[["x", "y"]].astype(np.float64)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"st_adata.uns['{key}'] x/y values must be numeric") from exc
+    if not np.isfinite(locations[["x", "y"]].to_numpy()).all():
+        raise ValueError(f"st_adata.uns['{key}'] x/y values must be finite")
+
+    mapped_spots = {}
+    duplicate_ids = set()
+    for spot_name, cell_ids in all_cells_in_spot.items():
+        for cell_id in cell_ids:
+            normalized_id = str(cell_id)
+            if normalized_id in mapped_spots:
+                duplicate_ids.add(normalized_id)
+            mapped_spots[normalized_id] = str(spot_name)
+    if duplicate_ids:
+        raise ValueError(
+            f"uns['{ALL_CELLS_IN_SPOT_KEY}'] must contain unique cell ids; "
+            f"duplicates: {sorted(duplicate_ids)[:5]}"
+        )
+    unknown = sorted(set(locations.index) - set(mapped_spots))
+    if unknown:
+        raise ValueError(
+            f"st_adata.uns['{key}'] contains cell ids absent from "
+            f"uns['{ALL_CELLS_IN_SPOT_KEY}']: {unknown[:5]}"
+        )
+    mismatched = [
+        cell_id
+        for cell_id, spot_name in locations["spot_name"].items()
+        if mapped_spots[cell_id] != spot_name
+    ]
+    if mismatched:
+        raise ValueError(
+            f"st_adata.uns['{key}'] spot_name disagrees with "
+            f"uns['{ALL_CELLS_IN_SPOT_KEY}'] for cell ids: {mismatched[:5]}"
+        )
+    return locations
 
 
 def _build_mapping_from_transcript_counts(

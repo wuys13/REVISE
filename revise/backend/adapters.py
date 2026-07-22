@@ -531,8 +531,6 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
         # The original script uses min_genes for sc cells and min_cells for genes.
         sc.pp.filter_cells(adata_sc, min_genes=conf.prep_sc_min_counts)
         sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
-        _replace_slash_labels(adata_sc, ["Level1", "Level2"])
-
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc
@@ -835,8 +833,6 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
             io_cfg.get("patient_key", "Patient"),
             io_cfg["sample_name"],
         )
-        _replace_slash_labels(adata_sc, ["Level1", "Level2"])
-
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc

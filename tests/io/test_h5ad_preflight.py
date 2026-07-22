@@ -553,6 +553,50 @@ def test_sc_svc_custom_columns_are_the_full_runner_contract(tmp_path):
     assert report["status"] == "ready"
 
 
+def test_application_sr_preflight_rejects_mismatched_cell_locations(tmp_path):
+    _write_application_inputs(tmp_path)
+    st = read_h5ad(tmp_path / "sample_st.h5ad")
+    st.uns["all_cells_in_spot"] = {
+        str(st.obs_names[0]): ["cell-1"],
+        str(st.obs_names[1]): ["cell-2"],
+    }
+    st.uns["revise_cell_locations"] = pd.DataFrame(
+        {"spot_name": [str(st.obs_names[1])], "x": [0.1], "y": [0.2]},
+        index=pd.Index(["cell-1"], name="cell_id"),
+    )
+    st.write_h5ad(tmp_path / "sample_st.h5ad")
+    _, io, specs = _application_specs(tmp_path)
+
+    with pytest.raises(ValueError, match="spot_name disagrees"):
+        REVISEInputService(io).preflight(
+            specs,
+            runtime={"mode": "application", "task": "sc_svc_sr"},
+            columns=COLUMNS,
+        )
+
+
+def test_application_sr_preflight_rejects_duplicate_mapping_cell_ids(tmp_path):
+    _write_application_inputs(tmp_path)
+    st = read_h5ad(tmp_path / "sample_st.h5ad")
+    st.uns["all_cells_in_spot"] = {
+        str(st.obs_names[0]): ["cell-1"],
+        str(st.obs_names[1]): ["cell-1"],
+    }
+    st.uns["revise_cell_locations"] = pd.DataFrame(
+        {"spot_name": [str(st.obs_names[1])], "x": [0.1], "y": [0.2]},
+        index=pd.Index(["cell-1"], name="cell_id"),
+    )
+    st.write_h5ad(tmp_path / "sample_st.h5ad")
+    _, io, specs = _application_specs(tmp_path)
+
+    with pytest.raises(ValueError, match="unique cell ids"):
+        REVISEInputService(io).preflight(
+            specs,
+            runtime={"mode": "application", "task": "sc_svc_sr"},
+            columns=COLUMNS,
+        )
+
+
 def test_preflight_rejects_zero_gene_overlap(tmp_path):
     _write(tmp_path / "sample_st.h5ad", "st", genes=("st-gene",))
     _write(tmp_path / "sc.h5ad", "sc_ref", genes=("sc-gene",))

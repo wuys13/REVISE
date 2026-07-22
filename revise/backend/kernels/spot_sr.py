@@ -18,8 +18,9 @@ class SpotSrKernel(BaseKernel):
             self.pm_on_cell = None
 
     def run(self, sc_svc):
+        cell_type_col = str(getattr(self.config, "cell_type_col", "Level1"))
         spot_cell_distribution = self.get_spot_cell_distribution(
-            cell_contributions=sc_svc.st_adata.obsm["Level1"],
+            cell_contributions=sc_svc.st_adata.obsm[cell_type_col],
             SVC_obs=sc_svc.svc_obs,
         )
         if self.pm_on_cell is not None:

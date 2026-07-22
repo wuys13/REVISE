@@ -19,6 +19,7 @@ from revise.backend.ops.posterior_conditioning import (
     reference_measure_from_marginals,
 )
 from revise.backend.ops.topology import get_adjacency_graph
+from revise.utils.spot_sr_input import CELL_LOCATIONS_KEY
 
 
 def _normalize_posterior_rows(values):
@@ -115,7 +116,12 @@ class ScSVCSr(ApplicationSVC):
             )
 
     def _get_svc_obs(self):
-        svc_obs = get_sc_obs(self.st_adata.obs.index, self.st_adata.uns['all_cells_in_spot'], self.st_adata.obsm["spatial"])
+        svc_obs = get_sc_obs(
+            self.st_adata.obs.index,
+            self.st_adata.uns["all_cells_in_spot"],
+            self.st_adata.obsm["spatial"],
+            cell_locations=self.st_adata.uns.get(CELL_LOCATIONS_KEY),
+        )
         svc_obs["cell_id"] = svc_obs["cell_id"].astype(str)
         # Keep SpotSr logging stable when ground truth is unavailable.
         svc_obs["true_cell_type"] = "Unknown"
@@ -135,14 +141,12 @@ class ScSVCSr(ApplicationSVC):
         overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
         st_adata_common = self.st_adata[:, overlap_genes]
         sc.pp.normalize_total(st_adata_common, target_sum=1e4)
-        cell_contributions = st_adata_common.obsm["Level1"].copy()
+        cell_contributions = st_adata_common.obsm[self.config.cell_type_col].copy()
 
         sc.pp.normalize_total(self.st_adata, target_sum=1e4)
         sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
         self.spot_sr.run(self)
-        key_type = "clusters"
-        if key_type not in self.sc_ref_adata.obs.columns:
-            self.sc_ref_adata.obs[key_type] = self.sc_ref_adata.obs["Level1"].astype(str)
+        key_type = self.config.cell_type_col
         type_list = sorted(list(self.sc_ref_adata.obs[key_type].unique().astype(str)))
         self.logger.info(f'There are {len(type_list)} cell types: {type_list}')
         sc_ref_all = construct_sc_ref(self.sc_ref_adata, key_type=key_type, type_list=type_list)

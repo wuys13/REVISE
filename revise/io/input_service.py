@@ -275,9 +275,16 @@ class REVISEInputService:
 
     @staticmethod
     def _validate_cross_role_contracts(opened, *, runtime, paths) -> None:
-        if str(runtime.get("mode")) != "benchmark":
-            return
+        mode = str(runtime.get("mode"))
         task = str(runtime.get("task"))
+        if mode == "application" and task == "sc_svc_sr":
+            REVISEInputService._validate_application_sr_input(
+                opened["st"],
+                st_path=paths["st"],
+            )
+            return
+        if mode != "benchmark":
+            return
         if task == "sc_svc_sr":
             REVISEInputService._validate_sr_mapping(
                 opened["st"],
@@ -310,12 +317,6 @@ class REVISEInputService:
             key="all_cells_in_spot",
         )
         mapped_ids = [cell_id for cells in mapping.values() for cell_id in cells]
-        if len(mapped_ids) != len(set(mapped_ids)):
-            raise ValueError(
-                "Invalid benchmark SR mapping: role=st; "
-                f"path={st_path}; field=uns['all_cells_in_spot']; "
-                "expected=unique cell ids"
-            )
         gt_ids = set(gt.obs["cell_id"].astype(str))
         unknown = sorted(set(mapped_ids) - gt_ids)
         if unknown:
@@ -324,6 +325,33 @@ class REVISEInputService:
                 f"path={st_path}; field=uns['all_cells_in_spot']; "
                 f"expected=cell ids from GT {gt_path}; actual_unknown={unknown[:5]}"
             )
+
+    @staticmethod
+    def _validate_application_sr_input(st, *, st_path: str) -> None:
+        from revise.utils.spot_sr_input import (
+            ALL_CELLS_IN_SPOT_KEY,
+            CELL_LOCATIONS_KEY,
+            _validate_all_cells_in_spot,
+            validate_cell_locations,
+        )
+
+        raw_mapping = st.uns.get(ALL_CELLS_IN_SPOT_KEY)
+        raw_locations = st.uns.get(CELL_LOCATIONS_KEY)
+        if raw_mapping is None:
+            if raw_locations is not None:
+                raise ValueError(
+                    "Invalid application SR input: role=st; "
+                    f"path={st_path}; field=uns['{CELL_LOCATIONS_KEY}']; "
+                    f"expected=uns['{ALL_CELLS_IN_SPOT_KEY}'] to be present"
+                )
+            return
+        mapping = _validate_all_cells_in_spot(
+            raw_mapping,
+            spot_names=st.obs_names.astype(str),
+            key=ALL_CELLS_IN_SPOT_KEY,
+        )
+        if raw_locations is not None:
+            validate_cell_locations(raw_locations, all_cells_in_spot=mapping)
 
     def _read_role(
         self,

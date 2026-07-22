@@ -208,6 +208,80 @@ def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
     assert ctx.sc_ref_adata.var_names.tolist() == ["widespread"]
 
 
+def test_application_spot_sr_prepare_context_honors_configured_annotation_columns(
+    adapters, monkeypatch, tmp_path
+):
+    merged = merge_unified_config(
+        raw_config=load_raw_config(CONFIG_PATH),
+        profile="application_sc_sr",
+        runtime_overrides={},
+        io_overrides={},
+        set_overrides=(
+            "columns.cell_type_col=major_type",
+            "columns.sub_cell_type_col=minor_type",
+        ),
+    )
+    merged["io"].update(
+        sample_name="sample",
+        data_root=str(tmp_path),
+        output_root=str(tmp_path),
+        st_file="st.h5ad",
+        sc_ref_file="sc.h5ad",
+        patient_key="Patient",
+    )
+    merged["preprocess"].update(
+        st_min_transcripts=0,
+        st_min_cells=1,
+        sc_min_cells=1,
+    )
+    st = AnnData(
+        X=np.ones((2, 2)),
+        obs=pd.DataFrame(index=["spot-1", "spot-2"]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    st.obsm["spatial"] = np.array([[0.0, 0.0], [1.0, 1.0]])
+    st.uns["all_cells_in_spot"] = {
+        "spot-1": ["cell-1"],
+        "spot-2": ["cell-2"],
+    }
+    reference = AnnData(
+        X=np.ones((2, 2)),
+        obs=pd.DataFrame(
+            {
+                "Patient": ["sample", "sample"],
+                "major_type": ["A/B", "A/B"],
+                "minor_type": ["A1", "A2"],
+            },
+            index=["cell-1", "cell-2"],
+        ),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+
+    class InputService:
+        def read_st_adata(self, _path):
+            return st.copy()
+
+        def read_sc_ref_adata(self, _path):
+            return reference.copy()
+
+    monkeypatch.setattr(adapters, "_input_service", lambda _ctx: InputService())
+    ctx = SimpleNamespace(
+        merged_config=merged,
+        io=merged["io"],
+        columns=merged["columns"],
+        runtime=merged["runtime"],
+        route_key="sc_svc_sr:spot_size",
+        run_dir=tmp_path,
+        logger=logging.getLogger("test-spot-sr-custom-columns"),
+        compatibility_mode=False,
+    )
+
+    adapters.ScSvcSrApplicationStrategy().prepare_context(ctx)
+
+    assert ctx.runner.config.cell_type_col == "major_type"
+    assert ctx.runner.sc_ref_adata.obs["major_type"].tolist() == ["A_B", "A_B"]
+
+
 def test_application_spot_sr_validates_overlap_after_gene_filtering(
     adapters, monkeypatch, tmp_path
 ):

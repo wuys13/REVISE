@@ -19,11 +19,12 @@ from revise.config import load_raw_config, merge_unified_config
 CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
-def _kernel(*, pm=None, seed=42):
+def _kernel(*, pm=None, seed=42, cell_type_col="Level1"):
     config = SimpleNamespace(
         pm_on_cell_file="/path/that/does/not/exist.csv",
         svc_completeness=True,
         sr_assignment_seed=seed,
+        cell_type_col=cell_type_col,
     )
     kernel = SpotSrKernel(config, logging.getLogger("test-spot-sr-assignment"))
     kernel.pm_on_cell = pm
@@ -140,6 +141,25 @@ def test_run_without_pm_writes_seeded_exact_quota_assignment_back_to_sc_svc():
     expected = np.random.default_rng(19).permutation(["A", "B", "B", "B"]).tolist()
     assert sc_svc.svc_obs["cell_type"].tolist() == expected
     assert sc_svc.svc_obs["cell_type"].value_counts().to_dict() == {"B": 3, "A": 1}
+
+
+def test_run_reads_cell_contributions_from_the_configured_column():
+    svc_obs = _svc({"spot-a": ["c1", "c2"]})
+    svc_obs["true_cell_type"] = "Unknown"
+    sc_svc = SimpleNamespace(
+        svc_obs=svc_obs,
+        st_adata=SimpleNamespace(
+            obsm={
+                "major_type": pd.DataFrame(
+                    [[0.5, 0.5]], index=["spot-a"], columns=["A", "B"]
+                )
+            }
+        ),
+    )
+
+    _kernel(seed=7, cell_type_col="major_type").run(sc_svc)
+
+    assert sc_svc.svc_obs["cell_type"].value_counts().to_dict() == {"A": 1, "B": 1}
 
 
 @pytest.mark.parametrize(
