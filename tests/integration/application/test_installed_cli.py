@@ -143,7 +143,9 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
     assert f"Version: {__version__}" in metadata
     assert "Name: revise-svc" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
-    assert "revise/cli.py" in names
+    assert "revise/application/cli.py" in names
+    assert "revise/benchmark/cli.py" in names
+    assert "revise/benchmark/launcher.py" in names
     assert "revise/revise.yaml" in names
     assert any(".dist-info/" in name and name.endswith("/LICENSE") for name in names)
     assert not any(name.startswith("tests/") for name in names)
