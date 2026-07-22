@@ -52,8 +52,8 @@ def test_canonical_application_cli_rejects_benchmark_only_spot_size(monkeypatch)
         "argv",
         [
             "revise-reconstruct",
-            "--svc-type",
-            "sc-SVC-sr",
+            "--platform",
+            "sST",
             "--sample-name",
             "sample",
             "--st-file",
@@ -97,7 +97,7 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         return None
 
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        platform="hST",
         config="revise/revise.yaml",
         seed=17,
         data_root=str(tmp_path),
@@ -123,21 +123,21 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
 
 
 @pytest.mark.parametrize(
-    ("svc_type", "profile", "svc_kind", "output_key", "expected_type"),
+    ("platform", "profile", "svc_kind", "output_key", "expected_type"),
     [
-        ("sp-SVC", "application_sp", "sp", "sp_svc", "sp-SVC"),
+        ("hST", "application_sp", "sp", "sp_svc", "hST-SVC"),
         (
-            "sc-SVC-sr",
+            "sST",
             "application_sc_sr",
             "sc",
             "sc_svc_dec",
-            "sc-SVC-sr",
+            "sST-SVC",
         ),
     ],
 )
 def test_public_result_links_to_manifest_and_registers_artifact(
     tmp_path,
-    svc_type,
+    platform,
     profile,
     svc_kind,
     output_key,
@@ -168,7 +168,7 @@ def test_public_result_links_to_manifest_and_registers_artifact(
         record_artifact=records.append,
     )
     args = SimpleNamespace(
-        svc_type=svc_type,
+        platform=platform,
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -225,7 +225,7 @@ def test_public_result_write_failure_preserves_previous_result(
         record_artifact=lambda artifact: None,
     )
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        platform="hST",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -276,7 +276,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
 
     ctx.record_artifact = fail_record_artifact
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        platform="hST",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -315,7 +315,7 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
         record_artifact=lambda artifact: None,
     )
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        platform="hST",
         output_root=str(output_root),
         sample_name="sample",
         seed=17,
@@ -324,7 +324,7 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match="SVC type 'sp-SVC' requires internal kind 'sp'",
+        match="Platform 'hST' requires internal kind 'sp'",
     ):
         service._build_public_result(args, "application_sp", "sp_svc", ctx)
 

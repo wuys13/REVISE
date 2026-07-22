@@ -1,6 +1,6 @@
 """Application result assembly contract.
 
-Covers: sc-SVC spatial/expression merge and canonical publication metadata.
+Covers: iST-SVC spatial/expression merge and canonical publication metadata.
 Proof limit: uses synthetic AnnData and does not run scientific kernels.
 """
 
@@ -91,7 +91,7 @@ def test_sc_svc_publication_records_only_the_confirmed_result_type(tmp_path):
         record_artifact=records.append,
     )
     args = SimpleNamespace(
-        svc_type="sc-SVC",
+        platform="iST",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -104,10 +104,10 @@ def test_sc_svc_publication_records_only_the_confirmed_result_type(tmp_path):
     assert path == tmp_path / "out" / "sample" / "SVC.h5ad"
     assert ctx.provenance["result"] == {
         "filename": "SVC.h5ad",
-        "type": "sc-SVC",
+        "type": "iST-SVC",
     }
     published = read_h5ad(path)
     metadata = published.uns["revise_reconstruction"]
-    assert metadata["svc_type"] == "sc-SVC"
+    assert metadata["svc_type"] == "iST-SVC"
     assert "platform" not in metadata
     assert json.loads(metadata["ot_events"]) == []

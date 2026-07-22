@@ -49,7 +49,7 @@ def test_public_docs_distinguish_installed_source_and_paper_entry_paths():
     assert "paper reproduction" in text.lower()
 
 
-def test_1x_case_notebooks_use_current_routes_and_vocabulary():
+def test_2x_case_notebooks_use_current_routes_and_vocabulary():
     text = []
     for path in sorted((ROOT / "reproduce" / "case").glob("*.ipynb")):
         notebook = json.loads(_read(path))
@@ -65,8 +65,11 @@ def test_1x_case_notebooks_use_current_routes_and_vocabulary():
     assert "application_sc_sst" not in notebooks
     assert 'route=sST:spot_size' not in notebooks
     assert "legacy_mode" not in notebooks
-    for term in ("hST", "iST", "sST"):
+    assert "--svc-type" not in notebooks
+    for term in ("sp-SVC", "sc-SVC", "sc-SVC-sr"):
         assert term not in notebooks
+    for term in ("`hST`", "`iST`", "`sST`"):
+        assert term in notebooks
 
 
 def test_quickstart_matches_application_input_resolution_and_route_fields():
@@ -91,8 +94,8 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
     assert st_path in quickstart
     assert sc_path in quickstart
     assert "unique ``obs_names`` and unique ``var_names``" in normalized
-    assert "sp-SVC requires ``Level1``" in normalized
-    assert "sc-SVC and sc-SVC-sr require both ``Level1`` and ``Level2``" in normalized
+    assert "hST requires ``Level1``" in normalized
+    assert "iST and sST require both ``Level1`` and ``Level2``" in normalized
     assert "default ``Patient`` column" in normalized
     assert "--spot-size" not in quickstart
 
@@ -137,9 +140,9 @@ def test_public_docs_use_the_single_svc_result_contract():
     assert "<output-root>/<sample-name>/SVC.h5ad" in text
     assert 'output_dir / "SVC.h5ad"' in service
     assert "result.type" in text
-    assert "sp-SVC" in text
-    assert "sc-SVC" in text
-    assert "sc-SVC-sr" in text
+    assert "hST-SVC" in text
+    assert "iST-SVC" in text
+    assert "sST-SVC" in text
     assert "provenance.json" in text
 
 

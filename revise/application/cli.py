@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"revise-reconstruct {__version__}",
     )
     parser.add_argument(
-        "--svc-type",
+        "--platform",
         required=True,
         choices=tuple(APPLICATION_ROUTES),
     )
@@ -71,7 +71,7 @@ def main() -> None:
         summary.update(profile=profile, route=svc.provenance.get("route_key"))
         payload = {
             "status": "ready",
-            "svc_type": args.svc_type,
+            "platform": args.platform,
             "preflight": str(run_dir / "preflight.json"),
             "pipeline": summary,
         }
@@ -79,7 +79,7 @@ def main() -> None:
         with redirect_stdout(sys.stderr):
             result, output_path, pipeline_summary = reconstruct(args)
         payload = {
-            "svc_type": args.svc_type,
+            "platform": args.platform,
             "output": str(output_path),
             "shape": list(result.shape),
             "pipeline": pipeline_summary,

@@ -64,8 +64,8 @@ The canonical CLI separately publishes one stable-facing result:
 
    <output-root>/<sample-name>/SVC.h5ad
 
-The manifest records ``result.type`` as ``sp-SVC``, ``sc-SVC``, or
-``sc-SVC-sr`` and records the internal route separately. Strategy artifacts remain in the
+The manifest records ``result.type`` as ``hST-SVC``, ``iST-SVC``, or
+``sST-SVC`` and records the internal route separately. Strategy artifacts remain in the
 canonical run but are not additional public output contracts.
 
 Failure model

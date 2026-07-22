@@ -287,7 +287,7 @@ def build_histology_prior_from_tables(
     This mutates ``st_adata`` in place by setting ``uns[mapping_key]`` and
     ``uns["revise_histology_prior"]``. Spots not covered by the segmentation
     are filled with the same transcript-count virtual-cell fallback used by the
-    sc-SVC-sr input service, and the number of fallback spots is recorded in
+    sST input service, and the number of fallback spots is recorded in
     provenance.
     """
 

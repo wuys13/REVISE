@@ -404,7 +404,7 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     )
     ctx.provenance["result"] = {
         "filename": "SVC.h5ad",
-        "type": "sp-SVC",
+        "type": "hST-SVC",
     }
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
@@ -412,6 +412,6 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     assert manifest["schema_version"] == 2
     assert manifest["result"] == {
         "filename": "SVC.h5ad",
-        "type": "sp-SVC",
+        "type": "hST-SVC",
     }
     assert manifest["data_fingerprint"] is None

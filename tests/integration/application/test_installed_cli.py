@@ -190,6 +190,8 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
 
     help_result = _run([command, "--help"], cwd=cwd, env=env)
     assert help_result.returncode == 0, help_result.stderr
+    assert "--platform {hST,iST,sST}" in help_result.stdout
+    assert "--svc-type" not in help_result.stdout
     assert "--ot-method" in help_result.stdout
     assert "--dry-run" in help_result.stdout
 
@@ -212,8 +214,8 @@ def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
     result = _run(
         [
             installed_cli["command"],
-            "--svc-type",
-            "sp-SVC",
+            "--platform",
+            "hST",
             "--sample-name",
             "sample",
             "--st-file",
@@ -254,8 +256,8 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
     data_root.mkdir()
     _write_inputs(data_root)
     common = [
-        "--svc-type",
-        "sp-SVC",
+        "--platform",
+        "hST",
         "--sample-name",
         "sample",
         "--st-file",
@@ -309,7 +311,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         assert manifest["run"]["status"] == "succeeded"
         assert manifest["result"] == {
             "filename": "SVC.h5ad",
-            "type": "sp-SVC",
+            "type": "hST-SVC",
         }
         assert manifest["stages"][3]["status"] == "succeeded"
         public_artifacts = [

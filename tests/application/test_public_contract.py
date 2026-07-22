@@ -1,6 +1,6 @@
 """Application public vocabulary and entrypoint contract.
 
-Covers: the 1.x reconstruction selector, route mapping, and shared root/package CLI.
+Covers: the 2.0 platform selector, route mapping, and shared root/package CLI.
 Proof limit: does not execute scientific reconstruction or validate real datasets.
 """
 
@@ -18,10 +18,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _required_args(svc_type: str) -> list[str]:
+def _required_args(platform: str) -> list[str]:
     return [
-        "--svc-type",
-        svc_type,
+        "--platform",
+        platform,
         "--sample-name",
         "sample",
         "--st-file",
@@ -33,50 +33,44 @@ def _required_args(svc_type: str) -> list[str]:
     ]
 
 
-def test_parser_exposes_only_the_three_1x_svc_types():
+def test_parser_exposes_only_the_three_2x_platforms():
     from revise.application.cli import build_parser
 
     parser = build_parser()
     actions = {option: action for action in parser._actions for option in action.option_strings}
 
-    assert "--platform" not in actions
-    assert actions["--svc-type"].choices == ("sp-SVC", "sc-SVC", "sc-SVC-sr")
+    assert "--svc-type" not in actions
+    assert actions["--platform"].choices == ("hST", "iST", "sST")
 
 
-@pytest.mark.parametrize("svc_type", ("sp-SVC", "sc-SVC", "sc-SVC-sr"))
-def test_parser_accepts_each_1x_svc_type(svc_type):
+@pytest.mark.parametrize("platform", ("hST", "iST", "sST"))
+def test_parser_accepts_each_2x_platform(platform):
     from revise.application.cli import parse_args
 
-    args = parse_args(_required_args(svc_type))
+    args = parse_args(_required_args(platform))
 
-    assert args.svc_type == svc_type
-    assert not hasattr(args, "platform")
+    assert args.platform == platform
+    assert not hasattr(args, "svc_type")
 
 
-def test_application_routes_use_internal_ids_without_2x_vocabulary():
+def test_application_platforms_map_to_stable_internal_ids():
     from revise.application.service import APPLICATION_ROUTES
 
-    assert set(APPLICATION_ROUTES) == {"sp-SVC", "sc-SVC", "sc-SVC-sr"}
+    assert set(APPLICATION_ROUTES) == {"hST", "iST", "sST"}
     assert {
-        svc_type: route.route_id for svc_type, route in APPLICATION_ROUTES.items()
+        platform: route.route_id for platform, route in APPLICATION_ROUTES.items()
     } == {
-        "sp-SVC": "sp_svc",
-        "sc-SVC": "sc_svc",
-        "sc-SVC-sr": "sc_svc_sr",
+        "hST": "sp_svc",
+        "iST": "sc_svc",
+        "sST": "sc_svc_sr",
     }
-    serialized = repr(APPLICATION_ROUTES)
-    assert "hST" not in serialized
-    assert "iST" not in serialized
-    assert "sST" not in serialized
-
-
 @pytest.mark.parametrize(
-    ("svc_type", "profile", "route_id", "confounding", "output_key"),
+    ("platform", "profile", "route_id", "confounding", "output_key"),
     (
-        ("sp-SVC", "application_sp", "sp_svc", "bin2cell", "sp_svc"),
-        ("sc-SVC", "application_sc", "sc_svc", "segmentation", None),
+        ("hST", "application_sp", "sp_svc", "bin2cell", "sp_svc"),
+        ("iST", "application_sc", "sc_svc", "segmentation", None),
         (
-            "sc-SVC-sr",
+            "sST",
             "application_sc_sr",
             "sc_svc_sr",
             "spot_size",
@@ -87,7 +81,7 @@ def test_application_routes_use_internal_ids_without_2x_vocabulary():
 def test_pipeline_receives_the_internal_route_for_each_public_type(
     monkeypatch,
     tmp_path,
-    svc_type,
+    platform,
     profile,
     route_id,
     confounding,
@@ -107,7 +101,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
 
     monkeypatch.setattr(service, "REVISEPipeline", Pipeline)
     args = argparse.Namespace(
-        svc_type=svc_type,
+        platform=platform,
         config="revise/revise.yaml",
         seed=17,
         data_root=str(tmp_path),
@@ -142,7 +136,7 @@ def test_root_application_wrapper_delegates_to_package_cli():
     assert not hasattr(application_reconstruct, "APPLICATION_ROUTES")
 
 
-def test_root_application_help_uses_1x_vocabulary():
+def test_root_application_help_uses_2x_vocabulary():
     result = subprocess.run(
         [sys.executable, "application_reconstruct.py", "--help"],
         cwd=ROOT,
@@ -152,5 +146,5 @@ def test_root_application_help_uses_1x_vocabulary():
     )
 
     assert result.returncode == 0, result.stderr
-    assert "--svc-type {sp-SVC,sc-SVC,sc-SVC-sr}" in result.stdout
-    assert "--platform" not in result.stdout
+    assert "--platform {hST,iST,sST}" in result.stdout
+    assert "--svc-type" not in result.stdout

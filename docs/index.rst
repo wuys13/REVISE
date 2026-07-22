@@ -16,7 +16,7 @@ Start here
 - :doc:`source/installation` describes the base package and optional analysis
   capabilities.
 - :doc:`source/quickstart` shows the Benchmark and Application entry points.
-- :doc:`source/concepts` defines sp-SVC, sc-SVC, inputs, and evidence limits.
+- :doc:`source/concepts` defines hST, iST, sST, inputs, and evidence limits.
 - :doc:`source/configuration` documents detailed runtime and OT configuration.
 - :doc:`source/benchmark` records the implemented metric formulas and their
   proof limits.
@@ -33,7 +33,7 @@ Every application reconstruction publishes:
    <output-root>/<sample-name>/SVC.h5ad
 
 The result links to the run's ``provenance.json``. Its ``result.type`` records
-``sp-SVC`` or ``sc-SVC``; the manifest also records the internal route,
+``hST-SVC``, ``iST-SVC``, or ``sST-SVC``; the manifest also records the internal route,
 configuration, stages, inputs, and artifacts.
 
 .. toctree::

@@ -21,11 +21,11 @@ environment variables documented in their modules and CI jobs.
 | `analysis/test_cli.py` | `revise/analysis/` | Biological-metrics console entry and delegation | Package/analysis edits | Static entry contract only |
 | `application/test_cli_contract.py` | `revise/application/service.py` | Canonical publication, rollback, and result manifest | Application edits | Synthetic AnnData only |
 | `application/test_cli_dry_run.py` | `revise/application/cli.py` | Source CLI preflight without reconstruction | Application/config edits | No scientific stages |
-| `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
-| `application/test_service.py` | `revise/application/service.py` | sc-SVC merge and `SVC.h5ad` publication | Result-assembly edits | No kernels or real data |
+| `application/test_public_contract.py` | `revise/application/` | 2.0 platform selector, result type, and internal route mapping | Every application change | Public vocabulary and dispatch only |
+| `application/test_service.py` | `revise/application/service.py` | iST-SVC merge and `SVC.h5ad` publication | Result-assembly edits | No kernels or real data |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
 | `backend/test_graph_cluster_spatial_score.py` | `revise/backend/` graph code | Graph aggregation, clustering, and scale smoke | Graph/backend edits | Component scale, not full pipeline |
-| `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | sc-SVC LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
+| `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | iST internal LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
 | `backend/test_scientific_contracts.py` | Backend kernels/ops and analysis formulas | Cross-cutting scientific invariants | Scientific implementation edits | Formula/array contracts only |
 | `backend/test_solver_routing.py` | `revise/backend/ops/` and route callers | Solver dispatch, event recording, and caller coverage | OT edits | Mocked/synthetic solver boundaries |
 | `backend/test_spot_sr_assignment.py` | `revise/backend/kernels/spot_sr.py` | PM-on-cell and random cell-type allocation | Spot-SR edits | Assignment, not localization truth |

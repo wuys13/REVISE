@@ -1,26 +1,26 @@
-Reconstruction Types
-====================
+Reconstruction Platforms
+========================
 
-The installed/source interface selects one public 1.x reconstruction type
-with ``--svc-type``. Every type publishes the stable filename ``SVC.h5ad``.
+The installed/source interface selects one public 2.0 input class with
+``--platform``. Every route publishes the stable filename ``SVC.h5ad``.
 
-sp-SVC
-------
+hST
+---
 
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sp-SVC \
+     --platform hST \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output
 
-The manifest records ``result.type`` as ``sp-SVC``.
+The manifest records ``result.type`` as ``hST-SVC``.
 
-sc-SVC
-------
+iST
+---
 
 The internal strategy returns spatial and expression carriers. The application
 service validates their cluster sets and publishes one result:
@@ -28,7 +28,7 @@ service validates their cluster sets and publishes one result:
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sc-SVC \
+     --platform iST \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
@@ -37,24 +37,24 @@ service validates their cluster sets and publishes one result:
      --select-ct T \
      --sc-mapping mean
 
-The manifest records ``result.type`` as ``sc-SVC``. ``--sc-mapping random``
+The manifest records ``result.type`` as ``iST-SVC``. ``--sc-mapping random``
 uses the command seed to choose a same-cluster reference expression row instead
 of the cluster mean.
 
-sc-SVC-sr
----------
+sST
+---
 
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sc-SVC-sr \
+     --platform sST \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output
 
-The manifest records ``result.type`` as ``sc-SVC-sr``. Missing curated
+The manifest records ``result.type`` as ``sST-SVC``. Missing curated
 spot-to-cell and PM-on-cell inputs use the quota and seeded random allocation
 described in :doc:`concepts`.
 

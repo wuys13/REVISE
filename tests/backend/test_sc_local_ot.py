@@ -302,7 +302,7 @@ def test_unified_cli_switches_global_and_local_methods_together(method):
     from revise.application import service
 
     args = SimpleNamespace(
-        svc_type="sc-SVC",
+        platform="iST",
         ot_method=method,
         select_ct="all",
         cell_type_col="Level1",

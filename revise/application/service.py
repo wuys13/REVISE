@@ -25,21 +25,21 @@ class ApplicationRoute(NamedTuple):
 
 
 APPLICATION_ROUTES = {
-    "sp-SVC": ApplicationRoute(
+    "hST": ApplicationRoute(
         route_id="sp_svc",
         profile="application_sp",
         confounding="bin2cell",
         output_key="sp_svc",
         svc_kind="sp",
     ),
-    "sc-SVC": ApplicationRoute(
+    "iST": ApplicationRoute(
         route_id="sc_svc",
         profile="application_sc",
         confounding="segmentation",
         output_key=None,
         svc_kind="sc",
     ),
-    "sc-SVC-sr": ApplicationRoute(
+    "sST": ApplicationRoute(
         route_id="sc_svc_sr",
         profile="application_sc_sr",
         confounding="spot_size",
@@ -101,7 +101,7 @@ def _cluster_set_mismatch_message(spatial_labels, expr_labels) -> str | None:
     spatial_only = sorted(spatial_set - expr_set, key=sort_key)
     expr_only = sorted(expr_set - spatial_set, key=sort_key)
     return (
-        "sc-SVC cluster sets do not match exactly: "
+        "iST-SVC cluster sets do not match exactly: "
         f"spatial_only={spatial_only} (n={len(spatial_only)}), "
         f"expr_only={expr_only} (n={len(expr_only)})"
     )
@@ -138,7 +138,7 @@ def merge_sc_svc(
     from scipy import sparse
 
     if mode not in {"mean", "random"}:
-        raise ValueError("sc-SVC mapping mode must be one of ['mean', 'random']")
+        raise ValueError("iST-SVC mapping mode must be one of ['mean', 'random']")
     if not expr_adata.var_names.is_unique:
         duplicates = expr_adata.var_names[expr_adata.var_names.duplicated()].unique()
         raise ValueError(
@@ -175,7 +175,7 @@ def merge_sc_svc(
 
     values = X.data if sparse.issparse(X) else np.asarray(X)
     if not np.all(np.isfinite(values)):
-        raise ValueError("mapped sc-SVC expression contains non-finite values")
+        raise ValueError("mapped iST-SVC expression contains non-finite values")
 
     merged = AnnData(
         X=X,
@@ -225,7 +225,7 @@ def _build_set_overrides(args: argparse.Namespace) -> list[str]:
                 f"ot.lr.solver={args.ot_method}",
             )
         )
-    if args.svc_type == "sc-SVC":
+    if args.platform == "iST":
         managed.update(SC_MANAGED_SET_KEYS)
         values.extend(
             (
@@ -258,7 +258,7 @@ def _run_pipeline(
     dry_run: bool = False,
     finalize_callback=None,
 ):
-    route = APPLICATION_ROUTES[args.svc_type]
+    route = APPLICATION_ROUTES[args.platform]
     pipeline_class = REVISEPipeline
     if pipeline_class is None:
         from revise.framework import REVISEPipeline as pipeline_class
@@ -289,21 +289,22 @@ def _run_pipeline(
 def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]:
     from revise.utils import completed_artifact
 
-    route = APPLICATION_ROUTES[args.svc_type]
+    route = APPLICATION_ROUTES[args.platform]
+    result_type = f"{args.platform}-SVC"
     svc = ctx.svc
     if svc.svc_kind != route.svc_kind:
         raise ValueError(
-            f"SVC type {args.svc_type!r} requires internal kind {route.svc_kind!r}; "
+            f"Platform {args.platform!r} requires internal kind {route.svc_kind!r}; "
             f"strategy returned {svc.svc_kind!r}"
         )
 
     outputs = dict(svc.artifacts.get("outputs", {}))
-    if args.svc_type == "sc-SVC":
+    if args.platform == "iST":
         required = {"sc_svc_spatial", "sc_svc_expr"}
         missing = sorted(required - outputs.keys())
         if missing:
             raise RuntimeError(
-                f"sc-SVC pipeline did not return required outputs {missing}; "
+                f"iST pipeline did not return required outputs {missing}; "
                 f"available={sorted(outputs)}"
             )
         result = merge_sc_svc(
@@ -312,16 +313,16 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             mode=args.sc_mapping,
             seed=args.seed,
         )
-        result.uns["revise_reconstruction"]["svc_type"] = args.svc_type
+        result.uns["revise_reconstruction"]["svc_type"] = result_type
     elif output_key not in outputs:
         raise RuntimeError(
-            f"{args.svc_type} pipeline did not return required output {output_key!r}; "
+            f"{args.platform} pipeline did not return required output {output_key!r}; "
             f"available={sorted(outputs)}"
         )
     else:
         result = outputs[output_key].copy()
         result.uns["revise_reconstruction"] = {
-            "svc_type": args.svc_type,
+            "svc_type": result_type,
             "seed": int(args.seed),
         }
 
@@ -360,7 +361,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
         artifact["path"] = str(output_path)
         result_record = {
             "filename": output_path.name,
-            "type": args.svc_type,
+            "type": result_type,
         }
         had_previous_result = "result" in ctx.provenance
         previous_result = copy.deepcopy(ctx.provenance.get("result"))
@@ -418,7 +419,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
 
 
 def reconstruct(args: argparse.Namespace):
-    route = APPLICATION_ROUTES[args.svc_type]
+    route = APPLICATION_ROUTES[args.platform]
     published = {}
 
     def publish(ctx):

@@ -14,16 +14,16 @@ Routes and result types
 
    * - Public type
      - Input rows
-     - Public 1.x result type
-   * - ``sp-SVC``
+     - Public 2.0 result type
+   * - ``hST``
      - high-definition bins or pseudo-cells
-     - ``sp-SVC``
-   * - ``sc-SVC``
+     - ``hST-SVC``
+   * - ``iST``
      - segmented imaging-ST cells
-     - ``sc-SVC``
-   * - ``sc-SVC-sr``
+     - ``iST-SVC``
+   * - ``sST``
      - spot-level observations
-     - ``sc-SVC-sr``
+     - ``sST-SVC``
 
 The common result location is ``<output-root>/<sample-name>/SVC.h5ad``. Its
 ``provenance.json`` records the public result type separately from the
@@ -50,7 +50,7 @@ stages. ``--ot-method`` is the convenience control that sets both stages.
 Spot super-resolution virtual cells and random placement
 ---------------------------------------------------------
 
-A sc-SVC-sr route needs a count of virtual cells per spot. If a curated
+An sST route needs a count of virtual cells per spot. If a curated
 ``uns["all_cells_in_spot"]`` mapping is absent, the input adapter estimates
 counts from spot transcript totals and creates virtual-cell rows. Those rows
 share the source spot coordinate; the fallback does not estimate sub-spot

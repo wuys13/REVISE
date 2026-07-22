@@ -12,7 +12,7 @@ from revise.svc import SVC
 
 
 class ScSVCAnalysisService:
-    """Downstream sc-SVC analysis that consumes unified SVC only."""
+    """Downstream iST-SVC analysis that consumes unified SVC only."""
 
     def __init__(self, svc: SVC, cluster_col: str = "SVC_cluster") -> None:
         if svc.expr is None or svc.spatial is None:
@@ -120,7 +120,7 @@ class ScSVCAnalysisService:
 
 
 class SpSVCAnalysisService:
-    """Basic downstream metrics for sp-SVC outputs."""
+    """Basic downstream metrics for hST-SVC outputs."""
 
     def __init__(self, svc: SVC) -> None:
         if svc.spatial is None:

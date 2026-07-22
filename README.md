@@ -40,12 +40,11 @@ platform types:
 
 <p align="center">Confounding factors that limit current spatial transcriptomics technologies</p>
 
-REVISE reconstructs three complementary SVC types:
+REVISE 2.0 accepts three spatial-transcriptomics input classes:
 
-- `sp-SVC`: spatial refinement for high-resolution spatial transcriptomics.
-- `sc-SVC`: molecular completion and cell-state refinement for imaging-based
-  spatial transcriptomics.
-- `sc-SVC-sr`: spot-level super-resolution reconstruction.
+- `hST`: high-resolution spatial transcriptomics, producing `hST-SVC`.
+- `iST`: imaging-based spatial transcriptomics, producing `iST-SVC`.
+- `sST`: spot-based spatial transcriptomics, producing `sST-SVC`.
 
 ![REVISE overview](png/REVISE_overview.png)
 
@@ -57,8 +56,8 @@ Every application reconstruction publishes the same stable filename:
 <output-root>/<sample-name>/SVC.h5ad
 ```
 
-The run's `provenance.json` records whether that result is an `sp-SVC`,
-`sc-SVC`, or `sc-SVC-sr`, together with the resolved route, configuration,
+The run's `provenance.json` records whether that result is an `hST-SVC`,
+`iST-SVC`, or `sST-SVC`, together with the resolved route, configuration,
 inputs, stages, and artifacts.
 
 ## Installation
@@ -132,7 +131,7 @@ installed command:
 
 ```bash
 revise-reconstruct \
-  --svc-type sp-SVC \
+  --platform hST \
   --sample-name sample \
   --data-root data \
   --st-file st.h5ad \
@@ -140,8 +139,8 @@ revise-reconstruct \
   --output-root output
 ```
 
-`--svc-type` accepts `sp-SVC`, `sc-SVC`, or `sc-SVC-sr`. The public result is
-always `output/sample/SVC.h5ad`, and the selected result type is recorded in
+`--platform` accepts `hST`, `iST`, or `sST`. The public result is always
+`output/sample/SVC.h5ad`, and `hST-SVC`, `iST-SVC`, or `sST-SVC` is recorded in
 `provenance.json`. From a source checkout, `python application_reconstruct.py`
 delegates to the same command implementation.
 

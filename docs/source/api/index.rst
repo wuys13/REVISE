@@ -49,8 +49,8 @@ Facade Helpers
 ~~~~~~~~~~~~~~
 
 The facade helpers are thin wrappers around ``REVISEPipeline.run`` for callers
-that want named sp-SVC or sc-SVC functions while still using the unified config
-surface.
+that want internal ``sp_svc`` or ``sc_svc`` helpers while still using the
+unified config surface.
 
 .. autosummary::
     :toctree: generated

@@ -342,7 +342,7 @@ def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
         artifact = completed_artifact("public_result", public_path)
         ctx.provenance["result"] = {
             "filename": "SVC.h5ad",
-            "type": "sp-SVC",
+            "type": "hST-SVC",
         }
         ctx.record_artifact(artifact)
 

@@ -279,7 +279,7 @@ def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
 
 def _cli_args(**overrides):
     values = {
-        "svc_type": "sc-SVC",
+        "platform": "iST",
         "ot_method": None,
         "select_ct": "all",
         "cell_type_col": "Level1",
@@ -298,7 +298,7 @@ def test_cli_omitted_ot_method_parses_as_none(monkeypatch):
         "argv",
         [
             "application_reconstruct.py",
-            "--svc-type", "sc-SVC",
+            "--platform", "iST",
             "--sample-name", "sample",
             "--st-file", "st.h5ad",
             "--sc-ref-file", "sc.h5ad",
