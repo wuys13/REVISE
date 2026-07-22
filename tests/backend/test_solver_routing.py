@@ -10,16 +10,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-import pandas as pd
 import pytest
-from anndata import AnnData
 
 from revise.backend.ops.local_ot import solve_local_ot
 from revise.recon.context import PipelineContext
 from revise.svc import SVC
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 LOCAL_OT_CALLERS = {
     "revise/backend/kernels/local_anchoring.py": 1,
     "revise/backend/runners/sp_svc_application.py": 1,
@@ -499,8 +497,8 @@ def test_ci_has_mandatory_exact_tacco_smoke_job():
     assert "needs: test" in ci
     assert "tacco==0.5.0" in ci
     assert "POT==0.9.5" in ci
-    assert "tests/integration/test_tacco_solver_smoke.py" in ci
-    smoke = (ROOT / "tests/integration/test_tacco_solver_smoke.py").read_text()
+    assert "tests/integration/solvers/test_tacco_solver_smoke.py" in ci
+    smoke = (ROOT / "tests/integration/solvers/test_tacco_solver_smoke.py").read_text()
     assert "importorskip" not in smoke
     assert "skipif" not in smoke
     assert "pytestmark" not in smoke

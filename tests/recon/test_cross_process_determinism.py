@@ -9,7 +9,7 @@ import sys
 import numpy as np
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 RTOL = 1e-10
 ATOL = 1e-12
 

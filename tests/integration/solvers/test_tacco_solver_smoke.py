@@ -9,7 +9,7 @@ import tempfile
 import pytest
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.parametrize("import_order", ["revise_then_tacco", "tacco_then_revise"])

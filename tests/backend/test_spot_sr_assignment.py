@@ -16,7 +16,7 @@ from revise.backend.kernels.spot_sr import SpotSrKernel
 from revise.config import load_raw_config, merge_unified_config
 
 
-CONFIG_PATH = Path(__file__).parents[1] / "revise" / "revise.yaml"
+CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
 def _kernel(*, pm=None, seed=42):

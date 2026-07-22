@@ -24,7 +24,7 @@ from revise.recon.pipeline import UnifiedReconstructionPipeline
 from revise.svc import SVC
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_functions(relative_path, names, namespace):
@@ -67,11 +67,11 @@ def _load_metrics(ssim=None):
         adata.X = values / row_sums * float(target_sum)
 
     if ssim is None:
-        ssim = (
-            lambda left, right, data_range: 1.0
-            - float(np.mean(np.abs(np.asarray(left) - np.asarray(right))))
-            / data_range
-        )
+        def ssim(left, right, data_range):
+            return 1.0 - float(
+                np.mean(np.abs(np.asarray(left) - np.asarray(right)))
+            ) / data_range
+
     return _load_functions(
         "revise/analysis/metrics.py",
         ["_to_numpy_matrix", "normalize_data", "compute_metric"],

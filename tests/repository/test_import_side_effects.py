@@ -9,7 +9,7 @@ import tempfile
 import pytest
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 HOST_ENV_KEYS = ("NUMBA_DISABLE_JIT", "NUMBA_CACHE_DIR", "MPLCONFIGDIR")
 HOST_ENV_VALUES = {
     "NUMBA_DISABLE_JIT": "0",

@@ -28,7 +28,7 @@ class PublicationContext(SimpleNamespace):
             rollback()
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_package_cli_exposes_version_without_required_run_arguments():

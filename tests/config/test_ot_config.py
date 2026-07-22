@@ -17,7 +17,7 @@ from revise.recon.context import PipelineContext
 from revise.svc import SVC
 
 
-CONFIG_PATH = Path(__file__).parents[1] / "revise" / "revise.yaml"
+CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
 def _raw_config():
@@ -631,7 +631,7 @@ def test_six_strategies_put_ot_mapping_on_actual_runner_config(
 
 
 def test_active_docs_do_not_advertise_ot_solver_plugins_or_route_markers():
-    repo_root = Path(__file__).parents[1]
+    repo_root = Path(__file__).parents[2]
     active_sources = [
         repo_root / "docs" / "source" / "architecture.rst",
         repo_root / "docs" / "source" / "configuration.rst",

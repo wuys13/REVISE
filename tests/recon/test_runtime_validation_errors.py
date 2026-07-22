@@ -354,7 +354,7 @@ def test_runner_import_stubs_do_not_leak_to_other_tests():
 
 
 def test_runtime_validations_survive_python_optimized_mode(tmp_path):
-    repo_root = Path(__file__).parents[1]
+    repo_root = Path(__file__).parents[2]
     env = os.environ.copy()
     env["MPLCONFIGDIR"] = str(tmp_path / "matplotlib")
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -371,7 +371,7 @@ def test_runtime_validations_survive_python_optimized_mode(tmp_path):
             "-p",
             "no:capture",
             "-q",
-            "tests/test_runtime_validation_errors.py",
+            "tests/recon/test_runtime_validation_errors.py",
             "-k",
             "not runtime_validations_survive_python_optimized_mode",
         ],

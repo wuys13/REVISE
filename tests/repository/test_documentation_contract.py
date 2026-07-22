@@ -11,7 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10
     import tomli as tomllib
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CLAIM_DOCS = (
     ROOT / "README.md",
     ROOT / "docs/index.rst",
@@ -275,9 +275,9 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
 def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
     text = " ".join(_joined().lower().split())
     limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").lower().split())
-    installed_smoke = _read(ROOT / "tests/integration/test_installed_cli.py")
-    graph_scale = _read(ROOT / "tests/test_graph_cluster_spatial_score.py")
-    quota_scale = _read(ROOT / "tests/test_spot_sr_quota.py")
+    installed_smoke = _read(ROOT / "tests/integration/application/test_installed_cli.py")
+    graph_scale = _read(ROOT / "tests/backend/test_graph_cluster_spatial_score.py")
+    quota_scale = _read(ROOT / "tests/backend/test_spot_sr_quota.py")
 
     assert "np.round" in text
     assert "exact quota" in text

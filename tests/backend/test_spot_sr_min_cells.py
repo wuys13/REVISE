@@ -15,7 +15,7 @@ from anndata import AnnData
 from revise.config import load_raw_config, merge_unified_config
 
 
-CONFIG_PATH = Path(__file__).parents[1] / "revise" / "revise.yaml"
+CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 ISOLATED_MODULE_NAMES = (
     "scanpy",
     "revise.backend.adapters",

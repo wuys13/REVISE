@@ -10,7 +10,7 @@ import pandas as pd
 from anndata import AnnData
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _write_inputs(data_root: Path) -> None:

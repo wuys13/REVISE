@@ -637,7 +637,7 @@ pipeline.run(
 """
     result = subprocess.run(
         [sys.executable, "-c", textwrap.dedent(code)],
-        cwd=Path(__file__).resolve().parents[1],
+        cwd=Path(__file__).resolve().parents[2],
         check=False,
     )
 
