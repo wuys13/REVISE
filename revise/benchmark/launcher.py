@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import json
@@ -140,7 +139,7 @@ def _build_tasks() -> tuple[list[dict[str, Any]], Path]:
         sample_parts = ["part1"]
     config_path = os.environ.get("CONFIG_PATH") or "revise/revise.yaml"
     child_python = os.environ.get("BENCHMARK_CHILD_PYTHON") or sys.executable
-    benchmark_main = Path(__file__).resolve().with_name("benchmark_main.py")
+    benchmark_main = Path(__file__).resolve().parents[2] / "benchmark_main.py"
 
     tasks = []
     for sample_part in sample_parts:

@@ -174,7 +174,7 @@ def test_benchmark_metric_documentation_states_the_implemented_boundaries():
 
 
 def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path):
-    import benchmark_main
+    from revise.benchmark import cli as benchmark_main
 
     class FakePipeline:
         def __init__(self, config_path):

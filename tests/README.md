@@ -32,7 +32,7 @@ environment variables documented in their modules and CI jobs.
 | `backend/test_spot_sr_min_cells.py` | `revise/backend/adapters.py` | Spot-SR gene filtering and overlap checks | Spot-SR preprocessing edits | Synthetic matrices |
 | `backend/test_spot_sr_quota.py` | `revise/backend/kernels/spot_sr.py` | Rounded quota repair and large component smoke | Spot-SR allocation edits | Quota correctness only |
 | `backend/test_tacco_global_freshness.py` | TACCO global anchoring | Freshness and failure behavior | TACCO edits | Synthetic solver interaction |
-| `benchmark/test_launcher.py` | `benchmark_main.sh`, `benchmark_launcher.py` | Bounded parallel launch and failure propagation | Benchmark launcher edits | Fake worker processes |
+| `benchmark/test_launcher.py` | `benchmark_main.sh`, `revise/benchmark/launcher.py` | Bounded parallel launch and failure propagation | Benchmark launcher edits | Fake worker processes |
 | `config/test_ot_config.py` | `revise/config/` plus OT application wiring | Schema, profiles, locked overrides, and solver mapping | Config/OT edits | Resolved configuration, not real runs |
 | `io/test_h5ad_preflight.py` | `revise/io/` and input resolution | H5AD roles, axes, labels, overlap, and dependency preflight | Input-contract edits | Metadata and bounded synthetic values |
 | `preprocess/test_cli.py` | `revise/preprocess/` | Histology-prior console entry | Preprocess packaging edits | Static entry contract only |
@@ -43,6 +43,7 @@ environment variables documented in their modules and CI jobs.
 | `recon/test_run_manifest.py` | Framework/provenance run envelope | Unique run directories, locks, and terminal manifests | Run-lifecycle edits | Local filesystem only |
 | `recon/test_runtime_validation_errors.py` | Framework validation policies | Error typing and command failure semantics | Validation edits | Synthetic invalid requests |
 | `repository/test_documentation_contract.py` | README/docs/package metadata | Public claims match code and tests | Documentation/interface edits | Claim consistency only |
+| `repository/test_entrypoint_boundaries.py` | Root benchmark entrypoints and `revise.benchmark` | Root files remain thin public launchers while implementation belongs to the package | Benchmark entrypoint or package-boundary changes | Static ownership boundary only |
 | `repository/test_import_side_effects.py` | Package imports and optional analysis imports | Host environment stays unchanged; lazy optional imports | Import/dependency edits | Subprocess import behavior |
 | `repository/test_optional_dependencies.py` | `pyproject.toml` extras and optional imports | Missing extras fail with install guidance | Dependency edits | Dependency boundary only |
 | `repository/test_repository_layout.py` | Repository root/package ownership | Removed maintenance surfaces and package-owned utilities | Repository cleanup | File/layout assertions |
