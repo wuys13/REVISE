@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import runpy
 from pathlib import Path
@@ -80,12 +79,9 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
     assert "--spot-size" not in quickstart
 
 
-def test_installation_distinguishes_wheel_and_checkout_extras():
+def test_installation_describes_base_and_optional_capability_layers():
     installation = _read(ROOT / "docs/source/installation.rst")
     metadata = tomllib.loads(_read(ROOT / "pyproject.toml"))
-    template = json.loads(
-        _read(ROOT / "release/0.1.0rc1/release-manifest.template.json")
-    )
     optional = metadata["project"]["optional-dependencies"]
 
     assert optional["tacco"] == ["tacco==0.5.0"]
@@ -97,13 +93,13 @@ def test_installation_distinguishes_wheel_and_checkout_extras():
         "spatialdata",
         "dev",
     }
-    assert template["support"]["available_extras"] == sorted(optional)
-    assert "revise_svc-0.1.0rc1-py3-none-any.whl[tacco]" in installation
     for extra in set(optional) - {"dev"}:
         assert f'python -m pip install ".[{extra}]"' in installation
+    assert "releases can lag the repository" in installation
+    assert "After a matching package version is published" in installation
 
 
-def test_public_docs_use_the_single_platform_result_contract():
+def test_public_docs_use_the_single_svc_result_contract():
     text = _joined()
     cli = _read(ROOT / "revise/cli.py")
     case = _read(ROOT / "docs/source/case.rst")
@@ -112,7 +108,7 @@ def test_public_docs_use_the_single_platform_result_contract():
     )
 
     for filename in ("hST-SVC.h5ad", "iST-SVC.h5ad", "sST-SVC.h5ad"):
-        assert filename in text
+        assert filename not in text
     for compatibility_filename in (
         "sp_SVC.h5ad",
         "sc_SVC_expr.h5ad",
@@ -120,9 +116,19 @@ def test_public_docs_use_the_single_platform_result_contract():
     ):
         assert compatibility_filename not in canonical_case
         assert compatibility_filename in compatibility_case
-    assert "<output-root>/<sample-name>/<platform>-SVC.h5ad" in text
-    assert 'f"{args.platform}-SVC.h5ad"' in cli
+    assert "<output-root>/<sample-name>/SVC.h5ad" in text
+    assert 'output_dir / "SVC.h5ad"' in cli
+    assert "result.type" in text
+    assert "sp-SVC" in text
+    assert "sc-SVC" in text
     assert "provenance.json" in text
+
+
+def test_public_docs_route_to_package_owned_application_utilities():
+    text = _joined()
+
+    assert "revise-build-histology-priors" in text
+    assert "revise-compute-biological-metrics" in text
 
 
 def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
@@ -268,7 +274,7 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
     assert "runs one Sim2Real-ST case" not in quickstart
 
 
-def test_spot_sr_and_scale_claims_do_not_exceed_candidate_evidence():
+def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
     text = " ".join(_joined().lower().split())
     limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").lower().split())
     installed_smoke = _read(ROOT / "tests/integration/test_installed_cli.py")
@@ -286,7 +292,7 @@ def test_spot_sr_and_scale_claims_do_not_exceed_candidate_evidence():
     assert "200,000-cell quota" in text
     assert "do not establish a complete production-scale pipeline limit" in limitations
     assert "real-data end-to-end reconstruction" in limitations
-    assert "are deferred" in limitations
+    assert "have not yet been rerun" in limitations
     assert "no current gate proves biological validation" in limitations
     assert "size=(52, 52)" in installed_smoke
     assert "n_obs = 50_000" in graph_scale
@@ -316,18 +322,13 @@ def test_application_pm_on_cell_contract_names_the_only_resolved_location():
     assert "columns must exactly match the normalized cell-type labels" in normalized
 
 
-def test_release_identity_and_public_data_claims_are_precise():
+def test_public_data_and_repository_claims_are_precise():
     text = _joined(CLAIM_DOCS)
     metadata = _read(ROOT / "pyproject.toml")
     project = tomllib.loads(metadata)["project"]
-    template = json.loads(
-        _read(ROOT / "release/0.1.0rc1/release-manifest.template.json")
-    )
-    schema = json.loads(_read(ROOT / "release/0.1.0rc1/release-manifest.schema.json"))
     lower = text.lower()
 
     assert "https://zenodo.org/records/17705737" in text
-    assert "pending owner confirmation" in lower
     assert not re.search(r"\b10\.\d{4,9}/[-._;()/:a-z0-9]+", lower)
     assert not re.search(r"\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b", lower)
     assert "corresponding author:" not in lower
@@ -338,55 +339,41 @@ def test_release_identity_and_public_data_claims_are_precise():
         [{"name": "Pending owner confirmation"}],
     )
     assert "Data" not in project["urls"]
-    source_repository = template["source"]["repository"]
-    assert project["urls"]["Repository"] == source_repository
-    assert (
-        schema["properties"]["source"]["properties"]["repository"]["const"]
-        == source_repository
-    )
+    assert project["urls"]["Repository"] == "https://github.com/wuys13/REVISE"
 
 
-def test_gallery_distinguishes_curated_notebooks_from_legacy_assets():
+def test_gallery_describes_curated_notebooks_and_their_evidence_boundary():
     raw_gallery = _read(ROOT / "docs/source/gallery.rst")
     gallery = " ".join(raw_gallery.lower().split())
 
-    assert "revise-legacy" in gallery
-    assert "legacy-assets.json" in gallery
-    assert "exact source commit" in gallery
-    assert "curated notebooks are included in the clean repository" in gallery
-    assert "other historical assets" in gallery
+    assert "reproduce/benchmark/" in gallery
+    assert "reproduce/case/" in gallery
+    assert "not part of the installed python package" in gallery
+    assert "does not establish" in gallery
     assert "../case/" not in raw_gallery
     assert "../benchmark/" not in raw_gallery
     assert "zenodo" not in gallery
 
 
-def test_docs_version_and_support_match_validated_candidate_sources():
+def test_docs_version_and_support_match_project_sources():
     conf = _read(ROOT / "docs/conf.py")
     workflow = _read(ROOT / ".github/workflows/ci.yml")
-    version_source = _read(ROOT / "revise/_version.py")
-    version = re.search(r'__version__ = "([^"]+)"', version_source).group(1)
-    template = json.loads(
-        _read(ROOT / "release/0.1.0rc1/release-manifest.template.json")
-    )
     metadata = _read(ROOT / "pyproject.toml")
     requirements = _read(ROOT / "docs/requirements.txt").splitlines()
 
     assert "release-manifest.template.json" not in conf
-    assert template["release"]["version"] == version
-    assert template["docs"] == {"version": version, "channel": "candidate"}
-    assert template["support"]["tested_python"] == ["3.10", "3.11"]
     assert 'requires-python = ">=3.10,<3.12"' in metadata
     assert all(
         (ROOT / f"constraints/python-{minor}.txt").is_file()
         for minor in ("3.10", "3.11")
     )
-    assert version in _read(ROOT / "README.md")
+    assert 'release = version' in conf
     assert "sphinx-build -W --keep-going" in workflow
     assert 'author = "Pending owner confirmation"' in conf
     assert "source/limitations" in _read(ROOT / "docs/index.rst")
     assert "nbsphinx" not in conf
-    assert "plans/**" in conf
-    assert "superpowers/**" in conf
+    assert "plans/**" not in conf
+    assert "superpowers/**" not in conf
     assert requirements == [
         "sphinx==8.2.3",
         "sphinx-rtd-theme==3.0.2",

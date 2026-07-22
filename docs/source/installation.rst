@@ -1,43 +1,21 @@
 Installation
 ============
 
-Version ``0.1.0rc1`` is a candidate, not a claimed current PyPI release. Its
-gate matrix targets Python 3.10 and 3.11. Install either an exact candidate
-artifact or the current source checkout.
+Current source contract
+-----------------------
 
-Candidate Wheel
----------------
-
-The release workflow builds the Wheel once and tests those exact bytes outside
-the checkout. Install that file with:
+The unified CLI and optional groups documented here describe the current
+repository. Install that exact code with:
 
 .. code-block:: bash
 
-   python -m pip install /path/to/revise_svc-0.1.0rc1-py3-none-any.whl
-
-The installed command is ``revise-reconstruct``. The source-tree script
-``reconstruct.py`` is a compatibility wrapper and is not needed after Wheel
-installation.
-
-Install a Wheel extra from those same artifact bytes by appending the extra to
-the local Wheel path, for example:
-
-.. code-block:: bash
-
-   python -m pip install "/path/to/revise_svc-0.1.0rc1-py3-none-any.whl[tacco]"
-
-PyPI currently publishes version ``0.0.32``. It predates this source candidate,
-so an unpinned public-package install does not provide these exact candidate
-bytes or their current unified CLI and optional dependency groups.
-
-Source Checkout
----------------
-
-From an existing checkout:
-
-.. code-block:: bash
-
+   git clone https://github.com/wuys13/REVISE.git
+   cd REVISE
    python -m pip install .
+
+The published package can be installed with ``python -m pip install
+revise-svc``, but releases can lag the repository. Check the installed version
+before expecting the current CLI or optional groups.
 
 For development and test tools:
 
@@ -48,46 +26,55 @@ For development and test tools:
 The package contains ``revise/revise.yaml``, so installed code can construct
 ``REVISEPipeline()`` without a checkout-relative configuration path.
 
-Dependencies and extras
------------------------
+Dependency layers
+-----------------
 
-POT, Leiden, and the core scientific stack are base dependencies. From a source
-checkout, optional features are separated by domain:
+The base package contains reconstruction, benchmarking, the default OT
+implementation, clustering, and the core scientific stack. Additional
+capabilities are installed only when needed:
 
-.. code-block:: bash
+.. list-table::
+   :header-rows: 1
+   :widths: 2 3 4
 
-   python -m pip install ".[tacco]"
-   python -m pip install ".[pathway]"
-   python -m pip install ".[cci]"
-   python -m pip install ".[trajectory]"
-   python -m pip install ".[spatialdata]"
+   * - Capability
+     - Source-checkout install
+     - Purpose
+   * - Additional OT implementation
+     - ``python -m pip install ".[tacco]"``
+     - Adds another selectable OT implementation, such as TACCO
+   * - Pathway analysis
+     - ``python -m pip install ".[pathway]"``
+     - Dependencies used by pathway notebooks
+   * - Cell-cell interaction analysis
+     - ``python -m pip install ".[cci]"``
+     - Dependencies used by CCI notebooks
+   * - Trajectory analysis
+     - ``python -m pip install ".[trajectory]"``
+     - Dependencies used by trajectory notebooks
+   * - SpatialData input
+     - ``python -m pip install ".[spatialdata]"``
+     - SpatialData/Zarr input support
 
-The ``tacco`` extra installs the supported TACCO 0.5.0 solver dependency; it
-does not select TACCO automatically. Use ``--ot-method tacco`` or the GA/LR
-configuration described in :doc:`configuration`. Missing or incompatible
-optional dependencies fail when their feature is selected.
+After a matching package version is published, replace ``.`` with
+``revise-svc`` in those commands. Optional dependency selection and runtime
+algorithm selection are separate: installing an extra makes that capability
+available but does not activate it.
 
-The CCI extra does not download the CellPhoneDB database. None of these install
-commands downloads research data.
+The CCI extra does not download a CellPhoneDB database. None of these commands
+downloads research data or external analysis resources.
 
 Documentation build
 -------------------
-
-Build the user documentation in a separate environment:
 
 .. code-block:: bash
 
    python -m pip install -r docs/requirements.txt
    sphinx-build -W --keep-going -b html docs /tmp/revise-docs-html
 
-Sphinx imports the package from the checkout and mocks heavy scientific
-dependencies for API discovery. A successful documentation build proves link,
-RST, and import-surface consistency; it is not a scientific run.
-
 Research data
 -------------
 
-The paper benchmark/application datasets and reproduced results are published
-at ``https://zenodo.org/records/17705737``. This identifies the research data;
-it does not prove that the current candidate reran those datasets. Real-data
-end-to-end testing remains deferred until the owner authorizes the download.
+The paper benchmark/application datasets and reproduced results are available
+at ``https://zenodo.org/records/17705737``. Real-data end-to-end testing remains
+a separate validation step.

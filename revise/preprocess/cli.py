@@ -1,15 +1,14 @@
-#!/usr/bin/env python
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 from revise.preprocess.histology_priors import build_histology_prior_h5ad
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Build optional histology-derived REVISE priors from a raw image, "
@@ -29,7 +28,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mask",
         required=True,
-        help="2D labeled segmentation mask. Label 0 is background; positive labels are cells.",
+        help=(
+            "2D labeled segmentation mask. Label 0 is background; positive "
+            "labels are cells."
+        ),
     )
     parser.add_argument(
         "--image",
@@ -51,7 +53,10 @@ def parse_args() -> argparse.Namespace:
         "--spot-radius",
         type=float,
         default=None,
-        help="Optional maximum image-coordinate distance for assigning a segmented cell to a spot.",
+        help=(
+            "Optional maximum image-coordinate distance for assigning a "
+            "segmented cell to a spot."
+        ),
     )
     parser.add_argument(
         "--min-area",
@@ -69,11 +74,24 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path for a compact JSON preprocessing report.",
     )
-    return parser.parse_args()
+    return parser
 
 
-def main() -> None:
-    args = parse_args()
+def _build_report(
+    provenance: Dict[str, Any],
+    mapping: Dict[str, Any],
+    *,
+    max_examples: int = 5,
+) -> Dict[str, Any]:
+    example_mapping = {
+        spot_id: list(mapping[spot_id])[:max_examples]
+        for spot_id in list(mapping)[:max_examples]
+    }
+    return {**provenance, "example_mapping": example_mapping}
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     result = build_histology_prior_h5ad(
         st_h5ad_path=args.st_h5ad,
         mask_path=args.mask,
@@ -88,23 +106,13 @@ def main() -> None:
     if args.report_json is not None:
         report_path = Path(args.report_json)
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        report_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
     print(json.dumps(report, indent=2, sort_keys=True))
-
-
-def _build_report(
-    provenance: Dict[str, Any],
-    mapping: Dict[str, Any],
-    *,
-    max_examples: int = 5,
-) -> Dict[str, Any]:
-    example_mapping: Dict[str, Any] = {}
-    for spot_id in list(mapping.keys())[:max_examples]:
-        example_mapping[spot_id] = list(mapping[spot_id])[:max_examples]
-    report = dict(provenance)
-    report["example_mapping"] = example_mapping
-    return report
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

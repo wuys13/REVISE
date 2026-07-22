@@ -319,6 +319,68 @@ def test_finalize_callback_can_register_public_result_before_success(tmp_path):
     )
 
 
+def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
+    from revise.framework import REVISEPipeline
+
+    class FailSuccessfulManifest(REVISEPipeline):
+        def _write_final_metadata(self, ctx):
+            if ctx.run_status == "succeeded":
+                raise OSError("success manifest failed")
+            return super()._write_final_metadata(ctx)
+
+    output_root = tmp_path / "publication-rollback"
+    public_path = output_root / "callback-case" / "SVC.h5ad"
+    public_path.parent.mkdir(parents=True)
+    public_path.write_bytes(b"previous-result")
+    _write_framework_inputs(tmp_path, "callback-case")
+    pipeline = FailSuccessfulManifest()
+    pipeline.registry = _Registry(_FrameworkStrategy("ok"))
+
+    def publish(ctx):
+        previous_result = copy.deepcopy(ctx.provenance.get("result"))
+        public_path.write_bytes(b"new-result")
+        artifact = completed_artifact("public_result", public_path)
+        ctx.provenance["result"] = {
+            "filename": "SVC.h5ad",
+            "type": "sp-SVC",
+        }
+        ctx.record_artifact(artifact)
+
+        def commit():
+            return None
+
+        def rollback():
+            public_path.write_bytes(b"previous-result")
+            if previous_result is None:
+                ctx.provenance.pop("result", None)
+                ctx.svc.provenance.pop("result", None)
+            ctx.artifact_records[:] = [
+                record for record in ctx.artifact_records if record != artifact
+            ]
+
+        ctx.set_pending_publication(commit=commit, rollback=rollback)
+
+    with pytest.raises(OSError, match="success manifest failed"):
+        pipeline.run(
+            profile="application_sp",
+            io_overrides={
+                "data_root": str(tmp_path),
+                "output_root": str(output_root),
+                "sample_name": "callback-case",
+            },
+            finalize_callback=publish,
+        )
+
+    manifest = _framework_manifest(output_root, "callback-case")
+    assert public_path.read_bytes() == b"previous-result"
+    assert manifest["run"]["status"] == "failed"
+    assert "result" not in manifest
+    assert not any(
+        artifact["role"] == "public_result"
+        for artifact in manifest["artifacts"]
+    )
+
+
 @pytest.mark.parametrize("selected", STAGE_NAMES)
 def test_framework_each_stage_failure_keeps_terminal_manifest(
     monkeypatch,

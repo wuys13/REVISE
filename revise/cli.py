@@ -4,10 +4,10 @@
 本脚本通过 ``revise-svc`` 提供的 :class:`REVISEPipeline`，使用同一套命令行
 接口处理三类空间转录组输入：
 
-* hST（高分辨率 ST）：执行 sp-SVC 重建，输出 ``hST-SVC.h5ad``；
+* hST（高分辨率 ST）：执行 sp-SVC 重建；
 * iST（成像型 ST）：执行 sc-SVC 重建，并将空间结果与表达结果合并为单个
-  ``iST-SVC.h5ad``；
-* sST（spot-based ST）：执行超分辨率 sc-SVC 重建，输出 ``sST-SVC.h5ad``。
+  ``SVC.h5ad``；
+* sST（spot-based ST）：执行超分辨率 sc-SVC 重建。
 
 显式传入 ``--ot-method`` 时，它会同时控制全局注释和局部重建所使用的 OT
 实现，可选 ``pot`` 或 ``tacco``；省略时保留配置中两阶段各自的 solver。
@@ -19,8 +19,9 @@ iST 的内部流程会生成空间和表达两个 AnnData。最终文件严格�
 3. 两侧 ``SVC_cluster`` 集合必须完全一致，否则立即报错；
 4. 表达映射可使用同 cluster 均值（默认）或带随机种子的随机单细胞表达。
 
-最终文件写入 ``<output-root>/<sample-name>/<platform>-SVC.h5ad``。Pipeline
-自身的中间 H5AD 持久化会被关闭，但运行日志和 provenance 仍由 REVISE 保存。
+最终文件统一写入 ``<output-root>/<sample-name>/SVC.h5ad``，运行 manifest
+记录结果是 sp-SVC 还是 sc-SVC。Pipeline 自身的中间 H5AD 持久化会被关闭，
+但运行日志和 provenance 仍由 REVISE 保存。
 """
 
 from __future__ import annotations
@@ -50,6 +51,15 @@ ROUTES = {
     "hST": ("application_sp", "bin2cell", "sp_svc"),
     "iST": ("application_sc", "segmentation", None),
     "sST": ("application_sc_sst", "spot_size", "sc_svc_dec"),
+}
+PUBLIC_SVC_TYPES = {
+    "sp": "sp-SVC",
+    "sc": "sc-SVC",
+}
+PLATFORM_SVC_KINDS = {
+    "hST": "sp",
+    "iST": "sc",
+    "sST": "sc",
 }
 # 这些配置由高层 CLI 参数统一管理。用户不能再通过 --set 覆盖它们，避免
 # 命令行显示使用 POT、实际配置却被改成 TACCO 一类的歧义。
@@ -333,6 +343,15 @@ def _run_pipeline(
 def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]:
     """Build and publish the canonical result inside the finalize stage."""
     svc = ctx.svc
+    if args.platform not in PLATFORM_SVC_KINDS:
+        raise ValueError(f"Unsupported platform: {args.platform!r}")
+    expected_kind = PLATFORM_SVC_KINDS[args.platform]
+    if svc.svc_kind != expected_kind:
+        raise ValueError(
+            f"Platform {args.platform!r} requires SVC type {expected_kind!r}; "
+            f"strategy returned {svc.svc_kind!r}"
+        )
+    result_type = PUBLIC_SVC_TYPES[expected_kind]
     # 所有平台都从 SVC 标准载体的 artifacts 取结果，不依赖 run_dir 中的临时文件。
     outputs = dict(svc.artifacts.get("outputs", {}))
 
@@ -366,7 +385,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
 
     output_dir = Path(args.output_root) / args.sample_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{args.platform}-SVC.h5ad"
+    output_path = output_dir / "SVC.h5ad"
     relative_run_dir = Path(os.path.relpath(ctx.run_dir, start=output_dir)).as_posix()
 
     # 三个平台统一补充运行模式和可随 output tree 移动的 manifest 链接。
@@ -388,6 +407,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
 
     # 先完整写入同目录临时文件；失败时保留此前成功发布的 canonical 结果。
     temporary_path = None
+    backup_path = None
     try:
         with tempfile.NamedTemporaryFile(
             dir=output_dir,
@@ -398,9 +418,60 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             temporary_path = Path(handle.name)
         result.write_h5ad(temporary_path)
         artifact = completed_artifact("public_result", temporary_path)
-        os.replace(temporary_path, output_path)
         artifact["path"] = str(output_path)
-        ctx.record_artifact(artifact)
+        result_record = {
+            "filename": output_path.name,
+            "type": result_type,
+        }
+        had_previous_result = "result" in ctx.provenance
+        previous_result = copy.deepcopy(ctx.provenance.get("result"))
+        had_previous_svc_result = "result" in ctx.svc.provenance
+        previous_svc_result = copy.deepcopy(ctx.svc.provenance.get("result"))
+
+        if output_path.exists():
+            with tempfile.NamedTemporaryFile(
+                dir=output_dir,
+                prefix=f".{output_path.stem}.previous.",
+                suffix=output_path.suffix,
+                delete=False,
+            ) as handle:
+                backup_path = Path(handle.name)
+            backup_path.unlink()
+
+        def commit():
+            if backup_path is not None:
+                backup_path.unlink(missing_ok=True)
+
+        def rollback():
+            if backup_path is None:
+                output_path.unlink(missing_ok=True)
+            elif backup_path.exists():
+                os.replace(backup_path, output_path)
+
+            if not had_previous_result:
+                ctx.provenance.pop("result", None)
+            else:
+                ctx.provenance["result"] = previous_result
+            if not had_previous_svc_result:
+                ctx.svc.provenance.pop("result", None)
+            else:
+                ctx.svc.provenance["result"] = previous_svc_result
+
+            for index in range(len(ctx.artifact_records) - 1, -1, -1):
+                if ctx.artifact_records[index] == artifact:
+                    del ctx.artifact_records[index]
+                    break
+
+        ctx.set_pending_publication(commit=commit, rollback=rollback)
+        try:
+            if backup_path is not None:
+                os.replace(output_path, backup_path)
+            os.replace(temporary_path, output_path)
+            ctx.provenance["result"] = result_record
+            ctx.record_artifact(artifact)
+        except BaseException:
+            ctx.rollback_pending_publication()
+            raise
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
@@ -429,7 +500,7 @@ def reconstruct(args: argparse.Namespace) -> tuple[AnnData, Path, dict]:
 def get_args() -> argparse.Namespace:
     """定义统一 CLI；平台专用参数在不适用的平台上会被安全忽略。"""
     parser = argparse.ArgumentParser(
-        description="Reconstruct one hST-, iST-, or sST-SVC through revise-svc"
+        description="Reconstruct one SVC from hST, iST, or sST data through revise-svc"
     )
     parser.add_argument(
         "--version",

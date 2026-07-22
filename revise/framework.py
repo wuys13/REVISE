@@ -228,10 +228,12 @@ class REVISEPipeline:
                 )
 
                 svc = pipeline.run(ctx)
+                ctx.commit_pending_publication()
                 logger.info("[framework] finished unified run route=%s", route_key)
                 return svc
             except _SigtermInterrupt as exc:
                 try:
+                    ctx.rollback_pending_publication()
                     ctx.terminate_run(exc, interrupted=True)
                 except BaseException as persistence_error:
                     raise KeyboardInterrupt("received SIGTERM") from persistence_error
@@ -242,6 +244,7 @@ class REVISEPipeline:
                 raise KeyboardInterrupt("received SIGTERM") from None
             except KeyboardInterrupt as exc:
                 try:
+                    ctx.rollback_pending_publication()
                     ctx.terminate_run(exc, interrupted=True)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
@@ -249,6 +252,7 @@ class REVISEPipeline:
                 raise
             except Exception as exc:
                 try:
+                    ctx.rollback_pending_publication()
                     ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
@@ -327,6 +331,9 @@ class REVISEPipeline:
             "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
             "ot_events": copy.deepcopy(ctx.ot_events),
         }
+        result = copy.deepcopy(getattr(ctx, "provenance", {}).get("result"))
+        if result is not None:
+            provenance["result"] = result
 
         write_json(Path(ctx.run_dir) / "provenance.json", provenance)
 

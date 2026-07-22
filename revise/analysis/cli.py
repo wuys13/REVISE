@@ -4,15 +4,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import scanpy as sc
-
-from revise.analysis.biological_metrics import compute_conditional_moran_i
-from revise.analysis.biological_metrics import compute_identity_metrics
-from revise.analysis.biological_metrics import compute_local_label_entropy
-from revise.analysis.biological_metrics import compute_tmp_mer
-from revise.analysis.biological_metrics import make_cell_type_mean_baseline
-from revise.analysis.biological_metrics import summarize_conditional_moran_i
-
 
 def _parse_genes(raw: str | None) -> list[str] | None:
     if raw is None:
@@ -83,6 +74,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+
+    import scanpy as sc
+
+    from revise.analysis.biological_metrics import compute_conditional_moran_i
+    from revise.analysis.biological_metrics import compute_identity_metrics
+    from revise.analysis.biological_metrics import compute_local_label_entropy
+    from revise.analysis.biological_metrics import compute_tmp_mer
+    from revise.analysis.biological_metrics import make_cell_type_mean_baseline
+    from revise.analysis.biological_metrics import summarize_conditional_moran_i
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     adata = sc.read_h5ad(args.input_h5ad)

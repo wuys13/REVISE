@@ -107,8 +107,8 @@ run. Common IO values are:
 
 The input resolver applies the same route-specific path rules in preflight and
 full execution. The public result remains
-``<output-root>/<sample-name>/<platform>-SVC.h5ad``; the canonical run
-directory contains ``provenance.json`` and internal evidence.
+``<output-root>/<sample-name>/SVC.h5ad``; the canonical run directory contains
+``provenance.json`` and internal evidence.
 
 Python API
 ----------
@@ -133,6 +133,6 @@ Programmatic callers use the same merge and validation path:
        set_overrides=["ot.ga.solver=pot", "ot.lr.solver=pot"],
    )
 
-Direct API use returns an ``SVC`` carrier. The single public platform file is a
+Direct API use returns an ``SVC`` carrier. The single public result file is a
 contract of ``revise-reconstruct``/``reconstruct.py``, not of every low-level
 pipeline call.

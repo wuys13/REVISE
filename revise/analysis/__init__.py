@@ -1,15 +1,3 @@
-from revise.analysis.biological_metrics import compute_asw
-from revise.analysis.biological_metrics import compute_conditional_moran_i
-from revise.analysis.biological_metrics import compute_identity_metrics
-from revise.analysis.biological_metrics import compute_local_label_entropy
-from revise.analysis.biological_metrics import compute_tmp_mer
-from revise.analysis.biological_metrics import make_cell_type_mean_baseline
-from revise.analysis.biological_metrics import shannon_entropy_from_labels
-from revise.analysis.biological_metrics import summarize_conditional_moran_i
-from revise.analysis.biological_metrics import summarize_tmp_mer
-from revise.analysis.metrics import compute_clustering_metrics
-from revise.analysis.metrics import compute_metric
-
 __all__ = [
     "compute_metric",
     "compute_clustering_metrics",
@@ -27,7 +15,28 @@ __all__ = [
 ]
 
 
+_BIOLOGICAL_EXPORTS = {
+    "compute_asw",
+    "compute_conditional_moran_i",
+    "compute_identity_metrics",
+    "compute_local_label_entropy",
+    "compute_tmp_mer",
+    "make_cell_type_mean_baseline",
+    "shannon_entropy_from_labels",
+    "summarize_conditional_moran_i",
+    "summarize_tmp_mer",
+}
+
+
 def __getattr__(name):
+    if name in {"compute_metric", "compute_clustering_metrics"}:
+        from revise.analysis import metrics
+
+        return getattr(metrics, name)
+    if name in _BIOLOGICAL_EXPORTS:
+        from revise.analysis import biological_metrics
+
+        return getattr(biological_metrics, name)
     if name in {"ScSVCAnalysisService", "SpSVCAnalysisService"}:
         from revise.analysis.services import ScSVCAnalysisService, SpSVCAnalysisService
 

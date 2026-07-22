@@ -4,7 +4,6 @@ import hashlib
 import base64
 import csv
 import io
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -43,41 +42,30 @@ def built_distributions(tmp_path_factory):
     root = tmp_path_factory.mktemp("distribution-artifacts")
     supplied_dist = os.environ.get("REVISE_DIST_DIR")
     dist = Path(supplied_dist).resolve() if supplied_dist else root / "dist"
-    supplied_report = os.environ.get("REVISE_BUILD_REPORT")
-    report = Path(supplied_report).resolve() if supplied_report else root / "build-report.json"
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHONNOUSERSITE"] = "1"
     if not supplied_dist:
         command = [
             os.environ.get("REVISE_INTEGRATION_PYTHON", sys.executable),
-            ROOT / "tools" / "build_release_artifacts.py",
-            "--output-dir",
+            "-m",
+            "build",
+            "--outdir",
             dist,
-            "--report",
-            report,
+            ROOT,
         ]
         result = _run(command, cwd=root, env=env)
         assert result.returncode == 0, result.stderr
-    assert report.is_file()
-    payload = json.loads(report.read_text())
-    assert payload["build"]["backend"] == "setuptools.build_meta"
-    assert payload["build"]["isolation"] is False
-    assert payload["build"]["tools"] == {
-        "setuptools": "80.9.0",
-        "wheel": "0.45.1",
-    }
-    artifacts = {item["role"]: dist / item["filename"] for item in payload["artifacts"]}
-    assert set(artifacts) == {"wheel", "sdist"}
-    for item in payload["artifacts"]:
-        path = dist / item["filename"]
-        assert path.stat().st_size == item["size"]
-        assert _sha256(path) == item["sha256"]
-    return root, artifacts, env, payload
+    wheels = list(dist.glob("*.whl"))
+    sdists = list(dist.glob("*.tar.gz"))
+    assert len(wheels) == 1
+    assert len(sdists) == 1
+    artifacts = {"wheel": wheels[0], "sdist": sdists[0]}
+    return root, artifacts, env
 
 
 def test_distribution_contents_match_runtime_and_source_contract(built_distributions):
-    _, artifacts, _, _ = built_distributions
+    _, artifacts, _ = built_distributions
     with ZipFile(artifacts["wheel"]) as archive:
         wheel_names = archive.namelist()
         entry_points = archive.read(
@@ -112,6 +100,14 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
 
     assert "revise/revise.yaml" in wheel_names
     assert "revise-reconstruct = revise.cli:main" in entry_points
+    assert (
+        "revise-build-histology-priors = revise.preprocess.cli:main"
+        in entry_points
+    )
+    assert (
+        "revise-compute-biological-metrics = revise.analysis.cli:main"
+        in entry_points
+    )
     assert "Version: 0.1.0rc1" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
     assert any(name.endswith("/LICENSE") for name in wheel_names)
@@ -128,16 +124,11 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "benchmark_main.py",
         "benchmark_main.sh",
         "reconstruct.py",
-        "release/0.1.0rc1/release-manifest.schema.json",
-        "release/0.1.0rc1/release-manifest.template.json",
-        "release/0.1.0rc1/gate-report.schema.json",
     }
     for pattern in [
         "revise/**/*.py",
         "revise/**/*.yaml",
-        "tests/**/*.py",
         "constraints/*.txt",
-        "tools/*.py",
     ]:
         expected_sdist.update(
             path.relative_to(ROOT).as_posix() for path in ROOT.glob(pattern)
@@ -153,6 +144,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         for name in unexpected_sdist
     )
     assert not any(name.endswith("release-manifest.json") for name in sdist_names)
+    assert not any(name.startswith("tests/") for name in sdist_names)
     with tarfile.open(artifacts["sdist"], "r:gz") as archive:
         for source_path in expected_sdist:
             archived = archive.extractfile(members[source_path])
@@ -179,7 +171,10 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
 
 @pytest.mark.parametrize("role", ["wheel", "sdist"])
 def test_each_distribution_installs_outside_checkout(built_distributions, role):
-    root, artifacts, env, payload = built_distributions
+    root, artifacts, env = built_distributions
+    artifact_hashes = {
+        artifact_role: _sha256(path) for artifact_role, path in artifacts.items()
+    }
     venv = root / f"{role}-venv"
     source_python = os.environ.get("REVISE_INTEGRATION_PYTHON", sys.executable)
     clean_install = os.environ.get("REVISE_CLEAN_INSTALL") == "1"
@@ -261,9 +256,18 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
     )
     assert version.returncode == 0, version.stderr
     assert "0.1.0rc1" in version.stdout
-    for artifact in artifacts.values():
-        assert _sha256(artifact) == next(
-            item["sha256"]
-            for item in payload["artifacts"]
-            if item["role"] == ("wheel" if artifact.suffix == ".whl" else "sdist")
-        )
+    histology_help = _run(
+        [venv / "bin" / "revise-build-histology-priors", "--help"],
+        cwd=root,
+        env=env,
+    )
+    assert histology_help.returncode == 0, histology_help.stderr
+    metrics_help = _run(
+        [venv / "bin" / "revise-compute-biological-metrics", "--help"],
+        cwd=root,
+        env=env,
+    )
+    assert metrics_help.returncode == 0, metrics_help.stderr
+    assert "--st-h5ad" in histology_help.stdout
+    for artifact_role, artifact in artifacts.items():
+        assert _sha256(artifact) == artifact_hashes[artifact_role]

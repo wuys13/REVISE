@@ -12,17 +12,15 @@
 
 REVISE (REconstruction via Vision-integrated Spatial Estimation) reconstructs
 **Spatially-inferred Virtual Cells (SVCs)** from spatial transcriptomics data
-by integrating ST measurements, spatial or morphology-derived priors when
-available, and matched single-cell RNA-seq references. The public input layer
-uses AnnData/H5AD by default and optionally accepts SpatialData Zarr tables.
+and a matched single-cell RNA-seq reference. Spatial or morphology-derived
+priors can be used when available.
 
-The codebase is organized around one configuration-driven engine,
-`REVISEPipeline`, and two user-facing modes:
+REVISE has two public workflows:
 
-| Mode | Goal | Main entry points | Primary outputs |
+| Workflow | Goal | Entry points | Main results |
 | --- | --- | --- | --- |
-| `benchmark` | Reproduce Sim2Real-ST evaluations across six confounding factors | `benchmark_main.py`, `benchmark_main.sh`, `reproduce/benchmark/*.ipynb` | `metrics_normalized.csv` with PCC, SSIM, MSE, and NRMSE |
-| `application` | Reconstruct SVCs and run downstream real-data analysis | `revise-reconstruct`, `reconstruct.py`, `reproduce/case/*.ipynb` | `<output-root>/<sample-name>/<platform>-SVC.h5ad` and notebook figures |
+| **Benchmark** | Reproduce Sim2Real-ST evaluations across six confounding factors | [`benchmark_main.py`](benchmark_main.py), [`benchmark_main.sh`](benchmark_main.sh), [`reproduce/benchmark/`](reproduce/benchmark/) | Per-gene PCC, SSIM, MSE, and NRMSE |
+| **Application** | Reconstruct SVCs and perform real-data analyses | `revise-reconstruct`, [`reconstruct.py`](reconstruct.py), compatibility wrappers, [`reproduce/case/`](reproduce/case/) | `SVC.h5ad`, run provenance, and notebook figures |
 
 Documentation: <https://revise-svc.readthedocs.io/en/latest/>
 
@@ -30,8 +28,8 @@ Dataset and reproduced results: <https://zenodo.org/records/17705737>
 
 ## What REVISE Covers
 
-Sim2Real-ST benchmarks six confounding factors across three spatial
-transcriptomics platform types:
+Sim2Real-ST benchmarks six confounding factors across spatial transcriptomics
+platform types:
 
 - Spatially heterogeneous factors: image segmentation artifacts and bin-to-cell
   assignment errors.
@@ -44,53 +42,28 @@ transcriptomics platform types:
 
 REVISE reconstructs two complementary SVC types:
 
-- `sp-SVC`: spatial refinement for hST platforms such as Visium HD.
-- `sc-SVC`: molecular completion and cell-state refinement for iST/sST
-  platforms such as Xenium and Visium.
+- `sp-SVC`: spatial refinement for high-resolution spatial transcriptomics.
+- `sc-SVC`: molecular completion and cell-state refinement for imaging-based
+  and spot-based spatial transcriptomics.
 
 ![REVISE overview](png/REVISE_overview.png)
 
 <p align="center">Overview of the REVISE framework</p>
 
-## Architecture
+Every application reconstruction publishes the same stable filename:
 
-Modern reconstruction runs flow through:
+```text
+<output-root>/<sample-name>/SVC.h5ad
+```
 
-1. `revise-reconstruct`, `reconstruct.py`, or `revise.framework.REVISEPipeline`
-2. `revise/revise.yaml` profiles and runtime/IO overrides
-3. `revise.recon.pipeline.UnifiedReconstructionPipeline`
-4. backend strategies, platform adapters, and OT kernels in `revise/backend/`
-
-`UnifiedReconstructionPipeline` owns one fixed lifecycle: input validation,
-Global Anchoring (GA), local-unit preparation, graph and OT problem
-construction, Local Refinement (LR), expression update, SVC finalization, and
-optional benchmark evaluation. Both GA and LR can use POT or TACCO.
-
-![REVISE architecture](png/revise-architecture.png)
-
-<p align="center">Current configuration-driven REVISE architecture</p>
-
-Compatibility runner classes remain under `revise/backend/runners/` for the
-paper notebooks and parity checks. New application runs should use
-`revise-reconstruct`, `reconstruct.py`, or `REVISEPipeline`.
+The run's `provenance.json` records whether that result is an `sp-SVC` or
+`sc-SVC`, together with the resolved route, configuration, inputs, stages, and
+artifacts.
 
 ## Installation
 
-### Published PyPI release
-
-Install the published release line with:
-
-```bash
-python -m pip install revise-svc
-```
-
-PyPI currently publishes `0.0.32`. That release predates the `0.1.0rc1`
-source candidate documented below, including its unified reconstruction CLI,
-two-stage POT/TACCO selection, and current optional dependency groups.
-
-### Current source candidate
-
-To use the current repository implementation:
+The unified CLI and optional groups described below are the current source
+contract. Install that exact code from the repository:
 
 ```bash
 git clone https://github.com/wuys13/REVISE.git
@@ -98,32 +71,36 @@ cd REVISE
 python -m pip install .
 ```
 
-For an editable development install:
+The published package can be installed with `python -m pip install revise-svc`,
+but releases can lag the repository; check the installed version before
+expecting the current CLI or optional groups.
+
+The base source installation contains reconstruction, the default OT
+implementation, clustering, and the core scientific stack. Install additional
+capabilities only when needed:
+
+| Capability | Installation | Purpose |
+| --- | --- | --- |
+| Additional OT implementation | `python -m pip install ".[tacco]"` | Adds another selectable OT implementation, such as TACCO |
+| Pathway analysis | `python -m pip install ".[pathway]"` | Dependencies used by pathway analysis notebooks |
+| Cell-cell interaction analysis | `python -m pip install ".[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
+| Trajectory analysis | `python -m pip install ".[trajectory]"` | Dependencies used by trajectory analysis notebooks |
+| SpatialData input | `python -m pip install ".[spatialdata]"` | SpatialData/Zarr input support |
+
+After a matching package version is published, replace `.` with `revise-svc`
+in those commands. For development:
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-POT, Leiden, and the core scientific stack are base dependencies. Install
-optional domains only when needed:
-
-```bash
-python -m pip install ".[tacco]"       # TACCO 0.5.0 as an OT solver
-python -m pip install ".[pathway]"     # pathway analysis notebooks
-python -m pip install ".[cci]"         # CCI analysis notebooks
-python -m pip install ".[trajectory]"  # trajectory analysis notebooks
-python -m pip install ".[spatialdata]" # SpatialData Zarr input
-```
-
-The CCI extra installs Python dependencies only; it does not download a
-CellPhoneDB database. Installation does not download research data.
+Installation does not download research data or external analysis databases.
 
 ## Quick Start
 
-### Benchmark Mode
+### Benchmark
 
-`benchmark_main.py` runs one Sim2Real-ST confounding family and writes
-per-gene PCC, SSIM, MSE, and NRMSE metrics:
+From a source checkout, run one Sim2Real-ST confounding family:
 
 ```bash
 python benchmark_main.py \
@@ -134,30 +111,23 @@ python benchmark_main.py \
   --output-root output/benchmark
 ```
 
-Supported `--confounding` values are `segmentation`, `bin2cell`,
-`batch_effect`, `spot_size`, `gene_panel`, and `gene_dropout`. Use the bounded
-multi-family launcher for the paper workflow:
+Supported values are `segmentation`, `bin2cell`, `batch_effect`, `spot_size`,
+`gene_panel`, and `gene_dropout`. Run the bounded multi-family launcher with:
 
 ```bash
 bash benchmark_main.sh
 ```
 
-### Application Mode
+The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
+
+### Application
 
 ![SVC applications](png/SVC_applications.png)
 
 <p align="center">Biological insights enabled by SVC reconstruction</p>
 
-For `--sample-name sample`, `--st-file st.h5ad`, and
-`--sc-ref-file sc_ref.h5ad`, prepare the flat input layout resolved by the CLI:
-
-```text
-data/
-├── sample_st.h5ad
-└── sc_ref.h5ad
-```
-
-Run hST reconstruction with POT:
+Prepare an ST AnnData file and a matched single-cell reference, then run the
+installed command:
 
 ```bash
 revise-reconstruct \
@@ -166,88 +136,44 @@ revise-reconstruct \
   --data-root data \
   --st-file st.h5ad \
   --sc-ref-file sc_ref.h5ad \
-  --output-root output \
-  --ot-method pot
+  --output-root output
 ```
 
-Use `--platform iST` or `--platform sST` for the other routes. From a source
-checkout, `python reconstruct.py` delegates to the same CLI implementation.
-Append `--dry-run` to validate resolved inputs and dependencies without
-running reconstruction.
+`--platform` selects the internal reconstruction route. The public result is
+always `output/sample/SVC.h5ad`; its `sp-SVC` or `sc-SVC` classification is
+recorded in `provenance.json`. From a source checkout, `python reconstruct.py`
+delegates to the same command implementation.
 
-Every successful application run publishes one stable-facing result:
+The paper-compatible wrappers are retained only for reproducing historical
+notebooks. They keep their legacy output names and are not part of the
+canonical `SVC.h5ad` output contract:
 
-```text
-<output-root>/<sample-name>/<platform>-SVC.h5ad
-```
+- [`application_sp_SVC_recon.py`](application_sp_SVC_recon.py)
+- [`application_sc_SVC_recon.py`](application_sc_SVC_recon.py)
 
-The concrete names are `hST-SVC.h5ad`, `iST-SVC.h5ad`, and `sST-SVC.h5ad`.
-The result records a link to the canonical run's `provenance.json`.
+Application reconstruction and downstream analysis notebooks are under
+[`reproduce/case/`](reproduce/case/).
 
-Historical `application_sp_SVC_recon.py` and
-`application_sc_SVC_recon.py` entry points remain for notebook compatibility;
-they are not the recommended installed interface and retain notebook-specific
-output copies.
-
-### POT and TACCO
-
-REVISE exposes two OT stages:
-
-- GA (Global Anchoring): `ot.ga.solver`
-- LR (Local Refinement): `ot.lr.solver`
-
-`--ot-method pot` or `--ot-method tacco` selects the same solver for both
-stages. Omit the option to retain the merged configuration, including a mixed
-selection configured with `--set ot.ga.solver=...` and
-`--set ot.lr.solver=...`. TACCO is optional and pinned to 0.5.0; a requested
-TACCO run fails explicitly rather than falling back to POT.
-
-### Minimal Input Format
-
-Both input files need non-empty `X`, unique `obs_names`, unique `var_names`,
-and at least one shared gene. The ST input also needs two-dimensional
-coordinates in `obsm["spatial"]`.
-
-| File | Required fields | Meaning |
-| --- | --- | --- |
-| `st.h5ad` | `X`, `var_names`, `obsm["spatial"]` | Spatial unit by gene matrix and two spatial coordinates per row |
-| `sc_ref.h5ad` | `X`, `var_names`, `obs["Level1"]` | Reference cell by gene matrix and a broad cell-type label |
-
-With the default column arguments, hST requires reference `obs["Level1"]`;
-iST and sST also require `obs["Level2"]`. Rows in the ST input represent bins
-or pseudo-cells for hST, segmented cells for iST, and spots for sST.
-
-For sST, `st_adata.uns["all_cells_in_spot"]` can provide an existing
-spot-to-virtual-cell mapping. If the optional, case-sensitive
-`<data-root>/PM_on_cell.csv` score matrix is absent, cell-type proportions are
-rounded, repaired to exact per-spot quotas, and assigned to existing virtual
-cells with a seeded random permutation. This preserves quota composition; it
-does not infer true sub-spot cell locations.
-
-### Optional Histology Preprocessing
-
-When matched histology and a labeled segmentation mask are available, build a
-spot-to-cell prior before reconstruction:
+Optional morphology priors can be prepared through the installed package
+command:
 
 ```bash
-python scripts/build_histology_priors.py \
-  --st-h5ad raw_data/sample/st.h5ad \
-  --image raw_data/sample/histology.png \
-  --mask raw_data/sample/segmentation_mask.tif \
-  --out-h5ad raw_data/sample/st_with_histology_prior.h5ad \
-  --spot-radius 55 \
-  --report-json output/sample/histology_prior_report.json
+revise-build-histology-priors \
+  --st-h5ad st.h5ad \
+  --mask segmented_cells.tif \
+  --out-h5ad st_with_histology_priors.h5ad
 ```
 
-The preprocessor writes the standardized
-`st_adata.uns["all_cells_in_spot"]` prior. When matched histology is not
-available, the same reconstruction pipeline can use ST coordinates and
-transcript counts without this optional preprocessing step.
+Biology-facing post-reconstruction metrics use the package-owned analysis
+implementation:
 
-SpatialData Zarr input is enabled with the `[spatialdata]` extra and
-`io.input_format=spatialdata` configuration overrides.
+```bash
+revise-compute-biological-metrics \
+  --input-h5ad output/sample/SVC.h5ad \
+  --output-dir output/sample/biological_metrics
+```
 
-### Python API
+## Python API
 
 ```python
 from revise.framework import REVISEPipeline
@@ -268,57 +194,25 @@ svc = pipeline.run(
 )
 ```
 
-## Notebooks
+## Reproduction Notebooks
 
-The curated paper notebooks are tracked in this repository. They require the
-corresponding Zenodo data and, for some downstream analyses, optional extras or
-supporting resources recorded in `legacy-assets.json`.
+The curated paper notebooks are tracked under [`reproduce/`](reproduce/).
+They require the corresponding data and, for some downstream analyses, the
+optional installation groups described above.
 
-| Area | Files | Purpose |
-| --- | --- | --- |
-| Benchmark | `reproduce/benchmark/seg_benchmark.ipynb`, `spot_benchmark.ipynb`, `batch_benchmark.ipynb`, `imputation_benchmark.ipynb` | Inspect Sim2Real-ST benchmark outputs and metric trends |
-| Application reconstruction | `reproduce/case/*_recon.ipynb`, `reproduce/case/sp_SVC_case.ipynb` | Rebuild paper application cases from raw inputs |
-| Application analysis | `reproduce/case/*_analysis.ipynb`, `reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb`, `application_sc_SVC_analysis_case.ipynb` | Analyze cell states, pathways, spatial patterns, and downstream figures |
-
-These notebooks preserve historical analysis workflows and embedded outputs.
-Their presence is not evidence that the current `0.1.0rc1` candidate has rerun
-or biologically validated every paper result.
-
-## Validation Status
-
-Local and CI gates cover packaging, the public CLI, synthetic POT paths, small
-TACCO solver smokes, provenance, failure behavior, documentation, and selected
-component-scale checks. Real-data end-to-end reconstruction and cross-solver
-biological parity have not yet been rerun for `0.1.0rc1`.
-
-The published Zenodo archive identifies the paper datasets and reproduced
-results; it does not by itself establish that the current candidate reproduced
-those bytes. Final release contacts and named project roles remain pending
-owner confirmation.
-
-## Development Checks
-
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -p no:capture
-python -m compileall -q benchmark_main.py revise
-ruff check revise/
-black --check revise/
-```
-
-None of these checks downloads research data.
+Their presence preserves the paper workflows; it does not mean the current
+source checkout has rerun every real-data analysis. Real-data end-to-end
+validation remains a separate release step.
 
 ## Repository Layout
 
-- `revise/framework.py`: public `REVISEPipeline` entry point.
-- `revise/revise.yaml`: routing profiles and default configuration.
-- `revise/recon/`: unified pipeline context and lifecycle orchestration.
-- `revise/backend/`: strategies, adapters, runners, kernels, and operations.
-- `revise/config/`: configuration loader and runner contracts.
-- `revise/analysis/`: benchmark metrics and downstream analysis helpers.
-- `reproduce/benchmark/`: benchmark analysis notebooks.
-- `reproduce/case/`: real application reconstruction and analysis notebooks.
-- `docs/`: ReadTheDocs / Sphinx source.
-- `legacy-assets.json`: exact index of intentionally excluded legacy material.
+- `revise/`: installable reconstruction and analysis package.
+- `reproduce/`: benchmark and application notebooks.
+- `docs/`: detailed user and method documentation.
+- `logo/`, `png/`: public project and scientific figures.
+- `tests/`: behavioral, scientific-contract, packaging, and CLI tests.
+- `.github/`: continuous integration.
+- `constraints/`: tested Python 3.10/3.11 dependency constraints.
 
 ## License
 

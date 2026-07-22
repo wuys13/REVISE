@@ -49,6 +49,8 @@ dependencies = [
 
 [project.scripts]
 revise-reconstruct = "revise.cli:main"
+revise-build-histology-priors = "revise.preprocess.cli:main"
+revise-compute-biological-metrics = "revise.analysis.cli:main"
 
 [project.optional-dependencies]
 tacco = ["tacco==0.5.0"]

@@ -402,8 +402,16 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
         run_dir=tmp_path / "run",
         logger=logging.getLogger("test-unresolved-provenance"),
     )
+    ctx.provenance["result"] = {
+        "filename": "SVC.h5ad",
+        "type": "sp-SVC",
+    }
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
     manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
     assert manifest["schema_version"] == 2
+    assert manifest["result"] == {
+        "filename": "SVC.h5ad",
+        "type": "sp-SVC",
+    }
     assert manifest["data_fingerprint"] is None

@@ -7,11 +7,7 @@ include benchmark_main.py
 include benchmark_main.sh
 include reconstruct.py
 recursive-include revise *.py *.yaml
-recursive-include tests *.py
 recursive-include constraints *.txt
-include release/0.1.0rc1/release-manifest.schema.json
-include release/0.1.0rc1/release-manifest.template.json
-include release/0.1.0rc1/gate-report.schema.json
-recursive-include tools *.py
+prune tests
 prune **/__pycache__
 global-exclude *.py[cod]

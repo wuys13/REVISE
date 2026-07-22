@@ -5,8 +5,8 @@ REVISE uses one orchestration lifecycle for three kinds of spatial input. The
 route describes the computational contract; it does not by itself prove that a
 reconstructed object is a true cell or biologically valid result.
 
-Platforms and results
----------------------
+Routes and result types
+-----------------------
 
 .. list-table::
    :header-rows: 1
@@ -14,21 +14,21 @@ Platforms and results
 
    * - Platform
      - Input rows
-     - Public CLI result
+     - Public 1.x result type
    * - ``hST``
      - high-definition bins or pseudo-cells
-     - ``hST-SVC.h5ad``
+     - ``sp-SVC``
    * - ``iST``
      - segmented imaging-ST cells
-     - ``iST-SVC.h5ad``
+     - ``sc-SVC``
    * - ``sST``
      - spot-level observations
-     - ``sST-SVC.h5ad``
+     - ``sc-SVC``
 
-The common result location is
-``<output-root>/<sample-name>/<platform>-SVC.h5ad``. hST selects the sp-SVC
-route. iST and sST select sc-SVC routes; the CLI merges route-internal objects
-into one platform result when necessary.
+The common result location is ``<output-root>/<sample-name>/SVC.h5ad``. Its
+``provenance.json`` records the public result type separately from the
+internal platform route. The CLI merges route-internal objects into one public
+result when necessary.
 
 Shared lifecycle
 ----------------
@@ -88,7 +88,7 @@ dataset into a scientifically comparable one.
 Evidence versus interpretation
 ------------------------------
 
-Candidate tests establish route selection, array/label invariants, solver
+Automated tests establish route selection, array/label invariants, solver
 events, deterministic identities, failure states, output publication, and
 small synthetic execution. They do not establish biological validation,
 cross-solver biological parity, or production-scale suitability. See

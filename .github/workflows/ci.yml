@@ -4,7 +4,6 @@ on:
   push:
     branches: ["**"]
   pull_request:
-  workflow_call:
 
 permissions:
   contents: read
@@ -18,8 +17,6 @@ jobs:
         python-version: ["3.10", "3.11"]
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -27,40 +24,11 @@ jobs:
         run: >-
           python -m pip install
           -c constraints/python-${{ matrix.python-version }}.txt
-          ".[dev]" jsonschema
-      - name: Validate clean repository boundary
-        if: ${{ hashFiles('legacy-assets.json') != '' }}
-        run: python tools/check_repository.py
-      - name: Run release-critical regressions
+          ".[dev]"
+      - name: Run tests
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: python -m pytest -p no:capture -q --ignore=tests/integration
-
-  unit-report:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Record unit matrix gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate unit
-          --tested-python 3.10
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-unit
-          path: ${{ runner.temp }}/gate/gate-unit.json
 
   package:
     needs: test
@@ -70,82 +38,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install exact build toolchain
+      - name: Install build and distribution test dependencies
         run: >-
           python -m pip install
           -c constraints/python-3.11.txt
-          setuptools wheel
-      - name: Build candidate exactly once
+          build pytest
+      - name: Build wheel and source distribution
+        run: python -m build --outdir "${RUNNER_TEMP}/candidate"
+      - name: Test distribution contents and clean installation
         env:
-          REVISE_SOURCE_COMMIT: ${{ github.sha }}
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          REVISE_DIST_DIR: ${{ runner.temp }}/candidate
+          REVISE_CLEAN_INSTALL: "1"
         run: >-
-          python tools/build_release_artifacts.py
-          --output-dir "${RUNNER_TEMP}/candidate"
-          --report "${RUNNER_TEMP}/candidate/build-report.json"
+          python -m pytest -p no:capture -q
+          tests/integration/test_distribution_artifacts.py
       - uses: actions/upload-artifact@v4
         with:
           name: candidate-dist
           path: ${{ runner.temp }}/candidate/*
           if-no-files-found: error
-      - name: Record package gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate package
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-package
-          path: ${{ runner.temp }}/gate/gate-package.json
-
-  distribution:
-    needs: package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: actions/download-artifact@v4
-        with:
-          name: candidate-dist
-          path: ${{ runner.temp }}/candidate
-      - name: Install constrained distribution test dependencies
-        run: >-
-          python -m pip install
-          -c constraints/python-3.11.txt
-          pytest numpy pandas scipy anndata PyYAML POT
-      - name: Test exact wheel and sdist outside checkout
-        env:
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-          REVISE_DIST_DIR: ${{ runner.temp }}/candidate
-          REVISE_BUILD_REPORT: ${{ runner.temp }}/candidate/build-report.json
-          REVISE_CLEAN_INSTALL: "1"
-        run: >-
-          python -m pytest -p no:capture -q
-          tests/integration/test_distribution_artifacts.py
-      - name: Record distribution gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate integration
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-integration
-          path: ${{ runner.temp }}/gate/gate-integration.json
 
   installed-cli:
     needs: package
@@ -163,45 +75,19 @@ jobs:
         with:
           name: candidate-dist
           path: ${{ runner.temp }}/candidate
-      - name: Install constrained runtime dependencies
+      - name: Install exact candidate wheel
         run: >-
           python -m pip install
           -c constraints/python-${{ matrix.python-version }}.txt
           pytest
           "${RUNNER_TEMP}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl"
-      - name: Test the exact candidate wheel
+      - name: Test installed reconstruction CLI
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           REVISE_WHEEL: ${{ runner.temp }}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl
         run: >-
           python -m pytest -p no:capture -q
           tests/integration/test_installed_cli.py
-
-  installed-cli-report:
-    needs: installed-cli
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Record installed CLI matrix gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate installed_cli
-          --tested-python 3.10
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-installed-cli
-          path: ${{ runner.temp }}/gate/gate-installed_cli.json
 
   docs:
     needs: test
@@ -213,56 +99,8 @@ jobs:
           python-version: "3.11"
       - name: Install documentation dependencies
         run: python -m pip install -r docs/requirements.txt
-      - name: Build documentation with Sphinx warnings as errors
+      - name: Build documentation with warnings as errors
         run: sphinx-build -W --keep-going -b html docs "${RUNNER_TEMP}/docs-html"
-      - name: Record documentation gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate docs
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-docs
-          path: ${{ runner.temp }}/gate/gate-docs.json
-
-  repository:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Validate tracked repository boundary
-        if: ${{ hashFiles('legacy-assets.json') != '' }}
-        run: python tools/check_repository.py
-      - name: Reject workflow-created source changes
-        run: git diff --exit-code
-      - name: Record repository gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate repository
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-repository
-          path: ${{ runner.temp }}/gate/gate-repository.json
 
   tacco-smoke:
     needs: test
@@ -272,31 +110,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install exact TACCO smoke environment
+      - name: Install TACCO smoke environment
         run: >-
           python -m pip install
           -c constraints/python-3.11.txt
           pytest numpy pandas scipy anndata PyYAML
           POT==0.9.5 tacco==0.5.0
-      - name: Run real TACCO solver smoke
+      - name: Run TACCO solver smoke
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: >-
           python -m pytest -p no:capture -q
           tests/integration/test_tacco_solver_smoke.py
-      - name: Record TACCO gate
-        env:
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: >-
-          python tools/create_ci_gate_reports.py
-          --output-dir "${RUNNER_TEMP}/gate"
-          --gate tacco
-          --tested-python 3.11
-          --head-sha "${GITHUB_SHA}"
-          --run-id "${GITHUB_RUN_ID}"
-          --run-attempt "${GITHUB_RUN_ATTEMPT}"
-          --run-url "${RUN_URL}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gate-tacco
-          path: ${{ runner.temp }}/gate/gate-tacco.json

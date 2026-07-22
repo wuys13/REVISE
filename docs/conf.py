@@ -43,10 +43,6 @@ exclude_patterns: list[str] = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
-    # These source-only migration records are absent from the clean export and
-    # remain excluded while this legacy checkout is still used to build docs.
-    "plans/**",
-    "superpowers/**",
     # Ignore stale local copies from the pre-unified API layout. Current
     # autosummary pages are generated from source/api/index.rst during build.
     "source/api/generated/revise.application.*",

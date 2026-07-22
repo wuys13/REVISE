@@ -299,12 +299,16 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         )
         assert result.returncode == 0, result.stderr
         payload = json.loads(result.stdout)
-        public = output_root / "sample" / "hST-SVC.h5ad"
+        public = output_root / "sample" / "SVC.h5ad"
         assert public.is_file()
         assert Path(payload["output"]) == public
         manifest_path = next(output_root.rglob("provenance.json"))
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert manifest["run"]["status"] == "succeeded"
+        assert manifest["result"] == {
+            "filename": "SVC.h5ad",
+            "type": "sp-SVC",
+        }
         assert manifest["stages"][3]["status"] == "succeeded"
         public_artifacts = [
             artifact

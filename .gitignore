@@ -10,11 +10,6 @@ CLAUDE.md
 
 # Local-only reviewer/development material
 SMI/
-tools/local_validation/
-
-# Local evidence for the normalized legacy release index. The JSON index is
-# tracked; downloaded distributions and raw service responses are not.
-release/legacy/evidence/
 
 plot/
 results/

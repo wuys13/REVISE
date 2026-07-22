@@ -2,8 +2,8 @@ Benchmark Reproduction
 ======================
 
 Benchmark reproduction is a checkout-only paper path. It is separate from the
-installed ``revise-reconstruct`` command and requires research data whose
-official archive identity is pending owner confirmation.
+installed ``revise-reconstruct`` command and requires the corresponding paper
+data.
 
 Run one confounding family
 --------------------------
@@ -103,7 +103,7 @@ undefined cases:
 - when normalized ground-truth mean is zero but error is nonzero, NRMSE
   produces positive infinity.
 
-The candidate does not replace, drop, or coerce these values to zero. Consumers
+REVISE does not replace, drop, or coerce these values to zero. Consumers
 must retain the per-gene table and handle non-finite values explicitly when
 aggregating.
 
@@ -121,5 +121,4 @@ Benchmark notebooks
 
 The curated benchmark notebooks are tracked under ``reproduce/benchmark/``.
 Their embedded historical outputs do not expand the proof boundary above and
-do not establish that ``0.1.0rc1`` reran the paper datasets. Supporting assets
-that remain excluded are recorded in ``legacy-assets.json``.
+do not establish that the current source checkout reran the paper datasets.

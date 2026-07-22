@@ -1,25 +1,19 @@
-Curated Notebooks and Legacy Assets
-===================================
+Curated Reproduction Notebooks
+==============================
 
-Curated notebooks are included in the clean repository under
-``reproduce/benchmark/`` and ``reproduce/case/``, together with the root
-application analysis notebook. They preserve the paper-facing workflows and
-embedded historical outputs, but they are not part of the installed package.
+Curated notebooks are included under ``reproduce/benchmark/`` and
+``reproduce/case/``. They preserve the paper-facing workflows and embedded
+historical outputs but are not part of the installed Python package.
 
-Other historical assets remain in ``REVISE-legacy``. These include stored
-outputs, internal implementation plans, duplicate documentation links, release
-observations, and supporting analysis files that are not required by the
-maintained source tree.
-
-The root ``legacy-assets.json`` records the exact source commit and, for every
-excluded tracked path, its SHA-256, role, exclusion reason, and retrieval
-command. This keeps the remaining historical material recoverable from the
-exact source commit without treating it as part of the maintained product.
+Benchmark notebooks inspect Sim2Real-ST metric outputs. Application notebooks
+cover reconstruction and downstream cell-state, pathway, spatial-pattern, and
+other analyses. Some require optional package extras and external reference
+resources.
 
 Evidence boundary
 -----------------
 
-The presence of a notebook or indexed legacy item proves only where its bytes
-came from. It does not establish that version ``0.1.0rc1`` reran a displayed
-result or biologically validated a downstream pattern. Use the current CLI and
-provenance contracts for new runs.
+The presence of a notebook proves only that the workflow is preserved in the
+repository. It does not establish that the current source checkout reran a
+displayed result or biologically validated a downstream pattern. Use the
+current CLI and ``provenance.json`` contract for new runs.

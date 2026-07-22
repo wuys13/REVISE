@@ -65,6 +65,12 @@ class PipelineContext:
     _provenance_callback: Optional[Callable[["PipelineContext"], None]] = field(
         init=False, default=None, repr=False
     )
+    _publication_commit: Optional[Callable[[], None]] = field(
+        init=False, default=None, repr=False
+    )
+    _publication_rollback: Optional[Callable[[], None]] = field(
+        init=False, default=None, repr=False
+    )
     _run_started_monotonic: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -118,6 +124,38 @@ class PipelineContext:
     def _notify_provenance(self) -> None:
         if self._provenance_callback is not None:
             self._provenance_callback(self)
+
+    def set_pending_publication(
+        self,
+        *,
+        commit: Callable[[], None],
+        rollback: Callable[[], None],
+    ) -> None:
+        if self._publication_commit is not None:
+            raise RuntimeError("A result publication is already pending")
+        self._publication_commit = commit
+        self._publication_rollback = rollback
+
+    def commit_pending_publication(self) -> None:
+        commit = self._publication_commit
+        self._publication_commit = None
+        self._publication_rollback = None
+        if commit is None:
+            return
+        try:
+            commit()
+        except Exception:
+            self.logger.warning(
+                "[framework] could not remove the previous result backup",
+                exc_info=True,
+            )
+
+    def rollback_pending_publication(self) -> None:
+        rollback = self._publication_rollback
+        self._publication_commit = None
+        self._publication_rollback = None
+        if rollback is not None:
+            rollback()
 
     @contextmanager
     def _durable_transition(self):
