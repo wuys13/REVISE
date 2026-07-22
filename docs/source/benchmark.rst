@@ -48,7 +48,7 @@ Run the bounded launcher
 
    bash benchmark_main.sh
 
-The shell entry stays in the foreground while ``benchmark_launcher.py`` owns a
+The shell entry stays in the foreground while ``revise.benchmark.launcher`` owns a
 bounded set of child process groups. It writes ``launcher_status.json``,
 forwards interruption, reaps children, and returns nonzero if any case fails.
 The launcher does not convert a partial suite into success.

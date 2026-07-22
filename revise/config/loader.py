@@ -13,9 +13,9 @@ except ImportError as exc:  # pragma: no cover
 
 
 APPLICATION_DEFAULT_CF = {
-    "hST": "bin2cell",
-    "iST": "segmentation",
-    "sST": "spot_size",
+    "sp_svc": "bin2cell",
+    "sc_svc": "segmentation",
+    "sc_svc_sr": "spot_size",
 }
 
 TOP_LEVEL_KEYS = {"version", "defaults", "router", "profiles", "locked_params", "schemas"}
@@ -43,8 +43,6 @@ RUNTIME_KEYS = {
     "task",
     "svc_kind",
     "strategy",
-    "platform_adapter",
-    "cf_strategy",
 }
 IO_KEYS = {
     "data_root",
@@ -118,7 +116,7 @@ POSTERIOR_CONDITIONING_KEYS = {
     "cost_strength",
     "strict",
 }
-ROUTE_LEAF_KEYS = {"mode", "task", "svc_kind", "strategy", "platform_adapter", "cf_strategy"}
+ROUTE_LEAF_KEYS = {"mode", "task", "svc_kind", "strategy"}
 LOCKED_PARAMS_KEYS = {"expose_in_cli", "keys"}
 
 
@@ -280,8 +278,6 @@ def _validate_router(router: Dict[str, Any]) -> None:
                 "task",
                 "svc_kind",
                 "strategy",
-                "platform_adapter",
-                "cf_strategy",
             }
             missing = sorted(k for k in required if route_map.get(k) in (None, ""))
             if missing:
@@ -399,6 +395,12 @@ def _resolve_runtime_route(raw_config: Dict[str, Any], merged: Dict[str, Any]) -
         )
 
     runtime.update(route)
+    hyperresolution = merged.get("sc", {}).get("hyperresolution", {})
+    if runtime.get("task") == "sc_svc" and hyperresolution.get("enabled"):
+        strategy = hyperresolution.get("strategy")
+        if not strategy:
+            raise ConfigError("sc.hyperresolution.strategy is required when enabled")
+        runtime["strategy"] = strategy
     return route
 
 

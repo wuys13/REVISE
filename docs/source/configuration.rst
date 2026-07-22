@@ -122,7 +122,7 @@ Programmatic callers use the same merge and validation path:
    pipeline = REVISEPipeline()
    result = pipeline.run(
        profile="application_sp",
-       runtime_overrides={"platform": "hST", "confounding": "bin2cell"},
+       runtime_overrides={"platform": "sp_svc", "confounding": "bin2cell"},
        io_overrides={
            "data_root": "data",
            "output_root": "output",
@@ -134,5 +134,5 @@ Programmatic callers use the same merge and validation path:
    )
 
 Direct API use returns an ``SVC`` carrier. The single public result file is a
-contract of ``revise-reconstruct``/``reconstruct.py``, not of every low-level
-pipeline call.
+contract of ``revise-reconstruct``/``application_reconstruct.py``, not of every
+low-level pipeline call.

@@ -11,7 +11,7 @@ from anndata import AnnData
 from scipy.spatial import cKDTree
 from skimage import io, measure
 
-from revise.utils.sst_input import ALL_CELLS_IN_SPOT_KEY, ensure_all_cells_in_spot
+from revise.utils.spot_sr_input import ALL_CELLS_IN_SPOT_KEY, ensure_all_cells_in_spot
 
 
 HISTOLOGY_PRIOR_KEY = "revise_histology_prior"
@@ -287,7 +287,7 @@ def build_histology_prior_from_tables(
     This mutates ``st_adata`` in place by setting ``uns[mapping_key]`` and
     ``uns["revise_histology_prior"]``. Spots not covered by the segmentation
     are filled with the same transcript-count virtual-cell fallback used by the
-    sST input service, and the number of fallback spots is recorded in
+    sc-SVC-sr input service, and the number of fallback spots is recorded in
     provenance.
     """
 
@@ -338,7 +338,7 @@ def build_histology_prior_from_tables(
         ),
         "fallback_policy": (
             "Spots without image-derived cells are filled with deterministic "
-            "transcript-count virtual-cell ids from revise.utils.sst_input."
+            "transcript-count virtual-cell ids from revise.utils.spot_sr_input."
         ),
     }
     if image_path is not None:

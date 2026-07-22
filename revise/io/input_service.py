@@ -178,10 +178,7 @@ class REVISEInputService:
             self._require_obs(adata, required_obs, context=context)
         elif role == "sc_ref":
             required_obs = [str(columns.get("cell_type_col", "Level1"))]
-            platform = str(runtime.get("platform"))
-            if mode == "application" and task == "sc_svc" and platform != "iST":
-                required_obs.extend(["Level1", "Level2"])
-            if mode == "application" and task == "sc_svc" and platform == "iST":
+            if mode == "application" and task in {"sc_svc", "sc_svc_sr"}:
                 required_obs.append(
                     str(columns.get("sub_cell_type_col", "Level2"))
                 )
@@ -305,7 +302,7 @@ class REVISEInputService:
         raw_mapping = st.uns.get("all_cells_in_spot")
         if raw_mapping is None:
             return
-        from revise.utils.sst_input import _validate_all_cells_in_spot
+        from revise.utils.spot_sr_input import _validate_all_cells_in_spot
 
         mapping = _validate_all_cells_in_spot(
             raw_mapping,

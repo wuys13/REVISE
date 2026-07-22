@@ -23,7 +23,7 @@ from revise.config.runner_conf import (
 from revise.io import REVISEInputService
 from revise.svc import SVC
 from revise.utils import benchmark_case_leaf
-from revise.utils.sst_input import ensure_all_cells_in_spot
+from revise.utils.spot_sr_input import ensure_all_cells_in_spot
 
 
 def _cfg_get(config: Dict[str, Any], *path: str, default: Any = None) -> Any:
@@ -515,7 +515,7 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
             sample_seed = _resolve_sample_seed(ctx)
             sc.pp.subsample(adata_st, n_obs=int(sample_size), random_state=sample_seed)
 
-        # Match application_sp_SVC_recon.py preprocess semantics.
+        # Preserve the established application sp-SVC preprocessing semantics.
         sc.pp.filter_cells(adata_st, min_counts=conf.prep_st_min_counts)
         sc.pp.filter_genes(adata_st, min_cells=conf.prep_st_min_cells)
 

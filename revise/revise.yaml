@@ -5,7 +5,7 @@ defaults:
     seed: 42
     deterministic: true
     compatibility_mode: false
-    platform: hST
+    platform: sp_svc
     confounding: bin2cell
     mode: application
     task: sp_svc
@@ -125,80 +125,62 @@ router:
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcBenchmarkSegStrategy
-      platform_adapter: sim2real
-      cf_strategy: segmentation
     bin2cell:
       mode: benchmark
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcBenchmarkSegStrategy
-      platform_adapter: sim2real
-      cf_strategy: bin2cell
     batch_effect:
       mode: benchmark
       task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: batch_effect
     spot_size:
       mode: benchmark
       task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: spot_size
     gene_panel:
       mode: benchmark
       task: sc_svc_impute
       svc_kind: sc
       strategy: ScSvcImputeBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: gene_panel
     gene_dropout:
       mode: benchmark
       task: sc_svc_impute
       svc_kind: sc
       strategy: ScSvcImputeBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: gene_dropout
 
-  hST:
+  sp_svc:
     bin2cell:
       mode: application
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcApplicationStrategy
-      platform_adapter: hST
-      cf_strategy: bin2cell
 
-  iST:
+  sc_svc:
     segmentation:
       mode: application
       task: sc_svc
       svc_kind: sc
       strategy: ScSvcApplicationStrategy
-      platform_adapter: iST
-      cf_strategy: segmentation
 
-  sST:
+  sc_svc_sr:
     spot_size:
       mode: application
-      task: sc_svc
+      task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrApplicationStrategy
-      platform_adapter: sST
-      cf_strategy: spot_size
 
 profiles:
   application_sp:
     runtime:
-      platform: hST
+      platform: sp_svc
       confounding: bin2cell
 
   application_sc:
     runtime:
-      platform: iST
+      platform: sc_svc
       confounding: segmentation
     preprocess:
       st_min_transcripts: 60
@@ -217,7 +199,7 @@ profiles:
 
   application_sc_hyper:
     runtime:
-      platform: iST
+      platform: sc_svc
       confounding: segmentation
     graph:
       alpha: 0.2
@@ -226,9 +208,9 @@ profiles:
         enabled: true
         strategy: ScSvcHyperApplicationStrategy
 
-  application_sc_sst:
+  application_sc_sr:
     runtime:
-      platform: sST
+      platform: sc_svc_sr
       confounding: spot_size
     graph:
       alpha: 0.2

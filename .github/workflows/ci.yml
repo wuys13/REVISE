@@ -52,7 +52,7 @@ jobs:
           REVISE_CLEAN_INSTALL: "1"
         run: >-
           python -m pytest -p no:capture -q
-          tests/integration/test_distribution_artifacts.py
+          tests/integration/distribution/test_artifacts.py
       - uses: actions/upload-artifact@v4
         with:
           name: candidate-dist
@@ -87,7 +87,7 @@ jobs:
           REVISE_WHEEL: ${{ runner.temp }}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl
         run: >-
           python -m pytest -p no:capture -q
-          tests/integration/test_installed_cli.py
+          tests/integration/application/test_installed_cli.py
 
   docs:
     needs: test
@@ -121,4 +121,4 @@ jobs:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
         run: >-
           python -m pytest -p no:capture -q
-          tests/integration/test_tacco_solver_smoke.py
+          tests/integration/solvers/test_tacco_solver_smoke.py

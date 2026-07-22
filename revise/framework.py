@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
-from revise.backend import build_default_plugin_registry
 from revise.backend import ModeEvaluationPolicy
 from revise.backend import ModeValidationPolicy
 from revise.backend import build_default_registry
@@ -78,7 +77,6 @@ class REVISEPipeline:
         self.config_path = str(self._resolve_config_path(config_path))
         self.raw_config = load_raw_config(self.config_path)
         self.registry = None
-        self.plugin_registry = None
 
     @staticmethod
     def _resolve_config_path(config_path: str | Path) -> Path:
@@ -121,7 +119,7 @@ class REVISEPipeline:
             set_overrides=set_overrides,
         )
 
-        runtime = self._resolve_runtime_plugins(merged_config)
+        runtime = merged_config["runtime"]
         config_hash = hash_jsonable(canonical_config_projection(merged_config))
         route_key = f"{runtime['platform']}:{runtime['confounding']}"
         output_root = merged_config["io"]["output_root"]
@@ -346,23 +344,3 @@ class REVISEPipeline:
     def _export_merged_config(self, ctx: PipelineContext) -> Dict[str, Any]:
         exported = copy.deepcopy(ctx.merged_config)
         return exported
-
-    def _resolve_runtime_plugins(self, merged_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve platform and confounding plugins before strategy instantiation."""
-        if self.plugin_registry is None:
-            self.plugin_registry = build_default_plugin_registry()
-
-        runtime = merged_config["runtime"]
-        payload: Dict[str, Any] = {
-            "runtime": runtime,
-            "merged_config": merged_config,
-        }
-
-        platform_adapter_id = runtime.get("platform_adapter") or runtime.get("platform") or "default"
-        cf_strategy_id = runtime.get("cf_strategy") or runtime.get("confounding") or "default"
-        payload = self.plugin_registry.get_platform_adapter(platform_adapter_id).adapt(payload)
-        payload = self.plugin_registry.get_cf_strategy(cf_strategy_id).apply(payload)
-
-        resolved_runtime = payload.get("runtime", runtime)
-        merged_config["runtime"] = resolved_runtime
-        return resolved_runtime

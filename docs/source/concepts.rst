@@ -1,7 +1,7 @@
 Concepts
 ========
 
-REVISE uses one orchestration lifecycle for three kinds of spatial input. The
+REVISE uses one orchestration lifecycle for three reconstruction types. The
 route describes the computational contract; it does not by itself prove that a
 reconstructed object is a true cell or biologically valid result.
 
@@ -12,22 +12,22 @@ Routes and result types
    :header-rows: 1
    :widths: 1 2 2
 
-   * - Platform
+   * - Public type
      - Input rows
-     - Public 2.0 result type
-   * - ``hST``
+     - Public 1.x result type
+   * - ``sp-SVC``
      - high-definition bins or pseudo-cells
-     - ``hST``
-   * - ``iST``
+     - ``sp-SVC``
+   * - ``sc-SVC``
      - segmented imaging-ST cells
-     - ``iST``
-   * - ``sST``
+     - ``sc-SVC``
+   * - ``sc-SVC-sr``
      - spot-level observations
-     - ``sST``
+     - ``sc-SVC-sr``
 
 The common result location is ``<output-root>/<sample-name>/SVC.h5ad``. Its
 ``provenance.json`` records the public result type separately from the
-internal platform route. The CLI merges route-internal objects into one public
+internal route. The CLI merges route-internal objects into one public
 result when necessary.
 
 Shared lifecycle
@@ -47,10 +47,10 @@ Every full pipeline request follows the same ordered stages:
 ``ot.ga.solver`` and ``ot.lr.solver`` select POT or TACCO for their respective
 stages. ``--ot-method`` is the convenience control that sets both stages.
 
-sST virtual cells and random placement
---------------------------------------
+Spot super-resolution virtual cells and random placement
+---------------------------------------------------------
 
-An sST route needs a count of virtual cells per spot. If a curated
+A sc-SVC-sr route needs a count of virtual cells per spot. If a curated
 ``uns["all_cells_in_spot"]`` mapping is absent, the input adapter estimates
 counts from spot transcript totals and creates virtual-cell rows. Those rows
 share the source spot coordinate; the fallback does not estimate sub-spot

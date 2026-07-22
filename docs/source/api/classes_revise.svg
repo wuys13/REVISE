@@ -26,7 +26,7 @@
 
   <rect x="630" y="40" width="230" height="82" rx="10" class="box" />
   <text x="745" y="72" text-anchor="middle" class="text">Config &amp; Routing</text>
-  <text x="745" y="98" text-anchor="middle" class="small">profiles · platform adapters · OT solvers</text>
+  <text x="745" y="98" text-anchor="middle" class="small">profiles · route strategies · OT solvers</text>
 
   <rect x="930" y="40" width="230" height="82" rx="10" class="box" />
   <text x="1045" y="72" text-anchor="middle" class="text">Pipeline Context</text>
@@ -41,7 +41,7 @@
   <text x="335" y="265" text-anchor="middle" class="text">Unified Reconstruction Lifecycle</text>
   <text x="335" y="300" text-anchor="middle" class="small">validate → Global Anchoring (GA) → prepare local units → graph</text>
   <text x="335" y="328" text-anchor="middle" class="small">build OT problem → Local Refinement (LR) → update → finalize</text>
-  <text x="335" y="354" text-anchor="middle" class="small">one fixed stage order for hST, iST, and sST</text>
+  <text x="335" y="354" text-anchor="middle" class="small">one fixed stage order for sp-SVC, sc-SVC, and sc-SVC-sr</text>
 
   <rect x="700" y="230" width="220" height="145" rx="10" class="box strategy" />
   <text x="810" y="270" text-anchor="middle" class="text">Backend Strategies</text>
@@ -50,8 +50,8 @@
 
   <rect x="980" y="230" width="190" height="145" rx="10" class="box primary" />
   <text x="1075" y="270" text-anchor="middle" class="text">SVC Output</text>
-  <text x="1075" y="305" text-anchor="middle" class="small">hST · iST · sST</text>
-  <text x="1075" y="333" text-anchor="middle" class="small">&lt;platform&gt;-SVC.h5ad</text>
+  <text x="1075" y="305" text-anchor="middle" class="small">sp-SVC · sc-SVC · sc-SVC-sr</text>
+  <text x="1075" y="333" text-anchor="middle" class="small">SVC.h5ad + manifest type</text>
 
   <path d="M640 302 H700" class="arrow" />
   <path d="M920 302 H980" class="arrow" />

@@ -20,7 +20,7 @@ REVISE has two public workflows:
 | Workflow | Goal | Entry points | Main results |
 | --- | --- | --- | --- |
 | **Benchmark** | Reproduce Sim2Real-ST evaluations across six confounding factors | [`benchmark_main.py`](benchmark_main.py), [`benchmark_main.sh`](benchmark_main.sh), [`reproduce/benchmark/`](reproduce/benchmark/) | Per-gene PCC, SSIM, MSE, and NRMSE |
-| **Application** | Reconstruct SVCs and perform real-data analyses | `revise-reconstruct`, [`reconstruct.py`](reconstruct.py), compatibility wrappers, [`reproduce/case/`](reproduce/case/) | `SVC.h5ad`, run provenance, and notebook figures |
+| **Application** | Reconstruct SVCs and perform real-data analyses | `revise-reconstruct`, [`application_reconstruct.py`](application_reconstruct.py), [`reproduce/case/`](reproduce/case/) | `SVC.h5ad`, run provenance, and notebook figures |
 
 Documentation: <https://revise-svc.readthedocs.io/en/latest/>
 
@@ -40,11 +40,12 @@ platform types:
 
 <p align="center">Confounding factors that limit current spatial transcriptomics technologies</p>
 
-REVISE reconstructs two complementary SVC types:
+REVISE reconstructs three complementary SVC types:
 
 - `sp-SVC`: spatial refinement for high-resolution spatial transcriptomics.
 - `sc-SVC`: molecular completion and cell-state refinement for imaging-based
-  and spot-based spatial transcriptomics.
+  spatial transcriptomics.
+- `sc-SVC-sr`: spot-level super-resolution reconstruction.
 
 ![REVISE overview](png/REVISE_overview.png)
 
@@ -56,9 +57,9 @@ Every application reconstruction publishes the same stable filename:
 <output-root>/<sample-name>/SVC.h5ad
 ```
 
-The run's `provenance.json` records whether that result comes from the `hST`,
-`iST`, or `sST` route, together with the resolved configuration, inputs,
-stages, and artifacts.
+The run's `provenance.json` records whether that result is an `sp-SVC`,
+`sc-SVC`, or `sc-SVC-sr`, together with the resolved route, configuration,
+inputs, stages, and artifacts.
 
 ## Installation
 
@@ -131,7 +132,7 @@ installed command:
 
 ```bash
 revise-reconstruct \
-  --platform hST \
+  --svc-type sp-SVC \
   --sample-name sample \
   --data-root data \
   --st-file st.h5ad \
@@ -139,17 +140,10 @@ revise-reconstruct \
   --output-root output
 ```
 
-`--platform` selects the reconstruction route. The public result is always
-`output/sample/SVC.h5ad`; its `hST`, `iST`, or `sST` classification is recorded
-in `provenance.json`. From a source checkout, `python reconstruct.py` delegates
-to the same command implementation.
-
-The paper-compatible wrappers are retained only for reproducing historical
-notebooks. They keep their legacy output names and are not part of the
-canonical `SVC.h5ad` output contract:
-
-- [`application_sp_SVC_recon.py`](application_sp_SVC_recon.py)
-- [`application_sc_SVC_recon.py`](application_sc_SVC_recon.py)
+`--svc-type` accepts `sp-SVC`, `sc-SVC`, or `sc-SVC-sr`. The public result is
+always `output/sample/SVC.h5ad`, and the selected result type is recorded in
+`provenance.json`. From a source checkout, `python application_reconstruct.py`
+delegates to the same command implementation.
 
 Application reconstruction and downstream analysis notebooks are under
 [`reproduce/case/`](reproduce/case/).
@@ -181,7 +175,7 @@ from revise.framework import REVISEPipeline
 pipeline = REVISEPipeline()
 svc = pipeline.run(
     profile="application_sc",
-    runtime_overrides={"platform": "iST", "confounding": "segmentation"},
+    runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
     io_overrides={
         "data_root": "raw_data/Real_application",
         "output_root": "output/sc_SVC_case",

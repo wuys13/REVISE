@@ -22,7 +22,7 @@ extension points.
     pipeline = REVISEPipeline()
     svc = pipeline.run(
         profile="application_sc",
-        runtime_overrides={"platform": "iST", "confounding": "segmentation"},
+        runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
         io_overrides={
             "data_root": "raw_data/Real_application",
             "output_root": "output/sc_SVC_case",
@@ -92,8 +92,8 @@ notebook-compatible downstream helpers.
     revise.analysis.compute_metric
     revise.analysis.compute_clustering_metrics
 
-Registries and Plugins
-~~~~~~~~~~~~~~~~~~~~~~
+Strategy contract and registry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 These classes are the extension points used by the unified backend.
 
@@ -102,17 +102,14 @@ These classes are the extension points used by the unified backend.
     :nosignatures:
 
     revise.backend.registry.StrategyRegistry
-    revise.backend.registry.PluginRegistry
     revise.backend.contracts.LocalRefinementStrategy
-    revise.backend.contracts.PlatformAdapter
-    revise.backend.contracts.CFStrategy
 
 Backend Compatibility Runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 These classes are kept for notebooks, parity checks, and low-level debugging.
 New application and benchmark code should prefer ``REVISEPipeline`` or the
-root wrapper scripts.
+application or benchmark entrypoints.
 
 .. autosummary::
     :toctree: generated
