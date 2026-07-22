@@ -92,8 +92,8 @@ notebook-compatible downstream helpers.
     revise.analysis.compute_metric
     revise.analysis.compute_clustering_metrics
 
-Registries and Plugins
-~~~~~~~~~~~~~~~~~~~~~~
+Strategy contract and registry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 These classes are the extension points used by the unified backend.
 
@@ -102,10 +102,7 @@ These classes are the extension points used by the unified backend.
     :nosignatures:
 
     revise.backend.registry.StrategyRegistry
-    revise.backend.registry.PluginRegistry
     revise.backend.contracts.LocalRefinementStrategy
-    revise.backend.contracts.PlatformAdapter
-    revise.backend.contracts.CFStrategy
 
 Backend Compatibility Runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

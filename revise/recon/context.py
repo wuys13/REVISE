@@ -402,7 +402,5 @@ class PipelineContext:
             "task": self.runtime.get("task"),
             "svc_kind": self.runtime.get("svc_kind"),
             "strategy": self.runtime.get("strategy"),
-            "platform_adapter": self.runtime.get("platform_adapter"),
-            "cf_strategy": self.runtime.get("cf_strategy"),
             "compatibility_mode": self.runtime.get("compatibility_mode"),
         }

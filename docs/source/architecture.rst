@@ -2,8 +2,8 @@ Architecture
 ============
 
 REVISE has one public orchestration API and one fixed reconstruction lifecycle.
-Profiles select route behavior; registries select route adapters and local
-strategies; the configuration selects OT solvers for GA and LR.
+Profiles and the router select one reconstruction strategy; the configuration
+selects OT solvers for GA and LR.
 
 System map
 ----------
@@ -41,12 +41,12 @@ Configuration and routing
 - ``defaults`` for runtime, IO, columns, preprocessing, graph, OT, and route
   behavior;
 - ``profiles`` for declared application and benchmark requests;
-- ``router`` mappings from internal route/confounding to strategy and adapter;
+- ``router`` mappings from internal route/confounding to strategy;
 - ``locked_params`` for governed low-level values.
 
-GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. The plugin registry does
-not choose an OT solver. Adapter translations preserve the same two-stage
-selection even when a legacy runner has a different internal call shape.
+GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
+preserve the same two-stage selection even when a legacy runner has a different
+internal call shape.
 
 Run evidence
 ------------
@@ -84,7 +84,7 @@ fall back to POT.
 Extension boundary
 ------------------
 
-Add a new route by extending the existing profile/router/registry surfaces and
+Add a new route by extending the existing profile, router, and strategy registry and
 their focused tests. Do not create another orchestration entrypoint or output
 alias layer. Candidate evidence is intentionally limited to tested routes and
 scales; see :doc:`limitations`.

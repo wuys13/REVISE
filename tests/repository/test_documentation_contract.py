@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import runpy
 from pathlib import Path
@@ -46,6 +47,26 @@ def test_public_docs_distinguish_installed_source_and_paper_entry_paths():
     assert (ROOT / "benchmark_main.py").is_file()
     assert "installed command" in text.lower()
     assert "paper reproduction" in text.lower()
+
+
+def test_1x_case_notebooks_use_current_routes_and_vocabulary():
+    text = []
+    for path in sorted((ROOT / "reproduce" / "case").glob("*.ipynb")):
+        notebook = json.loads(_read(path))
+        for cell in notebook["cells"]:
+            text.extend(cell.get("source", []))
+            for output in cell.get("outputs", []):
+                text.extend(output.get("text", []))
+                data = output.get("data", {})
+                text.extend(data.get("text/plain", []))
+                text.extend(data.get("text/html", []))
+    notebooks = "\n".join(text)
+
+    assert "application_sc_sst" not in notebooks
+    assert 'route=sST:spot_size' not in notebooks
+    assert "legacy_mode" not in notebooks
+    for term in ("hST", "iST", "sST"):
+        assert term not in notebooks
 
 
 def test_quickstart_matches_application_input_resolution_and_route_fields():

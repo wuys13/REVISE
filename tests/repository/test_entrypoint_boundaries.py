@@ -17,3 +17,8 @@ def test_benchmark_entrypoints_delegate_to_package_owned_implementations():
     assert "from revise.benchmark.cli import main" in root_cli
     assert "revise/benchmark/launcher.py" in root_shell
     assert not (ROOT / "benchmark_launcher.py").exists()
+
+    launcher_source = launcher.read_text(encoding="utf-8")
+    assert '"-m",' in launcher_source
+    assert '"revise.benchmark.cli",' in launcher_source
+    assert '"benchmark_main.py"' not in launcher_source

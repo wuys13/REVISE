@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
-from typing import Any, Dict
-
 if False:  # pragma: no cover
     from revise.recon.context import PipelineContext
     from revise.svc import SVC
@@ -52,16 +50,4 @@ class InputValidationPolicy(ABC):
 class EvaluationPolicy(ABC):
     @abstractmethod
     def should_evaluate(self, ctx: "PipelineContext") -> bool:
-        raise NotImplementedError
-
-
-class PlatformAdapter(ABC):
-    @abstractmethod
-    def adapt(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError
-
-
-class CFStrategy(ABC):
-    @abstractmethod
-    def apply(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         raise NotImplementedError

@@ -125,43 +125,31 @@ router:
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcBenchmarkSegStrategy
-      platform_adapter: sim2real
-      cf_strategy: segmentation
     bin2cell:
       mode: benchmark
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcBenchmarkSegStrategy
-      platform_adapter: sim2real
-      cf_strategy: bin2cell
     batch_effect:
       mode: benchmark
       task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: batch_effect
     spot_size:
       mode: benchmark
       task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: spot_size
     gene_panel:
       mode: benchmark
       task: sc_svc_impute
       svc_kind: sc
       strategy: ScSvcImputeBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: gene_panel
     gene_dropout:
       mode: benchmark
       task: sc_svc_impute
       svc_kind: sc
       strategy: ScSvcImputeBenchmarkStrategy
-      platform_adapter: sim2real
-      cf_strategy: gene_dropout
 
   sp_svc:
     bin2cell:
@@ -169,8 +157,6 @@ router:
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcApplicationStrategy
-      platform_adapter: default
-      cf_strategy: bin2cell
 
   sc_svc:
     segmentation:
@@ -178,8 +164,6 @@ router:
       task: sc_svc
       svc_kind: sc
       strategy: ScSvcApplicationStrategy
-      platform_adapter: default
-      cf_strategy: segmentation
 
   sc_svc_sr:
     spot_size:
@@ -187,8 +171,6 @@ router:
       task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrApplicationStrategy
-      platform_adapter: default
-      cf_strategy: spot_size
 
 profiles:
   application_sp:

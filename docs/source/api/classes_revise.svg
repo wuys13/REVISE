@@ -26,7 +26,7 @@
 
   <rect x="630" y="40" width="230" height="82" rx="10" class="box" />
   <text x="745" y="72" text-anchor="middle" class="text">Config &amp; Routing</text>
-  <text x="745" y="98" text-anchor="middle" class="small">profiles · platform adapters · OT solvers</text>
+  <text x="745" y="98" text-anchor="middle" class="small">profiles · route strategies · OT solvers</text>
 
   <rect x="930" y="40" width="230" height="82" rx="10" class="box" />
   <text x="1045" y="72" text-anchor="middle" class="text">Pipeline Context</text>
@@ -51,7 +51,7 @@
   <rect x="980" y="230" width="190" height="145" rx="10" class="box primary" />
   <text x="1075" y="270" text-anchor="middle" class="text">SVC Output</text>
   <text x="1075" y="305" text-anchor="middle" class="small">sp-SVC · sc-SVC · sc-SVC-sr</text>
-  <text x="1075" y="333" text-anchor="middle" class="small">&lt;platform&gt;-SVC.h5ad</text>
+  <text x="1075" y="333" text-anchor="middle" class="small">SVC.h5ad + manifest type</text>
 
   <path d="M640 302 H700" class="arrow" />
   <path d="M920 302 H980" class="arrow" />

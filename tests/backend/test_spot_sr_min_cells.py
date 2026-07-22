@@ -157,7 +157,7 @@ def sst_adatas():
     return st_adata, sc_ref_adata
 
 
-def test_application_sst_prepare_context_filters_genes_by_observation_count(
+def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
     adapters, monkeypatch, tmp_path, sst_adatas
 ):
     merged = merge_unified_config(
@@ -197,7 +197,7 @@ def test_application_sst_prepare_context_filters_genes_by_observation_count(
         runtime=merged["runtime"],
         route_key="sc_svc_sr:spot_size",
         run_dir=tmp_path,
-        logger=logging.getLogger("test-sst-min-cells"),
+        logger=logging.getLogger("test-spot-sr-min-cells"),
         compatibility_mode=False,
     )
 
@@ -208,7 +208,7 @@ def test_application_sst_prepare_context_filters_genes_by_observation_count(
     assert ctx.sc_ref_adata.var_names.tolist() == ["widespread"]
 
 
-def test_application_sst_validates_overlap_after_gene_filtering(
+def test_application_spot_sr_validates_overlap_after_gene_filtering(
     adapters, monkeypatch, tmp_path
 ):
     merged = merge_unified_config(
@@ -267,7 +267,7 @@ def test_application_sst_validates_overlap_after_gene_filtering(
         runtime=merged["runtime"],
         route_key="sc_svc_sr:spot_size",
         run_dir=tmp_path,
-        logger=logging.getLogger("test-sst-post-filter-overlap"),
+        logger=logging.getLogger("test-spot-sr-post-filter-overlap"),
         compatibility_mode=False,
     )
 

@@ -167,7 +167,7 @@ def test_all_declared_profiles_resolve_one_explicit_input_matrix(
         io_overrides={"data_root": str(tmp_path), "sample_name": "sample"},
         set_overrides=[],
     )
-    runtime = REVISEPipeline()._resolve_runtime_plugins(merged)
+    runtime = merged["runtime"]
 
     specs = resolve_input_specs(runtime, merged["io"])
 

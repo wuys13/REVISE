@@ -139,8 +139,6 @@ def _build_tasks() -> tuple[list[dict[str, Any]], Path]:
         sample_parts = ["part1"]
     config_path = os.environ.get("CONFIG_PATH") or "revise/revise.yaml"
     child_python = os.environ.get("BENCHMARK_CHILD_PYTHON") or sys.executable
-    benchmark_main = Path(__file__).resolve().parents[2] / "benchmark_main.py"
-
     tasks = []
     for sample_part in sample_parts:
         sample_name = f"{sample_patient}/cut_{sample_part}"
@@ -160,7 +158,8 @@ def _build_tasks() -> tuple[list[dict[str, Any]], Path]:
                     "command": [
                         child_python,
                         "-u",
-                        str(benchmark_main),
+                        "-m",
+                        "revise.benchmark.cli",
                         "--config",
                         config_path,
                         "--confounding",

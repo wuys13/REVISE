@@ -246,21 +246,18 @@ def test_false_completeness_fails_before_input_or_output_path_processing(tmp_pat
     assert not (tmp_path / "must-not-exist").exists()
 
 
-def test_plugin_registry_keeps_platform_and_cf_but_has_no_ot_api():
-    from revise.backend.registry import build_default_plugin_registry
+def test_noop_plugin_layer_is_removed_and_hyper_profile_selects_strategy_directly():
+    import revise.backend as backend
+    from revise.backend import registry
 
-    registry = build_default_plugin_registry()
-    payload = {
-        "runtime": {"platform": "sp_svc", "confounding": "bin2cell"},
-        "merged_config": {},
-    }
+    merged = _merge(_raw_config(), "application_sc_hyper")
 
-    assert registry.get_platform_adapter("default").adapt(payload) is payload
-    assert registry.get_cf_strategy("bin2cell").apply(payload) is payload
-    assert set(registry._platform_adapters) == {"default", "sim2real"}
-    assert not hasattr(registry, "register_ot_solver")
-    assert not hasattr(registry, "get_ot_solver")
-    assert not hasattr(registry, "_ot_solvers")
+    assert merged["runtime"]["strategy"] == "ScSvcHyperApplicationStrategy"
+    assert not hasattr(backend, "PluginRegistry")
+    assert not hasattr(backend, "build_default_plugin_registry")
+    assert not hasattr(registry, "PluginRegistry")
+    assert not hasattr(registry, "build_default_plugin_registry")
+    assert not (CONFIG_PATH.parent / "backend" / "plugins.py").exists()
 
 
 def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
@@ -635,7 +632,6 @@ def test_active_docs_do_not_advertise_ot_solver_plugins_or_route_markers():
     active_sources = [
         repo_root / "docs" / "source" / "architecture.rst",
         repo_root / "docs" / "source" / "configuration.rst",
-        repo_root / "revise" / "backend" / "plugins.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in active_sources)
 
