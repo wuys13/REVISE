@@ -112,7 +112,7 @@ defaults:
   posterior_conditioning:
     enabled: true
     mode: "cost"       # off | cost | reference
-    posterior_key: Level1
+    posterior_key: null
     beta: 1.0
     min_affinity: 0.05
     cost_strength: 0.2

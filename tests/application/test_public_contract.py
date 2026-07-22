@@ -53,6 +53,19 @@ def test_parser_accepts_each_1x_svc_type(svc_type):
     assert not hasattr(args, "platform")
 
 
+def test_omitted_cli_config_values_leave_the_yaml_in_control():
+    from revise.application.cli import parse_args
+    from revise.application.service import _build_set_overrides
+
+    args = parse_args(_required_args("sp-SVC"))
+
+    assert args.seed is None
+    assert args.cell_type_col is None
+    assert args.sub_cell_type_col is None
+    overrides = _build_set_overrides(args)
+    assert not any(value.startswith("columns.") for value in overrides)
+
+
 def test_application_routes_use_internal_ids_without_2x_vocabulary():
     from revise.application.service import APPLICATION_ROUTES
 
@@ -84,6 +97,7 @@ def test_application_routes_use_internal_ids_without_2x_vocabulary():
         ),
     ),
 )
+@pytest.mark.parametrize("seed", (17, None))
 def test_pipeline_receives_the_internal_route_for_each_public_type(
     monkeypatch,
     tmp_path,
@@ -92,6 +106,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
     route_id,
     confounding,
     output_key,
+    seed,
 ):
     from revise.application import service
 
@@ -109,7 +124,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
     args = argparse.Namespace(
         svc_type=svc_type,
         config="revise/revise.yaml",
-        seed=17,
+        seed=seed,
         data_root=str(tmp_path),
         output_root=str(tmp_path / "out"),
         sample_name="sample",
@@ -127,11 +142,13 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
 
     assert actual_profile == profile
     assert actual_output_key == output_key
-    assert captured["runtime_overrides"] == {
+    expected_runtime = {
         "platform": route_id,
         "confounding": confounding,
-        "seed": 17,
     }
+    if seed is not None:
+        expected_runtime["seed"] = seed
+    assert captured["runtime_overrides"] == expected_runtime
 
 
 def test_sc_svc_sr_forwards_configured_cell_type_columns_without_sc_only_selection():

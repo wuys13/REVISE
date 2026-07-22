@@ -75,7 +75,10 @@ def _attach_posterior_conditioning_conf(conf, cfg: Dict[str, Any]) -> None:
     conf.posterior_conditioning_enabled = bool(pcfg.get("enabled", False))
     mode = pcfg.get("mode", "off")
     conf.posterior_conditioning_mode = "off" if mode is False or mode is None else str(mode)
-    conf.posterior_conditioning_key = str(pcfg.get("posterior_key", conf.cell_type_col))
+    posterior_key = pcfg.get("posterior_key")
+    conf.posterior_conditioning_key = str(
+        conf.cell_type_col if posterior_key is None else posterior_key
+    )
     conf.posterior_conditioning_beta = float(pcfg.get("beta", 1.0))
     conf.posterior_conditioning_min_affinity = float(pcfg.get("min_affinity", 0.05))
     conf.posterior_conditioning_cost_strength = float(pcfg.get("cost_strength", 0.2))
@@ -110,7 +113,20 @@ def _replace_slash_labels(adata, columns: Iterable[str]) -> None:
         # categories (e.g. "Mono/Macro") after replacement.
         series = adata.obs[col].astype(str)
         if series.str.contains("/", regex=False).any():
-            adata.obs[col] = series.str.replace("/", "_", regex=False)
+            normalized = series.str.replace("/", "_", regex=False)
+            label_pairs = pd.DataFrame(
+                {"original": series, "normalized": normalized}
+            ).drop_duplicates()
+            collisions = (
+                label_pairs.groupby("normalized", sort=False)["original"].nunique()
+            )
+            if (collisions > 1).any():
+                names = collisions[collisions > 1].index.tolist()
+                raise ValueError(
+                    f"Reference labels in {col!r} collide after slash normalization: "
+                    f"{names[:5]}"
+                )
+            adata.obs[col] = normalized
 
 
 def _ensure_transcript_counts(adata) -> None:
@@ -531,6 +547,10 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
         # The original script uses min_genes for sc cells and min_cells for genes.
         sc.pp.filter_cells(adata_sc, min_genes=conf.prep_sc_min_counts)
         sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
+        _replace_slash_labels(
+            adata_sc,
+            [columns["cell_type_col"], columns["sub_cell_type_col"]],
+        )
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc
@@ -598,9 +618,7 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             raise KeyError(f"Missing required columns in sc reference: {missing}")
         adata_sc.obs = adata_sc.obs.loc[:, required_cols].copy()
         sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
-        adata_sc.obs[cell_type_col] = adata_sc.obs[cell_type_col].replace(
-            {"Mono/Macro": "Mono_Macro"}
-        )
+        _replace_slash_labels(adata_sc, required_cols)
 
         overlap_genes = adata_sp.var_names.intersection(adata_sc.var_names)
         if overlap_genes.empty:

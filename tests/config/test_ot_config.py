@@ -141,6 +141,35 @@ def test_impute_reuses_lr_solver_with_independent_numerics(adapters):
     assert "rec_pot_reg" not in kwargs
 
 
+def test_default_posterior_key_follows_the_configured_cell_type_column(adapters):
+    merged = _merge(
+        _raw_config(),
+        "application_sc_sr",
+        ["columns.cell_type_col=major_type"],
+    )
+    conf = SimpleNamespace(cell_type_col=merged["columns"]["cell_type_col"])
+
+    adapters._attach_posterior_conditioning_conf(conf, merged)
+
+    assert conf.posterior_conditioning_key == "major_type"
+
+
+def test_explicit_posterior_key_remains_independent(adapters):
+    merged = _merge(
+        _raw_config(),
+        "application_sc_sr",
+        [
+            "columns.cell_type_col=major_type",
+            "posterior_conditioning.posterior_key=legacy_type",
+        ],
+    )
+    conf = SimpleNamespace(cell_type_col=merged["columns"]["cell_type_col"])
+
+    adapters._attach_posterior_conditioning_conf(conf, merged)
+
+    assert conf.posterior_conditioning_key == "legacy_type"
+
+
 @pytest.mark.parametrize(
     ("location", "replacement"),
     [

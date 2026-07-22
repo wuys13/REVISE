@@ -34,11 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", default="output/reconstruct")
     parser.add_argument("--config", default="revise/revise.yaml")
     parser.add_argument("--ot-method", choices=("pot", "tacco"), default=None)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--patient-key", default="Patient")
     parser.add_argument("--select-ct", default="all")
-    parser.add_argument("--cell-type-col", default="Level1")
-    parser.add_argument("--sub-cell-type-col", default="Level2")
+    parser.add_argument("--cell-type-col", default=None)
+    parser.add_argument("--sub-cell-type-col", default=None)
     parser.add_argument("--sc-mapping", choices=("mean", "random"), default="mean")
     parser.add_argument(
         "--dry-run",

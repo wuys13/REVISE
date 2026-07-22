@@ -111,3 +111,43 @@ def test_sc_svc_publication_records_only_the_confirmed_result_type(tmp_path):
     assert metadata["svc_type"] == "sc-SVC"
     assert "platform" not in metadata
     assert json.loads(metadata["ot_events"]) == []
+
+
+def test_sc_svc_publication_uses_the_resolved_yaml_seed_when_cli_omits_it(tmp_path):
+    from revise.application.service import _build_public_result
+
+    spatial, expression = _sc_outputs()
+    ctx = PublicationContext(
+        svc=SVC(
+            expr=expression,
+            spatial=spatial,
+            svc_kind="sc",
+            artifacts={
+                "outputs": {
+                    "sc_svc_spatial": spatial,
+                    "sc_svc_expr": expression,
+                }
+            },
+        ),
+        run_dir=tmp_path / "run",
+        runtime={"seed": 17},
+        merged_config={
+            "runtime": {"seed": 17},
+            "ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}},
+        },
+        ot_events=[],
+        provenance={},
+        record_artifact=lambda artifact: None,
+    )
+    args = SimpleNamespace(
+        svc_type="sc-SVC",
+        output_root=str(tmp_path / "out"),
+        sample_name="sample",
+        seed=None,
+        ot_method=None,
+        sc_mapping="mean",
+    )
+
+    result, _ = _build_public_result(args, "application_sc", None, ctx)
+
+    assert result.uns["revise_reconstruction"]["mapping_seed"] == 17

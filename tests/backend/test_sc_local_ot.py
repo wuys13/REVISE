@@ -212,8 +212,8 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
         obs=pd.DataFrame(
             {
                 "Patient": ["sample", "sample"],
-                cell_type_col: ["A", "A"],
-                sub_cell_type_col: ["A1", "A2"],
+                cell_type_col: ["A/B", "A/B"],
+                sub_cell_type_col: ["A/1", "A/2"],
             },
             index=["sc1", "sc2"],
         ),
@@ -275,6 +275,8 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
         cell_type_col,
         sub_cell_type_col,
     ]
+    assert ctx.runner.sc_ref_adata.obs[cell_type_col].tolist() == ["A_B", "A_B"]
+    assert ctx.runner.sc_ref_adata.obs[sub_cell_type_col].tolist() == ["A_1", "A_2"]
 
 
 def test_ist_singleton_fallback_uses_configured_cell_type_column(monkeypatch):

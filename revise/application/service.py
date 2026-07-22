@@ -53,10 +53,6 @@ MANAGED_SET_KEYS = {
     "io.save_outputs",
     "runtime.seed",
 }
-COLUMN_SET_KEYS = {
-    "columns.cell_type_col",
-    "columns.sub_cell_type_col",
-}
 SC_MANAGED_SET_KEYS = {
     "sc.select_ct",
 }
@@ -227,13 +223,12 @@ def _build_set_overrides(args: argparse.Namespace) -> list[str]:
                 f"ot.lr.solver={args.ot_method}",
             )
         )
-    managed.update(COLUMN_SET_KEYS)
-    values.extend(
-        (
-            f"columns.cell_type_col={args.cell_type_col}",
-            f"columns.sub_cell_type_col={args.sub_cell_type_col}",
-        )
-    )
+    if args.cell_type_col is not None:
+        managed.add("columns.cell_type_col")
+        values.append(f"columns.cell_type_col={args.cell_type_col}")
+    if args.sub_cell_type_col is not None:
+        managed.add("columns.sub_cell_type_col")
+        values.append(f"columns.sub_cell_type_col={args.sub_cell_type_col}")
     if args.svc_type == "sc-SVC":
         managed.update(SC_MANAGED_SET_KEYS)
         values.append(f"sc.select_ct={args.select_ct}")
@@ -267,13 +262,16 @@ def _run_pipeline(
         from revise.framework import REVISEPipeline as pipeline_class
 
     pipeline = pipeline_class(config_path=args.config)
+    runtime_overrides = {
+        "platform": route.route_id,
+        "confounding": route.confounding,
+    }
+    if args.seed is not None:
+        runtime_overrides["seed"] = args.seed
+
     svc = pipeline.run(
         profile=route.profile,
-        runtime_overrides={
-            "platform": route.route_id,
-            "confounding": route.confounding,
-            "seed": args.seed,
-        },
+        runtime_overrides=runtime_overrides,
         io_overrides={
             "data_root": args.data_root,
             "output_root": args.output_root,
@@ -294,6 +292,13 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
 
     route = APPLICATION_ROUTES[args.svc_type]
     svc = ctx.svc
+    seed = args.seed
+    if seed is None:
+        runtime = getattr(ctx, "runtime", None)
+        if runtime is None:
+            runtime = getattr(ctx, "merged_config", {}).get("runtime", {})
+        seed = runtime.get("seed", 42)
+    seed = int(seed)
     if svc.svc_kind != route.svc_kind:
         raise ValueError(
             f"SVC type {args.svc_type!r} requires internal kind {route.svc_kind!r}; "
@@ -313,7 +318,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             outputs["sc_svc_spatial"],
             outputs["sc_svc_expr"],
             mode=args.sc_mapping,
-            seed=args.seed,
+            seed=seed,
         )
         result.uns["revise_reconstruction"]["svc_type"] = args.svc_type
     elif output_key not in outputs:
@@ -325,7 +330,7 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
         result = outputs[output_key].copy()
         result.uns["revise_reconstruction"] = {
             "svc_type": args.svc_type,
-            "seed": int(args.seed),
+            "seed": seed,
         }
 
     output_dir = Path(args.output_root) / args.sample_name
