@@ -48,7 +48,7 @@ dependencies = [
 ]
 
 [project.scripts]
-revise-reconstruct = "revise.cli:main"
+revise-reconstruct = "revise.application.cli:main"
 revise-build-histology-priors = "revise.preprocess.cli:main"
 revise-compute-biological-metrics = "revise.analysis.cli:main"
 

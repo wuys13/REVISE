@@ -10,7 +10,7 @@ from revise.backend.ops.local_ot import solve_local_ot
 
 
 class LocalAnchoringKernel(BaseKernel):
-    """Annotate one iST local unit through the configured local OT solver."""
+    """Annotate one sc-SVC local unit through the configured local OT solver."""
 
     def __init__(self, config, logger=None):
         super().__init__(config, logger)

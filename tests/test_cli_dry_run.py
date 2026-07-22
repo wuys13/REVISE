@@ -32,16 +32,16 @@ def _write_inputs(data_root: Path) -> None:
     sc.write_h5ad(data_root / "sc.h5ad")
 
 
-def test_unified_cli_dry_run_performs_preflight_without_reconstruction(tmp_path):
+def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_path):
     _write_inputs(tmp_path)
     output_root = tmp_path / "output"
 
     result = subprocess.run(
         [
             sys.executable,
-            "reconstruct.py",
-            "--platform",
-            "hST",
+            "application_reconstruct.py",
+            "--svc-type",
+            "sp-SVC",
             "--sample-name",
             "sample",
             "--st-file",
@@ -63,6 +63,8 @@ def test_unified_cli_dry_run_performs_preflight_without_reconstruction(tmp_path)
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["status"] == "ready"
-    assert payload["platform"] == "hST"
+    assert payload["svc_type"] == "sp-SVC"
+    assert payload["pipeline"]["route"] == "sp_svc:bin2cell"
+    assert "platform" not in payload
     assert Path(payload["preflight"]).is_file()
     assert not list(output_root.rglob("*.h5ad"))

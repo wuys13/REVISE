@@ -42,7 +42,7 @@ def _context(tmp_path: Path, *, ga: str = "pot", lr: str = "tacco"):
         config_path="revise/revise.yaml",
         profile="application_sc",
         runtime={},
-        route_key="iST:segmentation",
+        route_key="sc_svc:segmentation",
         run_dir=tmp_path,
         logger=logging.getLogger("test-ot-events"),
     )

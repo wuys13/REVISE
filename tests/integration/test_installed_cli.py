@@ -147,7 +147,7 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
     assert "revise/revise.yaml" in names
     assert any(".dist-info/" in name and name.endswith("/LICENSE") for name in names)
     assert not any(name.startswith("tests/") for name in names)
-    assert "revise-reconstruct = revise.cli:main" in entry_points
+    assert "revise-reconstruct = revise.application.cli:main" in entry_points
 
     requirements = [
         Requirement(line.removeprefix("Requires-Dist: "))
@@ -210,8 +210,8 @@ def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
     result = _run(
         [
             installed_cli["command"],
-            "--platform",
-            "hST",
+            "--svc-type",
+            "sp-SVC",
             "--sample-name",
             "sample",
             "--st-file",
@@ -232,7 +232,7 @@ def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
     payload = json.loads(result.stdout)
     assert payload["status"] == "ready"
     assert payload["pipeline"]["profile"] == "application_sp"
-    assert payload["pipeline"]["route"] == "hST:bin2cell"
+    assert payload["pipeline"]["route"] == "sp_svc:bin2cell"
     assert not list(output_root.rglob("*.h5ad"))
 
 
@@ -252,8 +252,8 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
     data_root.mkdir()
     _write_inputs(data_root)
     common = [
-        "--platform",
-        "hST",
+        "--svc-type",
+        "sp-SVC",
         "--sample-name",
         "sample",
         "--st-file",
@@ -287,7 +287,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
     for name, prefix in (
         (
             "source",
-            [source_python, ROOT / "reconstruct.py"],
+            [source_python, ROOT / "application_reconstruct.py"],
         ),
         ("installed", [installed_cli["command"]]),
     ):

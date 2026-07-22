@@ -2,7 +2,7 @@ Architecture
 ============
 
 REVISE has one public orchestration API and one fixed reconstruction lifecycle.
-Profiles select route behavior; registries select platform adapters and local
+Profiles select route behavior; registries select route adapters and local
 strategies; the configuration selects OT solvers for GA and LR.
 
 System map
@@ -10,8 +10,9 @@ System map
 
 .. code-block:: text
 
-   revise-reconstruct / reconstruct.py
-   `-- revise.cli
+   revise-reconstruct / application_reconstruct.py
+   `-- revise.application.cli
+       `-- revise.application.service
        `-- REVISEPipeline.run()
            |-- load and validate merged configuration
            |-- resolve and preflight route inputs
@@ -40,7 +41,7 @@ Configuration and routing
 - ``defaults`` for runtime, IO, columns, preprocessing, graph, OT, and route
   behavior;
 - ``profiles`` for declared application and benchmark requests;
-- ``router`` mappings from platform/confounding to strategy and adapter;
+- ``router`` mappings from internal route/confounding to strategy and adapter;
 - ``locked_params`` for governed low-level values.
 
 GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. The plugin registry does
@@ -63,8 +64,8 @@ The canonical CLI separately publishes one stable-facing result:
 
    <output-root>/<sample-name>/SVC.h5ad
 
-The manifest records ``result.type`` as ``sp-SVC`` or ``sc-SVC`` and records
-the internal platform route separately. Strategy artifacts remain in the
+The manifest records ``result.type`` as ``sp-SVC``, ``sc-SVC``, or
+``sc-SVC-sr`` and records the internal route separately. Strategy artifacts remain in the
 canonical run but are not additional public output contracts.
 
 Failure model

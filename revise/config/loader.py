@@ -13,9 +13,9 @@ except ImportError as exc:  # pragma: no cover
 
 
 APPLICATION_DEFAULT_CF = {
-    "hST": "bin2cell",
-    "iST": "segmentation",
-    "sST": "spot_size",
+    "sp_svc": "bin2cell",
+    "sc_svc": "segmentation",
+    "sc_svc_sr": "spot_size",
 }
 
 TOP_LEVEL_KEYS = {"version", "defaults", "router", "profiles", "locked_params", "schemas"}

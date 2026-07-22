@@ -36,18 +36,6 @@ class Sim2RealPlatformAdapter(BasePlatformAdapter):
         return payload
 
 
-class HSTPlatformAdapter(BasePlatformAdapter):
-    platform_id = "hST"
-
-
-class ISTPlatformAdapter(BasePlatformAdapter):
-    platform_id = "iST"
-
-
-class SSTPlatformAdapter(BasePlatformAdapter):
-    platform_id = "sST"
-
-
 class DefaultCFStrategy(CFStrategy):
     """No-op CF strategy used for routes without special plugin behavior."""
 

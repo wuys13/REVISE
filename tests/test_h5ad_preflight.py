@@ -18,7 +18,7 @@ from revise.framework import REVISEPipeline
 from revise.io.input_service import REVISEInputService
 from revise.recon.context import PipelineContext
 from revise.utils import fingerprint_paths
-from revise.utils.sst_input import ensure_all_cells_in_spot
+from revise.utils.spot_sr_input import ensure_all_cells_in_spot
 
 
 COLUMNS = {
@@ -32,7 +32,7 @@ DECLARED_PROFILES = {
     "application_sp",
     "application_sc",
     "application_sc_hyper",
-    "application_sc_sst",
+    "application_sc_sr",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -101,7 +101,7 @@ def _write_application_inputs(tmp_path: Path):
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (
-            "application_sc_sst",
+            "application_sc_sr",
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (
@@ -509,10 +509,10 @@ def test_preflight_rejects_missing_reference_label(tmp_path):
         _preflight(tmp_path)
 
 
-@pytest.mark.parametrize("platform", ["iST", "sST"])
+@pytest.mark.parametrize("task", ["sc_svc", "sc_svc_sr"])
 def test_application_sc_routes_require_the_labels_used_by_full_runners(
     tmp_path,
-    platform,
+    task,
 ):
     _write_application_inputs(tmp_path)
     sc_ref = _adata("sc_ref")
@@ -525,14 +525,14 @@ def test_application_sc_routes_require_the_labels_used_by_full_runners(
             specs,
             runtime={
                 "mode": "application",
-                "task": "sc_svc",
-                "platform": platform,
+                "task": task,
+                "platform": task,
             },
             columns=COLUMNS,
         )
 
 
-def test_ist_custom_columns_are_the_full_runner_contract(tmp_path):
+def test_sc_svc_custom_columns_are_the_full_runner_contract(tmp_path):
     _write_application_inputs(tmp_path)
     sc_ref = _adata("sc_ref")
     sc_ref.obs["custom_level1"] = sc_ref.obs.pop("Level1")
@@ -542,7 +542,7 @@ def test_ist_custom_columns_are_the_full_runner_contract(tmp_path):
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": "application", "task": "sc_svc", "platform": "iST"},
+        runtime={"mode": "application", "task": "sc_svc", "platform": "sc_svc"},
         columns={
             **COLUMNS,
             "cell_type_col": "custom_level1",
@@ -613,7 +613,7 @@ def _policy_context(
         config_path="revise/revise.yaml",
         profile="test",
         runtime=runtime,
-        route_key="hST:bin2cell",
+        route_key="sp_svc:bin2cell",
         run_dir=tmp_path / "run",
         logger=logging.getLogger("test-h5ad-preflight"),
         dry_run=True,

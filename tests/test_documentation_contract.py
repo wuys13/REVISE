@@ -39,15 +39,12 @@ def test_public_docs_distinguish_installed_source_and_paper_entry_paths():
     metadata = _read(ROOT / "pyproject.toml")
 
     assert "revise-reconstruct" in text
-    assert 'revise-reconstruct = "revise.cli:main"' in metadata
-    assert "python reconstruct.py" in text
-    assert (ROOT / "reconstruct.py").is_file()
+    assert 'revise-reconstruct = "revise.application.cli:main"' in metadata
+    assert "python application_reconstruct.py" in text
+    assert (ROOT / "application_reconstruct.py").is_file()
     assert "python benchmark_main.py" in text
     assert (ROOT / "benchmark_main.py").is_file()
-    assert (ROOT / "application_sp_SVC_recon.py").is_file()
-    assert (ROOT / "application_sc_SVC_recon.py").is_file()
     assert "installed command" in text.lower()
-    assert "compatibility wrapper" in text.lower()
     assert "paper reproduction" in text.lower()
 
 
@@ -73,8 +70,8 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
     assert st_path in quickstart
     assert sc_path in quickstart
     assert "unique ``obs_names`` and unique ``var_names``" in normalized
-    assert "hST requires ``Level1``" in normalized
-    assert "iST and sST require both ``Level1`` and ``Level2``" in normalized
+    assert "sp-SVC requires ``Level1``" in normalized
+    assert "sc-SVC and sc-SVC-sr require both ``Level1`` and ``Level2``" in normalized
     assert "default ``Patient`` column" in normalized
     assert "--spot-size" not in quickstart
 
@@ -101,7 +98,7 @@ def test_installation_describes_base_and_optional_capability_layers():
 
 def test_public_docs_use_the_single_svc_result_contract():
     text = _joined()
-    cli = _read(ROOT / "revise/cli.py")
+    service = _read(ROOT / "revise/application/service.py")
     case = _read(ROOT / "docs/source/case.rst")
     canonical_case, compatibility_case = case.split(
         "Paper notebook compatibility", maxsplit=1
@@ -117,10 +114,11 @@ def test_public_docs_use_the_single_svc_result_contract():
         assert compatibility_filename not in canonical_case
         assert compatibility_filename in compatibility_case
     assert "<output-root>/<sample-name>/SVC.h5ad" in text
-    assert 'output_dir / "SVC.h5ad"' in cli
+    assert 'output_dir / "SVC.h5ad"' in service
     assert "result.type" in text
     assert "sp-SVC" in text
     assert "sc-SVC" in text
+    assert "sc-SVC-sr" in text
     assert "provenance.json" in text
 
 
@@ -133,7 +131,7 @@ def test_public_docs_route_to_package_owned_application_utilities():
 
 def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     text = _joined()
-    cli = _read(ROOT / "revise/cli.py")
+    service = _read(ROOT / "revise/application/service.py")
     runtime = _read(ROOT / "revise/backend/ops/tacco_runtime.py")
 
     assert "--ot-method" in text
@@ -143,8 +141,8 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert "does not fall back" in text.lower()
     assert "annotate.mode" not in text
     assert "local_ot.method" not in text
-    assert 'f"ot.ga.solver={args.ot_method}"' in cli
-    assert 'f"ot.lr.solver={args.ot_method}"' in cli
+    assert 'f"ot.ga.solver={args.ot_method}"' in service
+    assert 'f"ot.lr.solver={args.ot_method}"' in service
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
 
 

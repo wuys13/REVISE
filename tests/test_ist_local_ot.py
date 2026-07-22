@@ -80,7 +80,7 @@ def test_ist_local_refinement_uses_configured_columns_and_local_ot(
     )
 
     def fail_global(*args, **kwargs):
-        raise AssertionError("iST local refinement reused the global annotation kernel")
+        raise AssertionError("sc-SVC local refinement reused the global annotation kernel")
 
     runner.annotate_method.run = fail_global
     local_calls = []
@@ -299,10 +299,10 @@ def test_ist_singleton_fallback_uses_configured_cell_type_column(monkeypatch):
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
 def test_unified_cli_switches_global_and_local_methods_together(method):
-    from revise import cli
+    from revise.application import service
 
     args = SimpleNamespace(
-        platform="iST",
+        svc_type="sc-SVC",
         ot_method=method,
         select_ct="all",
         cell_type_col="Level1",
@@ -310,7 +310,7 @@ def test_unified_cli_switches_global_and_local_methods_together(method):
         set_overrides=[],
     )
 
-    overrides = cli._build_set_overrides(args)
+    overrides = service._build_set_overrides(args)
 
     assert f"ot.ga.solver={method}" in overrides
     assert f"ot.lr.solver={method}" in overrides

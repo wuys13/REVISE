@@ -107,8 +107,8 @@ def test_effective_run_status_does_not_rewrite_recorded_history(
 
 
 def test_application_run_directories_do_not_collide_when_created_together(tmp_path):
-    first = build_run_dir(str(tmp_path), "sample", "hST:bin2cell")
-    second = build_run_dir(str(tmp_path), "sample", "hST:bin2cell")
+    first = build_run_dir(str(tmp_path), "sample", "sp_svc:bin2cell")
+    second = build_run_dir(str(tmp_path), "sample", "sp_svc:bin2cell")
 
     assert first != second
     assert first.parent == second.parent
@@ -206,7 +206,7 @@ def test_application_manifest_and_log_share_each_unique_run_directory(tmp_path):
             dry_run=True,
         )
 
-    route_dir = output_root / "sample" / "hST__bin2cell"
+    route_dir = output_root / "sample" / "sp_svc__bin2cell"
     manifests = sorted(route_dir.glob("*/provenance.json"))
     assert len(manifests) == 2
     assert len({path.parent for path in manifests}) == 2

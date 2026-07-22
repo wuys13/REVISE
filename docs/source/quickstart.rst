@@ -46,8 +46,8 @@ For ``--sample-name sample``, ``--st-file st.h5ad``, and
 The resolved paths are ``data/sample_st.h5ad`` and ``data/sc_ref.h5ad``. Both
 inputs require non-empty ``X``, unique ``obs_names`` and unique ``var_names``.
 The ST input requires two spatial coordinate columns in ``obsm["spatial"]``.
-hST requires ``Level1`` in reference ``obs``; iST and sST require both
-``Level1`` and ``Level2``. The inputs must share at least one gene.
+sp-SVC requires ``Level1`` in reference ``obs``; sc-SVC and sc-SVC-sr require
+both ``Level1`` and ``Level2``. The inputs must share at least one gene.
 
 If the reference has the default ``Patient`` column, its values are matched to
 ``--sample-name``. Select another column with ``--patient-key``.
@@ -58,24 +58,24 @@ Application command
 .. code-block:: bash
 
    revise-reconstruct \
-     --platform hST \
+     --svc-type sp-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output
 
-Use ``--platform iST`` or ``--platform sST`` for the corresponding internal
-routes. iST also accepts ``--select-ct``, ``--cell-type-col``,
-``--sub-cell-type-col``, and ``--ist-mapping mean|random``.
+Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
+sc-SVC-sr`` for spot super-resolution. sc-SVC also accepts ``--select-ct``,
+``--cell-type-col``, ``--sub-cell-type-col``, and ``--sc-mapping mean|random``.
 
-From a source checkout, the compatibility wrapper delegates to the same
+From a source checkout, the source wrapper delegates to the same
 installed command implementation:
 
 .. code-block:: bash
 
-   python reconstruct.py \
-     --platform hST \
+   python application_reconstruct.py \
+     --svc-type sp-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
@@ -95,17 +95,16 @@ All application routes publish:
    <output-root>/<sample-name>/SVC.h5ad
 
 The file links to the canonical run's ``provenance.json``. The manifest's
-``result.type`` identifies the result as ``sp-SVC`` or ``sc-SVC`` and records
-the route, stages, configuration, inputs, and artifacts.
+``result.type`` identifies the result as ``sp-SVC``, ``sc-SVC``, or
+``sc-SVC-sr`` and records the route, stages, configuration, inputs, and
+artifacts.
 
-Paper reproduction compatibility
---------------------------------
+Paper reproduction notebooks
+----------------------------
 
-The repository retains ``application_sp_SVC_recon.py`` and
-``application_sc_SVC_recon.py`` only for historical notebook layouts. They
-keep legacy output names and are not part of the canonical ``SVC.h5ad``
-contract. Curated application notebooks are tracked under
-``reproduce/case/``.
+Curated application notebooks are tracked under ``reproduce/case/``. They may
+refer to historical output layouts, but the current application command has
+only the canonical ``SVC.h5ad`` output contract.
 
 Application utilities
 ---------------------

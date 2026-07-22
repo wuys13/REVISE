@@ -314,7 +314,7 @@ def test_true_cell_type_keeps_randomly_allocated_cells_as_unknown(adapters):
 @pytest.mark.parametrize(
     ("strategy_name", "profile", "runner_module", "runner_class"),
     [
-        ("ScSvcSrApplicationStrategy", "application_sc_sst", "sc_svc_sr_application", "ScSVCSr"),
+        ("ScSvcSrApplicationStrategy", "application_sc_sr", "sc_svc_sr_application", "ScSVCSr"),
         ("ScSvcSrBenchmarkStrategy", "benchmark_sr_batch", "sc_svc_sr_benchmark", "ScSVCSr"),
     ],
 )

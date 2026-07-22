@@ -5,7 +5,7 @@ include MANIFEST.in
 include benchmark_launcher.py
 include benchmark_main.py
 include benchmark_main.sh
-include reconstruct.py
+include application_reconstruct.py
 recursive-include revise *.py *.yaml
 recursive-include constraints *.txt
 prune tests

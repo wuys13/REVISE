@@ -81,9 +81,6 @@ def build_default_plugin_registry() -> PluginRegistry:
     from revise.backend.plugins import (
         BasePlatformAdapter,
         DefaultCFStrategy,
-        HSTPlatformAdapter,
-        ISTPlatformAdapter,
-        SSTPlatformAdapter,
         SegmentationCFStrategy,
         Sim2RealPlatformAdapter,
     )
@@ -91,9 +88,6 @@ def build_default_plugin_registry() -> PluginRegistry:
     reg = PluginRegistry()
     reg.register_platform_adapter("default", BasePlatformAdapter())
     reg.register_platform_adapter("sim2real", Sim2RealPlatformAdapter())
-    reg.register_platform_adapter("hST", HSTPlatformAdapter())
-    reg.register_platform_adapter("iST", ISTPlatformAdapter())
-    reg.register_platform_adapter("sST", SSTPlatformAdapter())
 
     reg.register_cf_strategy("default", DefaultCFStrategy())
     reg.register_cf_strategy("segmentation", SegmentationCFStrategy())

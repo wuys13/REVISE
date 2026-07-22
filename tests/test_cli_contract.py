@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_package_cli_exposes_version_without_required_run_arguments():
     result = subprocess.run(
-        [sys.executable, "-m", "revise.cli", "--version"],
+        [sys.executable, "-m", "revise.application.cli", "--version"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -45,15 +45,15 @@ def test_package_cli_exposes_version_without_required_run_arguments():
 
 
 def test_canonical_application_cli_rejects_benchmark_only_spot_size(monkeypatch):
-    from revise import cli
+    from revise.application import cli
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "revise-reconstruct",
-            "--platform",
-            "sST",
+            "--svc-type",
+            "sc-SVC-sr",
             "--sample-name",
             "sample",
             "--st-file",
@@ -68,19 +68,19 @@ def test_canonical_application_cli_rejects_benchmark_only_spot_size(monkeypatch)
     )
 
     with pytest.raises(SystemExit, match="2"):
-        cli.get_args()
+        cli.parse_args()
 
 
 def test_root_wrapper_delegates_only_to_the_canonical_main():
-    import reconstruct
-    from revise import cli
+    import application_reconstruct
+    from revise.application import cli
 
-    assert reconstruct.main is cli.main
-    assert not hasattr(reconstruct, "ROUTES")
+    assert application_reconstruct.main is cli.main
+    assert not hasattr(application_reconstruct, "APPLICATION_ROUTES")
 
 
 def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tmp_path):
-    from revise import cli
+    from revise.application import service
 
     captured = {}
 
@@ -92,10 +92,12 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
             captured.update(kwargs)
             return SimpleNamespace()
 
-    monkeypatch.setattr(cli, "REVISEPipeline", Pipeline)
-    callback = lambda ctx: None
+    monkeypatch.setattr(service, "REVISEPipeline", Pipeline)
+    def callback(ctx):
+        return None
+
     args = SimpleNamespace(
-        platform="hST",
+        svc_type="sp-SVC",
         config="revise/revise.yaml",
         seed=17,
         data_root=str(tmp_path),
@@ -112,7 +114,7 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         set_overrides=[],
     )
 
-    cli._run_pipeline(args, finalize_callback=callback)
+    service._run_pipeline(args, finalize_callback=callback)
 
     assert captured["finalize_callback"] is callback
     assert captured["profile"] == "application_sp"
@@ -121,21 +123,27 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
 
 
 @pytest.mark.parametrize(
-    ("platform", "profile", "svc_kind", "output_key", "expected_type"),
+    ("svc_type", "profile", "svc_kind", "output_key", "expected_type"),
     [
-        ("hST", "application_sp", "sp", "sp_svc", "sp-SVC"),
-        ("sST", "application_sc_sst", "sc", "sc_svc_dec", "sc-SVC"),
+        ("sp-SVC", "application_sp", "sp", "sp_svc", "sp-SVC"),
+        (
+            "sc-SVC-sr",
+            "application_sc_sr",
+            "sc",
+            "sc_svc_dec",
+            "sc-SVC-sr",
+        ),
     ],
 )
 def test_public_result_links_to_manifest_and_registers_artifact(
     tmp_path,
-    platform,
+    svc_type,
     profile,
     svc_kind,
     output_key,
     expected_type,
 ):
-    from revise import cli
+    from revise.application import service
 
     output = AnnData(
         X=np.ones((2, 2)),
@@ -160,14 +168,14 @@ def test_public_result_links_to_manifest_and_registers_artifact(
         record_artifact=records.append,
     )
     args = SimpleNamespace(
-        platform=platform,
+        svc_type=svc_type,
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
         ot_method="pot",
     )
 
-    _, path = cli._build_public_result(
+    _, path = service._build_public_result(
         args,
         profile,
         output_key,
@@ -193,7 +201,7 @@ def test_public_result_write_failure_preserves_previous_result(
     monkeypatch,
     tmp_path,
 ):
-    from revise import cli
+    from revise.application import service
 
     output = AnnData(
         X=np.ones((1, 1)),
@@ -217,7 +225,7 @@ def test_public_result_write_failure_preserves_previous_result(
         record_artifact=lambda artifact: None,
     )
     args = SimpleNamespace(
-        platform="hST",
+        svc_type="sp-SVC",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -231,14 +239,14 @@ def test_public_result_write_failure_preserves_previous_result(
     monkeypatch.setattr(AnnData, "write_h5ad", partial_write)
 
     with pytest.raises(OSError, match="simulated H5AD failure"):
-        cli._build_public_result(args, "application_sp", "sp_svc", ctx)
+        service._build_public_result(args, "application_sp", "sp_svc", ctx)
 
     assert output_path.read_bytes() == b"previous-valid-result"
     assert list(output_path.parent.iterdir()) == [output_path]
 
 
 def test_public_result_manifest_failure_restores_previous_result(tmp_path):
-    from revise import cli
+    from revise.application import service
 
     output = AnnData(
         X=np.ones((1, 1)),
@@ -268,7 +276,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
 
     ctx.record_artifact = fail_record_artifact
     args = SimpleNamespace(
-        platform="hST",
+        svc_type="sp-SVC",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -276,7 +284,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
     )
 
     with pytest.raises(OSError, match="simulated manifest failure"):
-        cli._build_public_result(args, "application_sp", "sp_svc", ctx)
+        service._build_public_result(args, "application_sp", "sp_svc", ctx)
 
     assert output_path.read_bytes() == b"previous-valid-result"
     assert "result" not in ctx.provenance
@@ -285,7 +293,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
 
 
 def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
-    from revise import cli
+    from revise.application import service
 
     output = AnnData(
         X=np.ones((1, 1)),
@@ -307,7 +315,7 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
         record_artifact=lambda artifact: None,
     )
     args = SimpleNamespace(
-        platform="hST",
+        svc_type="sp-SVC",
         output_root=str(output_root),
         sample_name="sample",
         seed=17,
@@ -316,8 +324,8 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match="Platform 'hST' requires SVC type 'sp'",
+        match="SVC type 'sp-SVC' requires internal kind 'sp'",
     ):
-        cli._build_public_result(args, "application_sp", "sp_svc", ctx)
+        service._build_public_result(args, "application_sp", "sp_svc", ctx)
 
     assert not output_root.exists()

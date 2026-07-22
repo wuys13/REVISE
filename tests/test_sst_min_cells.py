@@ -162,7 +162,7 @@ def test_application_sst_prepare_context_filters_genes_by_observation_count(
 ):
     merged = merge_unified_config(
         raw_config=load_raw_config(CONFIG_PATH),
-        profile="application_sc_sst",
+        profile="application_sc_sr",
         runtime_overrides={},
         io_overrides={},
         set_overrides=(),
@@ -195,7 +195,7 @@ def test_application_sst_prepare_context_filters_genes_by_observation_count(
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sST:spot_size",
+        route_key="sc_svc_sr:spot_size",
         run_dir=tmp_path,
         logger=logging.getLogger("test-sst-min-cells"),
         compatibility_mode=False,
@@ -213,7 +213,7 @@ def test_application_sst_validates_overlap_after_gene_filtering(
 ):
     merged = merge_unified_config(
         raw_config=load_raw_config(CONFIG_PATH),
-        profile="application_sc_sst",
+        profile="application_sc_sr",
         runtime_overrides={},
         io_overrides={},
         set_overrides=(),
@@ -265,7 +265,7 @@ def test_application_sst_validates_overlap_after_gene_filtering(
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sST:spot_size",
+        route_key="sc_svc_sr:spot_size",
         run_dir=tmp_path,
         logger=logging.getLogger("test-sst-post-filter-overlap"),
         compatibility_mode=False,

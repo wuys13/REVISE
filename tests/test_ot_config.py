@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import importlib
-import json
 import logging
 import math
 import sys
@@ -77,7 +75,7 @@ def test_default_ot_schema_is_single_public_surface():
     "application_sp",
     "application_sc",
     "application_sc_hyper",
-    "application_sc_sst",
+    "application_sc_sr",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -148,7 +146,7 @@ def test_impute_reuses_lr_solver_with_independent_numerics(adapters):
     [
         ("defaults.annotate", "annotate.mode -> ot.ga.solver"),
         ("profiles.application_sp.local_ot", "local_ot.method -> ot.lr.solver"),
-        ("router.hST.bin2cell.ot_solver", "ot_solver -> ot.ga.solver + ot.lr.solver"),
+        ("router.sp_svc.bin2cell.ot_solver", "ot_solver -> ot.ga.solver + ot.lr.solver"),
         ("defaults.runtime.ot_solver", "ot_solver -> ot.ga.solver + ot.lr.solver"),
         ("defaults.ot.global", "ot.global -> ot.ga.pot"),
         ("profiles.application_sp.ot.local", "ot.local -> ot.lr.pot"),
@@ -253,12 +251,13 @@ def test_plugin_registry_keeps_platform_and_cf_but_has_no_ot_api():
 
     registry = build_default_plugin_registry()
     payload = {
-        "runtime": {"platform": "hST", "confounding": "bin2cell"},
+        "runtime": {"platform": "sp_svc", "confounding": "bin2cell"},
         "merged_config": {},
     }
 
-    assert registry.get_platform_adapter("hST").adapt(payload) is payload
+    assert registry.get_platform_adapter("default").adapt(payload) is payload
     assert registry.get_cf_strategy("bin2cell").apply(payload) is payload
+    assert set(registry._platform_adapters) == {"default", "sim2real"}
     assert not hasattr(registry, "register_ot_solver")
     assert not hasattr(registry, "get_ot_solver")
     assert not hasattr(registry, "_ot_solvers")
@@ -272,7 +271,7 @@ def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
         config_path=str(CONFIG_PATH),
         profile=None,
         runtime=merged["runtime"],
-        route_key="hST:bin2cell",
+        route_key="sp_svc:bin2cell",
         run_dir=tmp_path,
         logger=logging.getLogger("test_ot_config"),
     )
@@ -283,7 +282,7 @@ def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
 
 def _cli_args(**overrides):
     values = {
-        "platform": "iST",
+        "svc_type": "sc-SVC",
         "ot_method": None,
         "select_ct": "all",
         "cell_type_col": "Level1",
@@ -295,14 +294,14 @@ def _cli_args(**overrides):
 
 
 def test_cli_omitted_ot_method_parses_as_none(monkeypatch):
-    from revise import cli
+    from revise.application import cli
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
-            "reconstruct.py",
-            "--platform", "iST",
+            "application_reconstruct.py",
+            "--svc-type", "sc-SVC",
             "--sample-name", "sample",
             "--st-file", "st.h5ad",
             "--sc-ref-file", "sc.h5ad",
@@ -310,13 +309,13 @@ def test_cli_omitted_ot_method_parses_as_none(monkeypatch):
         ],
     )
 
-    assert cli.get_args().ot_method is None
+    assert cli.parse_args().ot_method is None
 
 
 def test_cli_without_ot_flag_preserves_mixed_set_solvers():
-    from revise import cli
+    from revise.application import service
 
-    overrides = cli._build_set_overrides(
+    overrides = service._build_set_overrides(
         _cli_args(set_overrides=["ot.ga.solver=tacco", "ot.lr.solver=pot"])
     )
 
@@ -328,9 +327,9 @@ def test_cli_without_ot_flag_preserves_mixed_set_solvers():
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
 def test_explicit_cli_ot_flag_overrides_both_phases(method):
-    from revise import cli
+    from revise.application import service
 
-    overrides = cli._build_set_overrides(_cli_args(ot_method=method))
+    overrides = service._build_set_overrides(_cli_args(ot_method=method))
 
     assert f"ot.ga.solver={method}" in overrides
     assert f"ot.lr.solver={method}" in overrides
@@ -346,10 +345,10 @@ def test_explicit_cli_ot_flag_overrides_both_phases(method):
     ],
 )
 def test_explicit_cli_ot_flag_conflicts_with_overlapping_set(override):
-    from revise import cli
+    from revise.application import service
 
     with pytest.raises(ValueError, match="Conflicting high-level CLI option"):
-        cli._build_set_overrides(
+        service._build_set_overrides(
             _cli_args(ot_method="tacco", set_overrides=[override])
         )
 
@@ -364,8 +363,8 @@ def test_framework_provenance_records_resolved_ot_config_and_events(tmp_path):
         merged_config=merged,
         config_path=str(CONFIG_PATH),
         profile=None,
-        route={"platform": "hST"},
-        route_key="hST:bin2cell",
+        route={"platform": "sp_svc"},
+        route_key="sp_svc:bin2cell",
         run_dir=tmp_path,
         stage_trace=[],
         quality_metrics={},
@@ -387,7 +386,7 @@ def test_application_sc_sr_config_fields_accept_production_mapping(adapters):
     from dataclasses import fields
     from revise.config.runner_conf import ApplicationScSrConf
 
-    merged = _merge(_raw_config(), "application_sc_sst")
+    merged = _merge(_raw_config(), "application_sc_sr")
     mapping = adapters._ot_runner_kwargs(merged)
     field_names = {field.name for field in fields(ApplicationScSrConf)}
 
@@ -478,7 +477,7 @@ def test_ot_reg_type_must_be_supported_string(section, bad_value):
     "application_sp",
     "application_sc",
     "application_sc_hyper",
-    "application_sc_sst",
+    "application_sc_sr",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -495,7 +494,7 @@ def test_current_profile_ot_numerics_remain_valid(profile):
     [
         ("SpSvcApplicationStrategy", "application_sp", "sp_svc_application", "SpSVC", False),
         ("ScSvcApplicationStrategy", "application_sc", "sc_svc_application", "ScSVC", False),
-        ("ScSvcSrApplicationStrategy", "application_sc_sst", "sc_svc_sr_application", "ScSVCSr", False),
+        ("ScSvcSrApplicationStrategy", "application_sc_sr", "sc_svc_sr_application", "ScSVCSr", False),
         ("SpSvcBenchmarkSegStrategy", "benchmark_seg", "sp_svc_benchmark", "SpSVC", False),
         ("ScSvcSrBenchmarkStrategy", "benchmark_sr_batch", "sc_svc_sr_benchmark", "ScSVCSr", False),
         ("ScSvcImputeBenchmarkStrategy", "benchmark_impute_panel", "sc_svc_impute_benchmark", "ScSVCImpute", True),

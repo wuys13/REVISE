@@ -25,7 +25,7 @@ def _config(tmp_path: Path) -> dict:
         "runtime": {
             "seed": 17,
             "deterministic": True,
-            "platform": "hST",
+            "platform": "sp_svc",
             "confounding": "bin2cell",
             "mode": "application",
             "task": "sp_svc",
@@ -398,7 +398,7 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
         config_path="revise/revise.yaml",
         profile="application_sp",
         runtime=config["runtime"],
-        route_key="hST:bin2cell",
+        route_key="sp_svc:bin2cell",
         run_dir=tmp_path / "run",
         logger=logging.getLogger("test-unresolved-provenance"),
     )

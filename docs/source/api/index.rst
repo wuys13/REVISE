@@ -22,7 +22,7 @@ extension points.
     pipeline = REVISEPipeline()
     svc = pipeline.run(
         profile="application_sc",
-        runtime_overrides={"platform": "iST", "confounding": "segmentation"},
+        runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
         io_overrides={
             "data_root": "raw_data/Real_application",
             "output_root": "output/sc_SVC_case",
@@ -112,7 +112,7 @@ Backend Compatibility Runners
 
 These classes are kept for notebooks, parity checks, and low-level debugging.
 New application and benchmark code should prefer ``REVISEPipeline`` or the
-root wrapper scripts.
+application or benchmark entrypoints.
 
 .. autosummary::
     :toctree: generated

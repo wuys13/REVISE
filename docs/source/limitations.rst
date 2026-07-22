@@ -27,7 +27,7 @@ production-scale pipeline limit, memory requirement, or throughput guarantee.
 Spot super-resolution localization
 -----------------------------------
 
-When the sST fallback creates virtual-cell rows, they share the source spot
+When the sc-SVC-sr fallback creates virtual-cell rows, they share the source spot
 centroid. With no ``PM_on_cell.csv`` matrix, proportions are converted with
 ``np.round``, repaired to an exact quota, and placed into virtual-cell rows by
 a seeded random permutation.

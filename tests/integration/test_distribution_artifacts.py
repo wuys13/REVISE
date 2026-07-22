@@ -99,7 +99,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         sdist_names = list(members)
 
     assert "revise/revise.yaml" in wheel_names
-    assert "revise-reconstruct = revise.cli:main" in entry_points
+    assert "revise-reconstruct = revise.application.cli:main" in entry_points
     assert (
         "revise-build-histology-priors = revise.preprocess.cli:main"
         in entry_points
@@ -123,7 +123,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "benchmark_launcher.py",
         "benchmark_main.py",
         "benchmark_main.sh",
-        "reconstruct.py",
+        "application_reconstruct.py",
     }
     for pattern in [
         "revise/**/*.py",

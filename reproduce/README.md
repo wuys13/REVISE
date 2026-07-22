@@ -5,7 +5,7 @@ The reproduction material has two entry points:
 | Workflow | Command entry | Notebook entry |
 | --- | --- | --- |
 | Benchmark | `python benchmark_main.py ...` or `bash benchmark_main.sh` from the repository root | [`benchmark/`](benchmark/) |
-| Application | `revise-reconstruct ...` or `python reconstruct.py ...`; historical notebooks may use the legacy root wrappers | [`case/`](case/) |
+| Application | `revise-reconstruct ...` or `python application_reconstruct.py ...` | [`case/`](case/) |
 
 Download the paper datasets and reproduced results from
 <https://zenodo.org/records/17705737>. Data are not stored in this Git

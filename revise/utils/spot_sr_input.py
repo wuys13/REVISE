@@ -23,9 +23,9 @@ def ensure_all_cells_in_spot(
     min_cells_per_spot: int = 1,
     max_cells_per_spot: int = 12,
 ) -> AnnData:
-    """Ensure a spot-to-virtual-cell mapping exists for sST inputs.
+    """Ensure a spot-to-virtual-cell mapping exists for sc-SVC-sr inputs.
 
-    The user-facing sST input contract should stay small: users provide a
+    The user-facing sc-SVC-sr input contract stays small: users provide a
     spot-level AnnData plus a scRNA-seq reference. REVISE still needs a list of
     virtual cells inside each spot before spot expression can be redistributed.
     This helper therefore implements the fallback in one place:
@@ -58,7 +58,7 @@ def ensure_all_cells_in_spot(
         _write_estimated_cell_count(st_adata, mapping)
         if logger is not None:
             logger.warning(
-                "[sST-input] st_adata.uns['%s'] is missing; inferred benchmark "
+                "[spot-sr-input] st_adata.uns['%s'] is missing; inferred benchmark "
                 "spot-cell mapping from nearest ground-truth cell coordinates "
                 "(spots=%d, mapped_cells=%d, max_distance=%.4f).",
                 key,
@@ -79,7 +79,7 @@ def ensure_all_cells_in_spot(
     if logger is not None:
         counts = st_adata.obs[ESTIMATED_CELL_COUNT_COL]
         logger.warning(
-            "[sST-input] st_adata.uns['%s'] is missing; generated default "
+            "[spot-sr-input] st_adata.uns['%s'] is missing; generated default "
             "virtual-cell ids from spot transcript counts "
             "(target_median_cells=%d, min=%d, median=%.2f, max=%d).",
             key,

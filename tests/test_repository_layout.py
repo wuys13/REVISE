@@ -16,6 +16,11 @@ ROOT = Path(__file__).resolve().parents[1]
         "release",
         "MIGRATION.md",
         "legacy-assets.json",
+        "reconstruct.py",
+        "application_sp_SVC_recon.py",
+        "application_sp_SVC_recon.sh",
+        "application_sc_SVC_recon.py",
+        "application_sc_SVC_recon.sh",
         ".github/workflows/release.yml",
     ],
 )
