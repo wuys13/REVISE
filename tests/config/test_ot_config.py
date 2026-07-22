@@ -297,7 +297,7 @@ def test_cli_omitted_ot_method_parses_as_none(monkeypatch):
         sys,
         "argv",
         [
-            "application_reconstruct.py",
+            "reconstruct.py",
             "--svc-type", "sc-SVC",
             "--sample-name", "sample",
             "--st-file", "st.h5ad",

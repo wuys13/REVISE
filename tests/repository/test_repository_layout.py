@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
         "release",
         "MIGRATION.md",
         "legacy-assets.json",
-        "reconstruct.py",
         "application_sp_SVC_recon.py",
         "application_sp_SVC_recon.sh",
         "application_sc_SVC_recon.py",
@@ -35,6 +34,11 @@ def test_build_and_ci_do_not_reference_removed_maintenance_surfaces():
     for removed in ("scripts/", "tools/", "release/", "legacy-assets.json"):
         assert removed not in manifest
         assert removed not in ci
+
+
+def test_repository_root_exposes_only_the_reconstruction_script():
+    assert {path.name for path in ROOT.glob("*.py")} == {"reconstruct.py"}
+    assert not (ROOT / "benchmark_main.sh").exists()
 
 
 def test_biological_metrics_remain_owned_by_the_analysis_package():

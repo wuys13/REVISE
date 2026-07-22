@@ -19,8 +19,8 @@ REVISE has two public workflows:
 
 | Workflow | Goal | Entry points | Main results |
 | --- | --- | --- | --- |
-| **Benchmark** | Reproduce Sim2Real-ST evaluations across six confounding factors | [`benchmark_main.py`](benchmark_main.py), [`benchmark_main.sh`](benchmark_main.sh), [`reproduce/benchmark/`](reproduce/benchmark/) | Per-gene PCC, SSIM, MSE, and NRMSE |
-| **Application** | Reconstruct SVCs and perform real-data analyses | `revise-reconstruct`, [`application_reconstruct.py`](application_reconstruct.py), [`reproduce/case/`](reproduce/case/) | `SVC.h5ad`, run provenance, and notebook figures |
+| **Benchmark** | Reproduce Sim2Real-ST evaluations across six confounding factors | [`reproduce/benchmark_main.py`](reproduce/benchmark_main.py), [`reproduce/benchmark_main.sh`](reproduce/benchmark_main.sh), [`reproduce/benchmark/`](reproduce/benchmark/) | Per-gene PCC, SSIM, MSE, and NRMSE |
+| **Application** | Reconstruct SVCs and perform real-data analyses | [`reconstruct.py`](reconstruct.py), `revise-reconstruct`, [`reproduce/case/`](reproduce/case/) | `SVC.h5ad`, run provenance, and notebook figures |
 
 Documentation: <https://revise-svc.readthedocs.io/en/latest/>
 
@@ -104,7 +104,7 @@ Installation does not download research data or external analysis databases.
 From a source checkout, run one Sim2Real-ST confounding family:
 
 ```bash
-python benchmark_main.py \
+python reproduce/benchmark_main.py \
   --confounding segmentation \
   --data-root raw_data/Sim2Real-ST \
   --sample-name P2CRC/cut_part1 \
@@ -116,7 +116,7 @@ Supported values are `segmentation`, `bin2cell`, `batch_effect`, `spot_size`,
 `gene_panel`, and `gene_dropout`. Run the bounded multi-family launcher with:
 
 ```bash
-bash benchmark_main.sh
+bash reproduce/benchmark_main.sh
 ```
 
 The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
@@ -127,11 +127,11 @@ The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
 
 <p align="center">Biological insights enabled by SVC reconstruction</p>
 
-Prepare an ST AnnData file and a matched single-cell reference, then run the
-installed command:
+Prepare an ST AnnData file and a matched single-cell reference, then run from
+the repository root:
 
 ```bash
-revise-reconstruct \
+python reconstruct.py \
   --svc-type sp-SVC \
   --sample-name sample \
   --data-root data \
@@ -142,30 +142,10 @@ revise-reconstruct \
 
 `--svc-type` accepts `sp-SVC`, `sc-SVC`, or `sc-SVC-sr`. The public result is
 always `output/sample/SVC.h5ad`, and the selected result type is recorded in
-`provenance.json`. From a source checkout, `python application_reconstruct.py`
-delegates to the same command implementation.
+`provenance.json`. The equivalent installed command is `revise-reconstruct`.
 
 Application reconstruction and downstream analysis notebooks are under
 [`reproduce/case/`](reproduce/case/).
-
-Optional morphology priors can be prepared through the installed package
-command:
-
-```bash
-revise-build-histology-priors \
-  --st-h5ad st.h5ad \
-  --mask segmented_cells.tif \
-  --out-h5ad st_with_histology_priors.h5ad
-```
-
-Biology-facing post-reconstruction metrics use the package-owned analysis
-implementation:
-
-```bash
-revise-compute-biological-metrics \
-  --input-h5ad output/sample/SVC.h5ad \
-  --output-dir output/sample/biological_metrics
-```
 
 ## Python API
 
@@ -201,7 +181,7 @@ validation remains a separate release step.
 ## Repository Layout
 
 - `revise/`: installable reconstruction and analysis package.
-- `reproduce/`: benchmark and application notebooks.
+- `reproduce/`: benchmark launchers and benchmark/application notebooks.
 - `docs/`: detailed user and method documentation.
 - `logo/`, `png/`: public project and scientific figures.
 - `tests/`: behavioral, scientific-contract, packaging, and CLI tests.

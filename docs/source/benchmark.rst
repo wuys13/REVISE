@@ -12,7 +12,7 @@ From the repository root:
 
 .. code-block:: bash
 
-   python benchmark_main.py \
+   python reproduce/benchmark_main.py \
      --confounding segmentation \
      --data-root raw_data/Sim2Real-ST \
      --dataset-task segmentation \
@@ -46,7 +46,7 @@ Run the bounded launcher
 
 .. code-block:: bash
 
-   bash benchmark_main.sh
+   bash reproduce/benchmark_main.sh
 
 The shell entry stays in the foreground while ``revise.benchmark.launcher`` owns a
 bounded set of child process groups. It writes ``launcher_status.json``,

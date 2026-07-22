@@ -120,9 +120,9 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "README.md",
         "pyproject.toml",
         "MANIFEST.in",
-        "benchmark_main.py",
-        "benchmark_main.sh",
-        "application_reconstruct.py",
+        "reconstruct.py",
+        "reproduce/benchmark_main.py",
+        "reproduce/benchmark_main.sh",
     }
     for pattern in [
         "revise/**/*.py",

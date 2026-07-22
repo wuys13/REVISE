@@ -11,7 +11,7 @@ Run one Sim2Real-ST confounding family from the repository root:
 
 .. code-block:: bash
 
-   python benchmark_main.py \
+   python reproduce/benchmark_main.py \
      --confounding segmentation \
      --data-root raw_data/Sim2Real-ST \
      --sample-name P2CRC/cut_part1 \
@@ -27,7 +27,7 @@ launcher with:
 
 .. code-block:: bash
 
-   bash benchmark_main.sh
+   bash reproduce/benchmark_main.sh
 
 Benchmark analysis notebooks are tracked under ``reproduce/benchmark/``.
 
@@ -57,7 +57,7 @@ Application command
 
 .. code-block:: bash
 
-   revise-reconstruct \
+   python reconstruct.py \
      --svc-type sp-SVC \
      --sample-name sample \
      --data-root data \
@@ -69,12 +69,11 @@ Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
 sc-SVC-sr`` for spot super-resolution. sc-SVC also accepts ``--select-ct``,
 ``--cell-type-col``, ``--sub-cell-type-col``, and ``--sc-mapping mean|random``.
 
-From a source checkout, the source wrapper delegates to the same
-installed command implementation:
+After installation, the equivalent package command is:
 
 .. code-block:: bash
 
-   python application_reconstruct.py \
+   revise-reconstruct \
      --svc-type sp-SVC \
      --sample-name sample \
      --data-root data \

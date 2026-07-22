@@ -41,10 +41,10 @@ def test_public_docs_distinguish_installed_source_and_paper_entry_paths():
 
     assert "revise-reconstruct" in text
     assert 'revise-reconstruct = "revise.application.cli:main"' in metadata
-    assert "python application_reconstruct.py" in text
-    assert (ROOT / "application_reconstruct.py").is_file()
-    assert "python benchmark_main.py" in text
-    assert (ROOT / "benchmark_main.py").is_file()
+    assert "python reconstruct.py" in text
+    assert (ROOT / "reconstruct.py").is_file()
+    assert "python reproduce/benchmark_main.py" in text
+    assert (ROOT / "reproduce" / "benchmark_main.py").is_file()
     assert "installed command" in text.lower()
     assert "paper reproduction" in text.lower()
 

@@ -289,7 +289,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
     for name, prefix in (
         (
             "source",
-            [source_python, ROOT / "application_reconstruct.py"],
+            [source_python, ROOT / "reconstruct.py"],
         ),
         ("installed", [installed_cli["command"]]),
     ):

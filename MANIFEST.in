@@ -2,9 +2,9 @@ include LICENSE
 include README.md
 include pyproject.toml
 include MANIFEST.in
-include benchmark_main.py
-include benchmark_main.sh
-include application_reconstruct.py
+include reconstruct.py
+include reproduce/benchmark_main.py
+include reproduce/benchmark_main.sh
 recursive-include revise *.py *.yaml
 recursive-include constraints *.txt
 prune tests

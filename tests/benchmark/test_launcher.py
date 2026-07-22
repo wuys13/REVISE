@@ -12,7 +12,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LAUNCHER = ROOT / "benchmark_main.sh"
+LAUNCHER = ROOT / "reproduce" / "benchmark_main.sh"
 CONFOUNDINGS = {
     "segmentation",
     "bin2cell",

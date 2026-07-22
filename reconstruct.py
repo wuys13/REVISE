@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source-checkout entrypoint for REVISE application reconstruction."""
+"""Source-checkout entrypoint for REVISE reconstruction."""
 
 from revise.application.cli import main
 

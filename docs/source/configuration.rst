@@ -134,5 +134,5 @@ Programmatic callers use the same merge and validation path:
    )
 
 Direct API use returns an ``SVC`` carrier. The single public result file is a
-contract of ``revise-reconstruct``/``application_reconstruct.py``, not of every
+contract of ``reconstruct.py``/``revise-reconstruct``, not of every
 low-level pipeline call.

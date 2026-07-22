@@ -10,7 +10,7 @@ System map
 
 .. code-block:: text
 
-   revise-reconstruct / application_reconstruct.py
+   reconstruct.py / revise-reconstruct
    `-- revise.application.cli
        `-- revise.application.service
        `-- REVISEPipeline.run()

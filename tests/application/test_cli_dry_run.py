@@ -39,7 +39,7 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
     result = subprocess.run(
         [
             sys.executable,
-            "application_reconstruct.py",
+            "reconstruct.py",
             "--svc-type",
             "sp-SVC",
             "--sample-name",

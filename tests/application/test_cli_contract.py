@@ -72,11 +72,11 @@ def test_canonical_application_cli_rejects_benchmark_only_spot_size(monkeypatch)
 
 
 def test_root_wrapper_delegates_only_to_the_canonical_main():
-    import application_reconstruct
+    import reconstruct
     from revise.application import cli
 
-    assert application_reconstruct.main is cli.main
-    assert not hasattr(application_reconstruct, "APPLICATION_ROUTES")
+    assert reconstruct.main is cli.main
+    assert not hasattr(reconstruct, "APPLICATION_ROUTES")
 
 
 def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tmp_path):

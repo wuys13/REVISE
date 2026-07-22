@@ -135,16 +135,16 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
 
 
 def test_root_application_wrapper_delegates_to_package_cli():
-    import application_reconstruct
+    import reconstruct
     from revise.application import cli
 
-    assert application_reconstruct.main is cli.main
-    assert not hasattr(application_reconstruct, "APPLICATION_ROUTES")
+    assert reconstruct.main is cli.main
+    assert not hasattr(reconstruct, "APPLICATION_ROUTES")
 
 
 def test_root_application_help_uses_1x_vocabulary():
     result = subprocess.run(
-        [sys.executable, "application_reconstruct.py", "--help"],
+        [sys.executable, "reconstruct.py", "--help"],
         cwd=ROOT,
         text=True,
         capture_output=True,
