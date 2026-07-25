@@ -104,15 +104,21 @@ class REVISEInputService:
                     columns=columns,
                 )
                 opened[role] = adata
-                reports.append(
-                    {
-                        "role": role,
-                        "path": str(path),
-                        "format": input_format,
-                        "backed": backed,
-                        "shape": [int(adata.n_obs), int(adata.n_vars)],
-                    }
-                )
+                input_report = {
+                    "role": role,
+                    "path": str(path),
+                    "format": input_format,
+                    "backed": backed,
+                    "shape": [int(adata.n_obs), int(adata.n_vars)],
+                }
+                if role == "gt" and str(runtime.get("task")) == "sc_svc_sr":
+                    input_report["ground_truth_label_source"] = (
+                        self._resolve_sr_ground_truth_label_key(
+                            adata,
+                            str(columns.get("cell_type_col", "Level1")),
+                        )
+                    )
+                reports.append(input_report)
 
             st = opened.get("st")
             sc_ref = opened.get("sc_ref")
@@ -178,12 +184,10 @@ class REVISEInputService:
             self._require_obs(adata, required_obs, context=context)
         elif role == "sc_ref":
             required_obs = [str(columns.get("cell_type_col", "Level1"))]
-            if mode == "application" and task in {"sc_svc", "sc_svc_sr"}:
+            if mode == "application" and task == "sc_svc":
                 required_obs.append(
                     str(columns.get("sub_cell_type_col", "Level2"))
                 )
-            if mode == "benchmark" and task == "sc_svc_sr":
-                required_obs.append("Level1")
             self._require_obs(
                 adata,
                 list(dict.fromkeys(required_obs)),
@@ -198,16 +202,15 @@ class REVISEInputService:
                         f"expected=at least one row for sample {sample_name!r}"
                     )
         elif role == "gt" and task == "sc_svc_sr":
+            label_key = self._resolve_sr_ground_truth_label_key(
+                adata,
+                str(columns.get("cell_type_col", "Level1")),
+            )
             self._require_obs(
                 adata,
-                ["cell_id", "x", "y"],
+                ["cell_id", "x", "y", label_key],
                 context=context,
             )
-            if "clusters" not in adata.obs and "Level1" not in adata.obs:
-                raise KeyError(
-                    f"Invalid input: {context}; field=obs; "
-                    "expected=clusters or Level1"
-                )
             cell_ids = adata.obs["cell_id"]
             normalized_ids = cell_ids.astype(str)
             if cell_ids.isna().any() or normalized_ids.str.strip().eq("").any():
@@ -220,7 +223,6 @@ class REVISEInputService:
                     f"Invalid input: {context}; field=obs['cell_id']; "
                     "expected=unique"
                 )
-            label_key = "clusters" if "clusters" in adata.obs else "Level1"
             if adata.obs[label_key].isna().any():
                 raise ValueError(
                     f"Invalid input: {context}; field=obs[{label_key!r}]; "
@@ -242,6 +244,17 @@ class REVISEInputService:
                 )
             if "spatial" in adata.obsm:
                 self._validate_spatial(adata, context=context)
+
+    @staticmethod
+    def _resolve_sr_ground_truth_label_key(
+        adata: AnnData,
+        configured_key: str,
+    ) -> str:
+        if configured_key != "Level1" or configured_key in adata.obs:
+            return configured_key
+        if "clusters" in adata.obs:
+            return "clusters"
+        return configured_key
 
     @staticmethod
     def _require_obs(adata: AnnData, required, *, context: str) -> None:

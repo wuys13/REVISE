@@ -10,14 +10,17 @@ from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_suppo
 from revise.backend.ops.meta import construct_sc_ref
 from revise.backend.ops.meta import get_sc_obs
 from revise.backend.ops.meta import get_true_cell_type
-from revise.backend.ops.posterior_conditioning import (
-    condition_cost_matrix,
-    neighbor_posterior_affinity,
-    posterior_conditioning_enabled,
-    posterior_conditioning_mode,
-    posterior_conditioning_strict,
-    posterior_reference_allocation,
-    reference_measure_from_marginals,
+from revise.backend.ops.meta import resolve_true_cell_type_key
+from revise.backend.ops.sr_allocation import (
+    guidance_mode,
+    mandatory_reference_allocation,
+    prepare_virtual_cell_guidance,
+    projected_virtual_assignment,
+    record_mandatory_allocation,
+    record_virtual_cell_guidance_terminal,
+    record_virtual_cell_not_applicable,
+    record_virtual_cell_unavailable,
+    subset_virtual_assignment,
 )
 from revise.backend.ops.topology import get_adjacency_graph
 
@@ -41,7 +44,6 @@ class ScSVCSr(BenchmarkSVC):
         self._graphagg_confidence_cache = None
         self._graphagg_confidence_source = None
         self._graphagg_alpha_weight_cache = None
-        self._graphagg_posterior_cache = None
         self._graphagg_posterior_source = None
         self.svc = {}
 
@@ -56,7 +58,22 @@ class ScSVCSr(BenchmarkSVC):
 
     def _get_svc_obs(self):
         svc_obs = get_sc_obs(self.st_adata.obs.index, self.st_adata.uns['all_cells_in_spot'], self.st_adata.obsm["spatial"])
-        svc_obs = get_true_cell_type(svc_obs, self.real_st_adata)
+        configured_key = str(self.config.cell_type_col)
+        if configured_key == "Level1" and configured_key not in self.real_st_adata.obs:
+            ground_truth_label_source = resolve_true_cell_type_key(
+                self.real_st_adata
+            )
+        else:
+            ground_truth_label_source = resolve_true_cell_type_key(
+                self.real_st_adata,
+                configured_key,
+            )
+        self.ground_truth_label_source = ground_truth_label_source
+        svc_obs = get_true_cell_type(
+            svc_obs,
+            self.real_st_adata,
+            label_key=ground_truth_label_source,
+        )
         return svc_obs
 
     def local_refinement(self, *args, **kwargs):
@@ -69,57 +86,103 @@ class ScSVCSr(BenchmarkSVC):
         
         The reconstructed data is stored in self.svc["sc_svc_dec"].
         """
-        overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
-        st_adata_common = self.st_adata[:, overlap_genes]
-        sc.pp.normalize_total(st_adata_common, target_sum=1e4)
-        cell_contributions = st_adata_common.obsm["Level1"].copy()
-
-        sc.pp.normalize_total(self.st_adata, target_sum=1e4)
-        sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
-        self.spot_sr.run(self)
-        key_type = "clusters"
-        if key_type not in self.sc_ref_adata.obs.columns:
-            self.sc_ref_adata.obs[key_type] = self.sc_ref_adata.obs["Level1"].astype(str)
-        type_list = sorted(list(self.sc_ref_adata.obs[key_type].unique().astype(str)))
-        self.logger.info(f'There are {len(type_list)} cell types: {type_list}')
-        sc_ref_all = construct_sc_ref(self.sc_ref_adata, key_type=key_type, type_list=type_list)
-        sc_ref_all = sc_ref_all.loc[:, overlap_genes]
-        type_list = list(sc_ref_all.index)
-        # Normalize separators so category matching is robust to mixed
-        # encodings like "Mono/Macro" vs "Mono_Macro".
-        norm_type_list = [str(t).replace("/", "_") for t in type_list]
-        norm_type_to_idx = {name: idx for idx, name in enumerate(norm_type_list)}
-        self.svc_obs["cell_type"] = self.svc_obs["cell_type"].astype(str).str.replace("/", "_", regex=False)
-        spots = self.svc_obs['spot_name'].unique()
-
-        spot_to_idx = {spot: idx for idx, spot in enumerate(spots)}
-        self.logger.info("Using simple allocation method...")
-
-        adata_spot = st_adata_common.copy()
-        X = adata_spot.X if type(adata_spot.X) is np.ndarray else adata_spot.X.toarray()
-
-        pc_mode = posterior_conditioning_mode(self.config)
-        allocation_beta = 1.0
-        self.logger.info("Using baseline closed-form reference allocation (posterior beta fixed at 1.0)")
-        Y = posterior_reference_allocation(
-            X,
-            cell_contributions,
-            sc_ref_all,
-            beta=allocation_beta,
+        graph_enabled = bool(
+            getattr(self.config, "rec_graph_agg_enabled", False)
         )
+        if not graph_enabled and guidance_mode(self.config) == "require":
+            record_virtual_cell_unavailable(
+                self.config,
+                problem_key="sr-benchmark:graph-branch",
+                reason="graph_branch_disabled",
+            )
 
-        spot_indices = np.array([spot_to_idx[spot] for spot in self.svc_obs['spot_name']])
-        missing_types = sorted(set(self.svc_obs["cell_type"]) - set(norm_type_to_idx))
-        if missing_types:
-            raise ValueError(f"Missing cell types in reference index: {missing_types}")
-        type_indices = np.array([norm_type_to_idx[t] for t in self.svc_obs['cell_type']])
-
-        SVC_X = Y[spot_indices, :, type_indices]
+        overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
+        key_type = self.config.cell_type_col
+        try:
+            st_adata_common = self.st_adata[:, overlap_genes].copy()
+            sc.pp.normalize_total(st_adata_common, target_sum=1e4)
+            cell_contributions = st_adata_common.obsm[key_type].copy()
+            sc.pp.normalize_total(self.st_adata, target_sum=1e4)
+            sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
+            self.spot_sr.run(self)
+            type_list = sorted(
+                list(self.sc_ref_adata.obs[key_type].unique().astype(str))
+            )
+            self.logger.info(
+                f"There are {len(type_list)} cell types: {type_list}"
+            )
+            sc_ref_all = construct_sc_ref(
+                self.sc_ref_adata,
+                key_type=key_type,
+                type_list=type_list,
+            )
+            sc_ref_all = sc_ref_all.loc[:, overlap_genes]
+            type_list = list(sc_ref_all.index)
+            norm_type_list = [str(t).replace("/", "_") for t in type_list]
+            norm_type_to_idx = {
+                name: idx for idx, name in enumerate(norm_type_list)
+            }
+            self.svc_obs["cell_type"] = (
+                self.svc_obs["cell_type"]
+                .astype(str)
+                .str.replace("/", "_", regex=False)
+            )
+            spots = self.svc_obs["spot_name"].unique()
+            spot_to_idx = {spot: idx for idx, spot in enumerate(spots)}
+            self.logger.info("Using simple allocation method...")
+            adata_spot = st_adata_common.copy()
+            X = (
+                adata_spot.X
+                if type(adata_spot.X) is np.ndarray
+                else adata_spot.X.toarray()
+            )
+            self.logger.info(
+                "Using baseline closed-form reference allocation "
+                "(posterior beta fixed at 1.0)"
+            )
+            Y = mandatory_reference_allocation(
+                X,
+                cell_contributions,
+                sc_ref_all,
+            )
+            spot_indices = np.array(
+                [spot_to_idx[spot] for spot in self.svc_obs["spot_name"]]
+            )
+            missing_types = sorted(
+                set(self.svc_obs["cell_type"]) - set(norm_type_to_idx)
+            )
+            if missing_types:
+                raise ValueError(
+                    f"Missing cell types in reference index: {missing_types}"
+                )
+            type_indices = np.array(
+                [norm_type_to_idx[t] for t in self.svc_obs["cell_type"]]
+            )
+            SVC_X = Y[spot_indices, :, type_indices]
+        except Exception:
+            record_mandatory_allocation(
+                self.config,
+                status="failed",
+                broad_key=key_type,
+                n_spots=int(self.st_adata.n_obs),
+                n_virtual_cells=int(len(getattr(self, "svc_obs", ()))),
+                allocation_method="posterior_reference_allocation",
+                reason="allocation_failed",
+            )
+            raise
+        record_mandatory_allocation(
+            self.config,
+            status="completed",
+            broad_key=key_type,
+            n_spots=int(self.st_adata.n_obs),
+            n_virtual_cells=int(len(self.svc_obs)),
+            allocation_method="posterior_reference_allocation",
+        )
         self.logger.info(f"Extracted SVC expressions using simple allocation method")
 
         SVC_X_raw = np.asarray(SVC_X, dtype=np.float64)
         SVC_X_graphagg = None
-        if bool(getattr(self.config, "rec_graph_agg_enabled", False)):
+        if graph_enabled:
             self.logger.info("SR graph aggregation enabled: building additional graph-smoothed output")
             graphagg_target_mask = None
             graphagg_anchor_mask = None
@@ -134,14 +197,18 @@ class ScSVCSr(BenchmarkSVC):
             )
         else:
             self.logger.info("SR graph aggregation disabled: only raw output will be evaluated")
-            if pc_mode != "off":
-                msg = (
-                    f"Posterior conditioning mode={pc_mode} was requested for SR benchmark, "
-                    "but SR graph aggregation is disabled, so no SR graph OT objective can be conditioned."
+            if guidance_mode(self.config) == "off":
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key="sr-benchmark:graph-branch",
+                    reason="graph_branch_disabled",
                 )
-                if posterior_conditioning_strict(self.config):
-                    raise ValueError(msg)
-                self.logger.warning(msg)
+            else:
+                record_virtual_cell_unavailable(
+                    self.config,
+                    problem_key="sr-benchmark:graph-branch",
+                    reason="graph_branch_disabled",
+                )
 
         SVC_X_raw = SVC_X_raw / (np.sum(SVC_X_raw, axis=1, keepdims=True) + 1e-10) * 1e4
         if SVC_X_graphagg is not None:
@@ -153,24 +220,13 @@ class ScSVCSr(BenchmarkSVC):
 
         self.svc["sc_svc_dec"] = self._build_svc_adata(SVC_X_raw, st_adata_common.var_names)
         self.svc["sc_svc_dec"].uns["sr_allocation"] = {
-            "posterior_key": "Level1",
+            "broad_key": key_type,
+            "posterior_key": key_type,
             "operator": "closed_form_reference_allocation",
-            "beta": float(allocation_beta),
+            "beta": 1.0,
         }
         if SVC_X_graphagg is not None:
             self.svc["sc_svc_dec_graphagg"] = self._build_svc_adata(SVC_X_graphagg, st_adata_common.var_names)
-            self.svc["sc_svc_dec_graphagg"].uns["posterior_conditioning"] = {
-                "mode": pc_mode,
-                "posterior_key": getattr(
-                    self.config,
-                    "posterior_conditioning_key",
-                    self.config.cell_type_col,
-                ),
-                "operator": "sr_graph_aggregation_ot",
-                "beta": float(getattr(self.config, "posterior_conditioning_beta", 1.0)),
-                "min_affinity": float(getattr(self.config, "posterior_conditioning_min_affinity", 0.05)),
-                "cost_strength": float(getattr(self.config, "posterior_conditioning_cost_strength", 0.2)),
-            }
             self.svc["sc_svc_dec_graphagg"].uns["graph_aggregation"] = dict(self._build_graphagg_meta())
             if "graphagg_alpha_weight" in self.svc_obs.columns:
                 alpha_vals = pd.to_numeric(
@@ -188,10 +244,11 @@ class ScSVCSr(BenchmarkSVC):
                     }
 
     def _build_svc_adata(self, X, var_names):
-        svc_adata = sc.AnnData(X)
+        svc_obs = self.svc_obs.copy()
+        svc_obs["cell_id"] = svc_obs["cell_id"].astype(str)
+        svc_obs.set_index("cell_id", inplace=True)
+        svc_adata = sc.AnnData(X, obs=svc_obs)
         svc_adata.var_names = var_names
-        svc_adata.obs = self.svc_obs.copy()
-        svc_adata.obs.set_index("cell_id", inplace=True)
         return svc_adata
 
     def _build_graphagg_meta(self):
@@ -214,75 +271,12 @@ class ScSVCSr(BenchmarkSVC):
             "posterior_source": self._graphagg_posterior_source,
         }
 
-    @staticmethod
-    def _normalize_posterior_rows(values):
-        q = np.asarray(values, dtype=np.float64)
-        q = np.nan_to_num(q, nan=0.0, posinf=0.0, neginf=0.0)
-        q[q < 0] = 0.0
-        if q.ndim != 2 or q.shape[1] == 0:
-            return None
-        row_sums = q.sum(axis=1, keepdims=True)
-        zero_rows = row_sums[:, 0] <= 1e-12
-        if np.any(zero_rows):
-            q[zero_rows] = 1.0 / q.shape[1]
-            row_sums = q.sum(axis=1, keepdims=True)
-        return q / np.maximum(row_sums, 1e-12)
-
-    def _get_graphagg_posterior_matrix(self):
-        """Posterior rows aligned to ``svc_obs`` for graph-OT conditioning."""
-        if self._graphagg_posterior_cache is not None:
-            return self._graphagg_posterior_cache, self._graphagg_posterior_source
-        if posterior_conditioning_mode(self.config) == "off":
-            return None, None
-
-        cell_ids = self.svc_obs["cell_id"].astype(str).to_numpy()
-        spot_names = self.svc_obs["spot_name"].astype(str).to_numpy()
-        posterior_key = getattr(self.config, "posterior_conditioning_key", self.config.cell_type_col)
-
-        pm_df = getattr(self.spot_sr, "pm_on_cell", None)
-        if isinstance(pm_df, pd.DataFrame) and not pm_df.empty:
-            pm = pm_df.copy()
-            pm.index = pm.index.astype(str)
-            pm.columns = [str(c).replace("/", "_") for c in pm.columns]
-            if pm.columns.duplicated().any():
-                pm = pm.T.groupby(level=0).sum().T
-            q = self._normalize_posterior_rows(pm.reindex(cell_ids).to_numpy(dtype=np.float64, copy=False))
-            if q is not None:
-                self._graphagg_posterior_cache = q
-                self._graphagg_posterior_source = "pm_on_cell"
-                return self._graphagg_posterior_cache, self._graphagg_posterior_source
-
-        level1 = self.st_adata.obsm.get(posterior_key)
-        if level1 is None and posterior_key != self.config.cell_type_col:
-            level1 = self.st_adata.obsm.get(self.config.cell_type_col)
-        if level1 is None and posterior_key != "Level1":
-            level1 = self.st_adata.obsm.get("Level1")
-        if level1 is not None:
-            if isinstance(level1, pd.DataFrame):
-                contrib = level1.copy()
-            else:
-                cols = [f"ct_{i}" for i in range(level1.shape[1])]
-                contrib = pd.DataFrame(level1, index=self.st_adata.obs_names, columns=cols)
-            contrib.index = contrib.index.astype(str)
-            contrib.columns = [str(c).replace("/", "_") for c in contrib.columns]
-            if contrib.columns.duplicated().any():
-                contrib = contrib.T.groupby(level=0).sum().T
-            q = self._normalize_posterior_rows(
-                contrib.reindex(spot_names).to_numpy(dtype=np.float64, copy=False)
-            )
-            if q is not None:
-                self._graphagg_posterior_cache = q
-                self._graphagg_posterior_source = f"spot_obsm[{posterior_key}]"
-                return self._graphagg_posterior_cache, self._graphagg_posterior_source
-
-        return None, None
-
     def _infer_graphagg_assignment_confidence(self):
         """Per-cell assignment confidence for selective graph aggregation.
 
         Preference order:
         1) `pm_on_cell` assigned-type probability (cell-level)
-        2) spot-level `Level1` contribution for the assigned type (fallback)
+        2) configured spot-level broad contribution for the assigned type
         3) spot-level global anchoring confidence (last fallback)
         """
         mode = str(getattr(self.config, "rec_graph_agg_confidence_mode", "auto") or "auto").lower()
@@ -292,7 +286,7 @@ class ScSVCSr(BenchmarkSVC):
         spot_names = self.svc_obs["spot_name"].astype(str).to_numpy()
 
         conf_pm = None
-        conf_level1 = None
+        conf_broad = None
         conf_spot = None
 
         pm_df = getattr(self.spot_sr, "pm_on_cell", None)
@@ -313,13 +307,18 @@ class ScSVCSr(BenchmarkSVC):
                 conf[valid] = values[rows, type_idx[valid]]
             conf_pm = conf
 
-        level1 = self.st_adata.obsm.get("Level1")
-        if level1 is not None:
-            if isinstance(level1, pd.DataFrame):
-                contrib = level1.copy()
+        broad_key = self.config.cell_type_col
+        broad = self.st_adata.obsm.get(broad_key)
+        if broad is not None:
+            if isinstance(broad, pd.DataFrame):
+                contrib = broad.copy()
             else:
-                cols = [f"ct_{i}" for i in range(level1.shape[1])]
-                contrib = pd.DataFrame(level1, index=self.st_adata.obs_names, columns=cols)
+                cols = [f"ct_{i}" for i in range(broad.shape[1])]
+                contrib = pd.DataFrame(
+                    broad,
+                    index=self.st_adata.obs_names,
+                    columns=cols,
+                )
             contrib.index = contrib.index.astype(str)
             contrib.columns = [str(c).replace("/", "_") for c in contrib.columns]
             if contrib.columns.duplicated().any():
@@ -334,7 +333,7 @@ class ScSVCSr(BenchmarkSVC):
             if np.any(valid):
                 rows = np.arange(n_cells, dtype=np.int32)[valid]
                 conf[valid] = values[rows, type_idx[valid]]
-            conf_level1 = conf
+            conf_broad = conf
 
         conf_col = getattr(self.config, "confidence_col", "Confidence")
         if conf_col in self.st_adata.obs:
@@ -365,8 +364,8 @@ class ScSVCSr(BenchmarkSVC):
 
         if mode in {"auto", "pm_on_cell", "pm"} and conf_pm is not None:
             return conf_pm, "pm_on_cell_assigned_prob"
-        if mode in {"level1", "spot_contribution", "contribution"} and conf_level1 is not None:
-            return conf_level1, "spot_level1_assigned_contribution"
+        if mode in {"level1", "spot_contribution", "contribution"} and conf_broad is not None:
+            return conf_broad, f"spot_{broad_key}_assigned_contribution"
         if mode in {"spot_confidence", "confidence"} and conf_spot is not None:
             return conf_spot, "spot_confidence"
         if mode in {"pm_x_spot", "product"}:
@@ -380,8 +379,8 @@ class ScSVCSr(BenchmarkSVC):
 
         if conf_pm is not None:
             return conf_pm, "pm_on_cell_assigned_prob"
-        if conf_level1 is not None:
-            return conf_level1, "spot_level1_assigned_contribution"
+        if conf_broad is not None:
+            return conf_broad, f"spot_{broad_key}_assigned_contribution"
         if conf_spot is not None:
             return conf_spot, "spot_confidence"
         return None, None
@@ -548,6 +547,11 @@ class ScSVCSr(BenchmarkSVC):
         n_cells = SVC_X.shape[0]
         if n_cells <= 1:
             self.logger.info("Skipping graph aggregation due to small cell count")
+            record_virtual_cell_not_applicable(
+                self.config,
+                problem_key="sr-benchmark:all",
+                reason="insufficient_virtual_cells",
+            )
             return SVC_X.copy()
         if target_mask is not None:
             target_mask = np.asarray(target_mask, dtype=bool)
@@ -577,26 +581,18 @@ class ScSVCSr(BenchmarkSVC):
             self.logger.info(
                 "Confidence-weighted alpha active for SR graph aggregation: full-graph smoothing strength varies by cell confidence"
             )
-        pc_mode = posterior_conditioning_mode(self.config)
-        posterior_global = None
-        if pc_mode != "off":
-            posterior_global, posterior_source = self._get_graphagg_posterior_matrix()
-            if posterior_global is None:
-                msg = (
-                    "Posterior conditioning requested for SR graph aggregation but no posterior matrix is available"
+        projected_state = None
+
+        def load_projected_state():
+            nonlocal projected_state
+            if projected_state is None:
+                projected_state = projected_virtual_assignment(
+                    self.st_adata,
+                    self.svc_obs,
+                    broad_key=self.config.cell_type_col,
                 )
-                if posterior_conditioning_strict(self.config):
-                    raise ValueError(msg)
-                self.logger.warning("%s; falling back to unconditioned graph OT", msg)
-            else:
-                self.logger.info(
-                    "Posterior-conditioned SR graph OT enabled: mode=%s, source=%s, beta=%.3f, min_affinity=%.4f, cost_strength=%.4f",
-                    pc_mode,
-                    posterior_source,
-                    float(getattr(self.config, "posterior_conditioning_beta", 1.0)),
-                    float(getattr(self.config, "posterior_conditioning_min_affinity", 0.05)),
-                    float(getattr(self.config, "posterior_conditioning_cost_strength", 0.2)),
-                )
+                self._graphagg_posterior_source = projected_state.source
+            return projected_state
 
         cell_types = self.svc_obs["cell_type"].astype(str).to_numpy()
         unique_types = np.unique(cell_types)
@@ -606,18 +602,33 @@ class ScSVCSr(BenchmarkSVC):
 
         for cell_type in unique_types:
             idx = np.where(cell_types == cell_type)[0]
+            problem_key = f"sr-benchmark:{cell_type}"
             target_local = None if target_mask is None else target_mask[idx]
             anchor_local = None if anchor_mask is None else anchor_mask[idx]
             alpha_local = None if alpha_weight_global is None else alpha_weight_global[idx]
-            posterior_local = None if posterior_global is None else posterior_global[idx]
             if target_local is not None and not np.any(target_local):
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key=problem_key,
+                    reason="target_not_selected",
+                )
                 continue
             if anchor_local is not None and not np.any(anchor_local):
                 if target_local is None or np.any(target_local):
                     self.logger.info(f"cell type: {cell_type}, no selected anchors, skip anchor-only graph aggregation")
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key=problem_key,
+                    reason="anchor_donor_unavailable",
+                )
                 continue
             if idx.size < 50:
                 self.logger.info(f"cell type: {cell_type}, has too few cells, skip graph aggregation")
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key=problem_key,
+                    reason="insufficient_virtual_cells",
+                )
                 continue
 
             adata_cell = sc.AnnData(SVC_X[idx].copy())
@@ -634,6 +645,11 @@ class ScSVCSr(BenchmarkSVC):
             n_ct = idx.size
             K = min(int(self.config.rec_graph_n_neighbors), n_ct)
             if K <= 0:
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key=problem_key,
+                    reason="empty_neighbor_support",
+                )
                 continue
 
             similarity_matrix = np.zeros((n_ct, K), dtype=np.float64)
@@ -681,6 +697,11 @@ class ScSVCSr(BenchmarkSVC):
             nu = neighbor_margin_expr
             if not (np.any(mu) and np.any(nu)):
                 self.logger.info(f"cell type: {cell_type}, skip graph aggregation due to empty marginals")
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key=problem_key,
+                    reason="empty_marginals",
+                )
                 continue
 
             source_idx, target_idx, active_support = stabilize_local_ot_support(
@@ -692,6 +713,11 @@ class ScSVCSr(BenchmarkSVC):
                 self.logger.info(
                     f"cell type: {cell_type}, skip graph aggregation due to empty active support"
                 )
+                record_virtual_cell_not_applicable(
+                    self.config,
+                    problem_key=problem_key,
+                    reason="empty_active_support",
+                )
                 continue
             stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
             stable_support[np.ix_(source_idx, target_idx)] = active_support
@@ -700,53 +726,70 @@ class ScSVCSr(BenchmarkSVC):
                 similarity_matrix,
                 valid_neighbor_mask,
             )
-            reference_measure = None
-            if posterior_local is not None:
-                posterior_affinity = neighbor_posterior_affinity(
-                    posterior_local,
-                    neighbor_idx_matrix,
-                    beta=getattr(self.config, "posterior_conditioning_beta", 1.0),
-                    min_affinity=getattr(self.config, "posterior_conditioning_min_affinity", 0.05),
+            distance_matrix, reference_measure, attempted = (
+                prepare_virtual_cell_guidance(
+                    self.config,
+                    problem_key=problem_key,
+                    state_loader=lambda idx=idx: subset_virtual_assignment(
+                        load_projected_state(),
+                        self.svc_obs.iloc[idx]["cell_id"],
+                    ),
+                    neighbor_support=neighbor_idx_matrix,
+                    distance_matrix=distance_matrix,
+                    source_mass=nu,
+                    target_mass=mu,
                 )
-                posterior_affinity = np.where(
-                    valid_neighbor_mask,
-                    posterior_affinity,
-                    float(getattr(self.config, "posterior_conditioning_min_affinity", 0.05)),
-                )
-                if posterior_conditioning_enabled(self.config, "cost"):
-                    distance_matrix = condition_cost_matrix(
-                        distance_matrix,
-                        posterior_affinity,
-                        getattr(self.config, "posterior_conditioning_cost_strength", 0.2),
-                    )
-                if posterior_conditioning_enabled(self.config, "reference"):
-                    reference_measure = reference_measure_from_marginals(
-                        nu,
-                        mu,
-                        posterior_affinity.T,
-                    )
-            distance_matrix[~valid_neighbor_mask] = np.inf
-            T_transform = solve_local_ot(
-                nu,
-                mu,
-                distance_matrix.T,
-                method=self.config.rec_ot_method,
-                pot_reg=self.config.rec_pot_reg,
-                pot_reg_m=self.config.rec_pot_reg_m,
-                pot_reg_type=self.config.rec_pot_reg_type,
-                pot_verbose=False,
-                pot_num_iter_max=5000,
-                reference_measure=reference_measure,
-                valid_support_mask=valid_neighbor_mask.T,
-                event_callback=getattr(self.config, "ot_event_callback", None),
             )
-
-            adata_cell = self.graph_aggregate.run(
-                adata=adata_cell,
-                neighbor_idx_matrix=neighbor_idx_matrix,
-                coupling_matrix=T_transform,
-                alpha_override=alpha_local,
-                valid_neighbor_mask=valid_neighbor_mask,
+            distance_matrix[~valid_neighbor_mask] = np.inf
+            try:
+                T_transform = solve_local_ot(
+                    nu,
+                    mu,
+                    distance_matrix.T,
+                    method=self.config.rec_ot_method,
+                    pot_reg=self.config.rec_pot_reg,
+                    pot_reg_m=self.config.rec_pot_reg_m,
+                    pot_reg_type=self.config.rec_pot_reg_type,
+                    pot_verbose=False,
+                    pot_num_iter_max=5000,
+                    reference_measure=reference_measure,
+                    valid_support_mask=valid_neighbor_mask.T,
+                    event_callback=getattr(
+                        self.config,
+                        "ot_event_callback",
+                        None,
+                    ),
+                )
+                adata_cell = self.graph_aggregate.run(
+                    adata=adata_cell,
+                    neighbor_idx_matrix=neighbor_idx_matrix,
+                    coupling_matrix=T_transform,
+                    alpha_override=alpha_local,
+                    valid_neighbor_mask=valid_neighbor_mask,
+                )
+            except KeyboardInterrupt:
+                record_virtual_cell_guidance_terminal(
+                    self.config,
+                    problem_key=problem_key,
+                    attempted=attempted,
+                    outcome="interrupted",
+                    reason="solver_interrupted",
+                )
+                raise
+            except Exception:
+                record_virtual_cell_guidance_terminal(
+                    self.config,
+                    problem_key=problem_key,
+                    attempted=attempted,
+                    outcome="failed",
+                    reason="solver_or_update_failure",
+                )
+                raise
+            record_virtual_cell_guidance_terminal(
+                self.config,
+                problem_key=problem_key,
+                attempted=attempted,
+                outcome="applied",
             )
             smoothed_block = np.asarray(adata_cell.X)
             if target_local is None:

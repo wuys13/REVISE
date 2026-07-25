@@ -103,22 +103,46 @@ jobs:
         run: sphinx-build -W --keep-going -b html docs "${RUNNER_TEMP}/docs-html"
 
   tacco-smoke:
-    needs: test
+    needs: package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install TACCO smoke environment
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-dist
+          path: ${{ runner.temp }}/candidate
+      - name: Create isolated candidate wheel environment
+        run: |
+          python -m venv "${RUNNER_TEMP}/candidate-venv"
+          "${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install \
+            -c constraints/python-3.11.txt \
+            pytest \
+            POT==0.9.5 tacco==0.5.0 \
+            "${RUNNER_TEMP}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl"
+      - name: Copy solver smoke tests outside checkout
+        run: |
+          smoke_root="${RUNNER_TEMP}/wheel-smoke-tests/tests/integration/solvers"
+          mkdir -p "${smoke_root}"
+          cp tests/integration/solvers/conftest.py "${smoke_root}/"
+          cp tests/integration/solvers/test_tacco_solver_smoke.py "${smoke_root}/"
+          cp tests/integration/solvers/test_assignment_guidance_solver_smoke.py "${smoke_root}/"
+      - name: Verify candidate wheel import outside checkout
+        working-directory: ${{ runner.temp }}
         run: >-
-          python -m pip install
-          -c constraints/python-3.11.txt
-          pytest numpy pandas scipy anndata PyYAML
-          POT==0.9.5 tacco==0.5.0
+          "${RUNNER_TEMP}/candidate-venv/bin/python" -c
+          "import os, pathlib, revise;
+          source = pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve();
+          installed = pathlib.Path(revise.__file__).resolve();
+          assert not installed.is_relative_to(source), (installed, source)"
       - name: Run TACCO solver smoke
+        working-directory: ${{ runner.temp }}
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          REVISE_EXPECT_INSTALLED_PREFIX: ${{ runner.temp }}/candidate-venv
         run: >-
-          python -m pytest -p no:capture -q
-          tests/integration/solvers/test_tacco_solver_smoke.py
+          "${RUNNER_TEMP}/candidate-venv/bin/python" -m pytest
+          -p no:capture --import-mode=importlib -q
+          "${RUNNER_TEMP}/wheel-smoke-tests/tests/integration/solvers"

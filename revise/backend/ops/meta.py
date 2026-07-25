@@ -64,28 +64,48 @@ def get_sc_obs(
             sc_obs.loc[known, ["x", "y"]] = aligned[["x", "y"]].to_numpy()
     return sc_obs
 
-def get_true_cell_type(SVC_obs, adata_sc):
+def resolve_true_cell_type_key(adata_sc, label_key=None):
+    """Resolve the public historical label fallback or an explicit strict key."""
+    if label_key is not None:
+        resolved = str(label_key)
+        if resolved not in adata_sc.obs:
+            raise KeyError(
+                "ground-truth obs is missing configured label column "
+                f"{resolved!r}"
+            )
+        return resolved
+    for candidate in ("clusters", "Level1"):
+        if candidate in adata_sc.obs:
+            return candidate
+    raise KeyError(
+        "ground-truth obs is missing historical label columns "
+        "'clusters' and 'Level1'"
+    )
+
+
+def get_true_cell_type(SVC_obs, adata_sc, label_key=None):
     """
     Extract true cell type labels and spatial coordinates for SVC cells.
     
     Args:
         SVC_obs: DataFrame with 'cell_id' column
         adata_sc: Single-cell AnnData object containing true labels and coordinates
+        label_key: Explicit ground-truth label column. When omitted, uses the
+            historical ``clusters`` column and then falls back to ``Level1``.
         
     Returns:
         pd.DataFrame: Updated SVC_obs with added columns:
             - 'true_cell_type': True cell type labels
             - 'x', 'y': Spatial coordinates
     """
+    label_key = resolve_true_cell_type_key(adata_sc, label_key)
     true_cell_type_df = pd.DataFrame(adata_sc.obs)
     true_cell_type_df['cell_id'] = true_cell_type_df['cell_id'].astype(str)
     true_cell_type_df.set_index('cell_id', inplace=True)
-    if 'clusters' not in true_cell_type_df.columns:
-        true_cell_type_df['clusters'] = true_cell_type_df['Level1']
 
     SVC_obs['cell_id'] = SVC_obs['cell_id'].astype(str)
     aligned = true_cell_type_df.reindex(SVC_obs['cell_id'])
-    SVC_obs['true_cell_type'] = aligned['clusters'].fillna('Unknown').to_numpy()
+    SVC_obs['true_cell_type'] = aligned[label_key].fillna('Unknown').to_numpy()
     known = aligned[['x', 'y']].notna().all(axis=1).to_numpy()
     if np.any(known):
         SVC_obs.loc[known, ["x", "y"]] = aligned.loc[known, ["x", "y"]].to_numpy()

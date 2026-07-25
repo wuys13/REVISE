@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import scanpy as sc
 
 from revise.backend.runners.application_svc import ApplicationSVC
@@ -9,84 +8,17 @@ from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.meta import construct_sc_ref
 from revise.backend.ops.meta import get_sc_obs
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
-from revise.backend.ops.posterior_conditioning import (
-    condition_cost_matrix,
-    neighbor_posterior_affinity,
-    posterior_conditioning_enabled,
-    posterior_conditioning_mode,
-    posterior_conditioning_strict,
-    posterior_reference_allocation,
-    reference_measure_from_marginals,
+from revise.backend.ops.sr_allocation import (
+    mandatory_reference_allocation,
+    prepare_virtual_cell_guidance,
+    projected_virtual_assignment,
+    record_mandatory_allocation,
+    record_virtual_cell_guidance_terminal,
+    record_virtual_cell_not_applicable,
+    subset_virtual_assignment,
 )
 from revise.backend.ops.topology import get_adjacency_graph
 from revise.utils.spot_sr_input import CELL_LOCATIONS_KEY
-
-
-def _normalize_posterior_rows(values):
-    q = np.asarray(values, dtype=np.float64)
-    q = np.nan_to_num(q, nan=0.0, posinf=0.0, neginf=0.0)
-    q[q < 0] = 0.0
-    if q.ndim != 2 or q.shape[1] == 0:
-        return None
-    row_sums = q.sum(axis=1, keepdims=True)
-    zero_rows = row_sums[:, 0] <= 1e-12
-    if np.any(zero_rows):
-        q[zero_rows] = 1.0 / q.shape[1]
-        row_sums = q.sum(axis=1, keepdims=True)
-    return q / np.maximum(row_sums, 1e-12)
-
-
-def _get_virtual_cell_posterior(svc_obs, st_adata, spot_sr, config):
-    """Return posterior rows aligned to virtual cells for graph OT."""
-    cell_ids = svc_obs["cell_id"].astype(str).to_numpy()
-    spot_names = svc_obs["spot_name"].astype(str).to_numpy()
-    posterior_key = getattr(config, "posterior_conditioning_key", config.cell_type_col)
-
-    pm_df = getattr(spot_sr, "pm_on_cell", None)
-    if isinstance(pm_df, pd.DataFrame) and not pm_df.empty:
-        pm = pm_df.copy()
-        pm.index = pm.index.astype(str)
-        pm.columns = [str(column).replace("/", "_") for column in pm.columns]
-        if pm.columns.duplicated().any():
-            pm = pm.T.groupby(level=0).sum().T
-        q = _normalize_posterior_rows(
-            pm.reindex(cell_ids).to_numpy(dtype=np.float64, copy=False)
-        )
-        if q is not None:
-            return q, "pm_on_cell"
-
-    posterior_source_key = posterior_key
-    posterior = st_adata.obsm.get(posterior_key)
-    if posterior is None and posterior_key != config.cell_type_col:
-        posterior_source_key = config.cell_type_col
-        posterior = st_adata.obsm.get(config.cell_type_col)
-    if posterior is None and posterior_key != "Level1":
-        posterior_source_key = "Level1"
-        posterior = st_adata.obsm.get("Level1")
-    if posterior is None:
-        return None, None
-
-    if isinstance(posterior, pd.DataFrame):
-        contributions = posterior.copy()
-    else:
-        columns = [f"ct_{i}" for i in range(posterior.shape[1])]
-        contributions = pd.DataFrame(
-            posterior,
-            index=st_adata.obs_names,
-            columns=columns,
-        )
-    contributions.index = contributions.index.astype(str)
-    contributions.columns = [
-        str(column).replace("/", "_") for column in contributions.columns
-    ]
-    if contributions.columns.duplicated().any():
-        contributions = contributions.T.groupby(level=0).sum().T
-    q = _normalize_posterior_rows(
-        contributions.reindex(spot_names).to_numpy(dtype=np.float64, copy=False)
-    )
-    if q is None:
-        return None, None
-    return q, f"spot_obsm[{posterior_source_key}]"
 
 
 class ScSVCSr(ApplicationSVC):
@@ -139,97 +71,100 @@ class ScSVCSr(ApplicationSVC):
         The reconstructed data is stored in self.svc["sc_svc_dec"].
         """
         overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
-        st_adata_common = self.st_adata[:, overlap_genes]
-        sc.pp.normalize_total(st_adata_common, target_sum=1e4)
-        cell_contributions = st_adata_common.obsm[self.config.cell_type_col].copy()
-
-        sc.pp.normalize_total(self.st_adata, target_sum=1e4)
-        sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
-        self.spot_sr.run(self)
         key_type = self.config.cell_type_col
-        type_list = sorted(list(self.sc_ref_adata.obs[key_type].unique().astype(str)))
-        self.logger.info(f'There are {len(type_list)} cell types: {type_list}')
-        sc_ref_all = construct_sc_ref(self.sc_ref_adata, key_type=key_type, type_list=type_list)
-        sc_ref_all = sc_ref_all.loc[:, overlap_genes]
-        type_list = list(sc_ref_all.index)
-        # Normalize separators so category matching is robust to mixed
-        # encodings like "Mono/Macro" vs "Mono_Macro".
-        norm_type_list = [str(t).replace("/", "_") for t in type_list]
-        norm_type_to_idx = {name: idx for idx, name in enumerate(norm_type_list)}
-        self.svc_obs["cell_type"] = self.svc_obs["cell_type"].astype(str).str.replace("/", "_", regex=False)
-        spots = self.svc_obs['spot_name'].unique()
-
-        spot_to_idx = {spot: idx for idx, spot in enumerate(spots)}
-        self.logger.info("Using simple allocation method...")
-
-        adata_spot = st_adata_common.copy()
-        X = adata_spot.X if type(adata_spot.X) is np.ndarray else adata_spot.X.toarray()
-
-        # Y shape: (n_spots, n_genes, n_cell_types), with categories aligned
-        # by label inside the shared allocation helper.
-        Y = posterior_reference_allocation(
-            X,
-            cell_contributions,
-            sc_ref_all,
-            beta=1.0,
+        try:
+            st_adata_common = self.st_adata[:, overlap_genes].copy()
+            sc.pp.normalize_total(st_adata_common, target_sum=1e4)
+            cell_contributions = st_adata_common.obsm[key_type].copy()
+            sc.pp.normalize_total(self.st_adata, target_sum=1e4)
+            sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
+            self.spot_sr.run(self)
+            type_list = sorted(
+                list(self.sc_ref_adata.obs[key_type].unique().astype(str))
+            )
+            self.logger.info(
+                f"There are {len(type_list)} cell types: {type_list}"
+            )
+            sc_ref_all = construct_sc_ref(
+                self.sc_ref_adata,
+                key_type=key_type,
+                type_list=type_list,
+            )
+            sc_ref_all = sc_ref_all.loc[:, overlap_genes]
+            type_list = list(sc_ref_all.index)
+            norm_type_list = [str(t).replace("/", "_") for t in type_list]
+            norm_type_to_idx = {
+                name: idx for idx, name in enumerate(norm_type_list)
+            }
+            self.svc_obs["cell_type"] = (
+                self.svc_obs["cell_type"]
+                .astype(str)
+                .str.replace("/", "_", regex=False)
+            )
+            spots = self.svc_obs["spot_name"].unique()
+            spot_to_idx = {spot: idx for idx, spot in enumerate(spots)}
+            self.logger.info("Using simple allocation method...")
+            adata_spot = st_adata_common.copy()
+            X = (
+                adata_spot.X
+                if type(adata_spot.X) is np.ndarray
+                else adata_spot.X.toarray()
+            )
+            Y = mandatory_reference_allocation(
+                X,
+                cell_contributions,
+                sc_ref_all,
+            )
+            spot_indices = np.array(
+                [spot_to_idx[spot] for spot in self.svc_obs["spot_name"]]
+            )
+            missing_types = sorted(
+                set(self.svc_obs["cell_type"]) - set(norm_type_to_idx)
+            )
+            if missing_types:
+                raise ValueError(
+                    f"Missing cell types in reference index: {missing_types}"
+                )
+            type_indices = np.array(
+                [norm_type_to_idx[t] for t in self.svc_obs["cell_type"]]
+            )
+            SVC_X = Y[spot_indices, :, type_indices]
+        except Exception:
+            record_mandatory_allocation(
+                self.config,
+                status="failed",
+                broad_key=key_type,
+                n_spots=int(self.st_adata.n_obs),
+                n_virtual_cells=int(len(getattr(self, "svc_obs", ()))),
+                allocation_method="posterior_reference_allocation",
+                reason="allocation_failed",
+            )
+            raise
+        record_mandatory_allocation(
+            self.config,
+            status="completed",
+            broad_key=key_type,
+            n_spots=int(self.st_adata.n_obs),
+            n_virtual_cells=int(len(self.svc_obs)),
+            allocation_method="posterior_reference_allocation",
         )
-
-        spot_indices = np.array([spot_to_idx[spot] for spot in self.svc_obs['spot_name']])
-        missing_types = sorted(set(self.svc_obs["cell_type"]) - set(norm_type_to_idx))
-        if missing_types:
-            raise ValueError(f"Missing cell types in reference index: {missing_types}")
-        type_indices = np.array([norm_type_to_idx[t] for t in self.svc_obs['cell_type']])
-
-        # SVC_X shape: (14060, 407)
-        SVC_X = Y[spot_indices, :, type_indices]
         self.logger.info("Extracted SVC expressions using simple allocation method")
 
         n_cells = SVC_X.shape[0]
         if n_cells > 1:
             self.logger.info("Applying OT-based neighbor enhancement among single cells")
-            pc_mode = posterior_conditioning_mode(self.config)
-            posterior_global = None
-            if pc_mode != "off":
-                posterior_global, posterior_source = _get_virtual_cell_posterior(
-                    self.svc_obs,
-                    self.st_adata,
-                    self.spot_sr,
-                    self.config,
-                )
-                if posterior_global is None:
-                    msg = (
-                        "Posterior conditioning requested for SR application graph OT "
-                        "but no posterior matrix is available"
+            projected_state = None
+
+            def load_projected_state():
+                nonlocal projected_state
+                if projected_state is None:
+                    projected_state = projected_virtual_assignment(
+                        self.st_adata,
+                        self.svc_obs,
+                        broad_key=key_type,
                     )
-                    if posterior_conditioning_strict(self.config):
-                        raise ValueError(msg)
-                    self.logger.warning(
-                        "%s; falling back to unconditioned graph OT",
-                        msg,
-                    )
-                else:
-                    self.logger.info(
-                        "Posterior-conditioned SR application graph OT enabled: "
-                        "mode=%s, source=%s, beta=%.3f, min_affinity=%.4f, "
-                        "cost_strength=%.4f",
-                        pc_mode,
-                        posterior_source,
-                        float(getattr(self.config, "posterior_conditioning_beta", 1.0)),
-                        float(
-                            getattr(
-                                self.config,
-                                "posterior_conditioning_min_affinity",
-                                0.05,
-                            )
-                        ),
-                        float(
-                            getattr(
-                                self.config,
-                                "posterior_conditioning_cost_strength",
-                                0.2,
-                            )
-                        ),
-                    )
+                return projected_state
+
             cell_types = self.svc_obs["cell_type"].astype(str).to_numpy()
             unique_types = np.unique(cell_types)
             spatial = self.svc_obs[["x", "y"]].to_numpy(dtype=np.float64)
@@ -237,13 +172,14 @@ class ScSVCSr(ApplicationSVC):
 
             for cell_type in unique_types:
                 idx = np.where(cell_types == cell_type)[0]
-                posterior_local = None if posterior_global is None else posterior_global[idx]
-                if idx.size < 2:
-                    self.logger.info(f"cell type: {cell_type}, has too few cells, skip OT smoothing")
-                    SVC_X_smoothed[idx] = SVC_X[idx]
-                    continue
+                problem_key = f"sr-application:{cell_type}"
                 if idx.size < 50:
                     self.logger.info(f"cell type: {cell_type}, has too few cells, skip OT smoothing")
+                    record_virtual_cell_not_applicable(
+                        self.config,
+                        problem_key=problem_key,
+                        reason="insufficient_virtual_cells",
+                    )
                     SVC_X_smoothed[idx] = SVC_X[idx]
                     continue
 
@@ -261,6 +197,11 @@ class ScSVCSr(ApplicationSVC):
                 n_ct = idx.size
                 K = min(int(self.config.rec_graph_n_neighbors), n_ct)
                 if K <= 0:
+                    record_virtual_cell_not_applicable(
+                        self.config,
+                        problem_key=problem_key,
+                        reason="empty_neighbor_support",
+                    )
                     continue
 
                 similarity_matrix = np.zeros((n_ct, K), dtype=np.float64)
@@ -305,6 +246,11 @@ class ScSVCSr(ApplicationSVC):
                         self.logger.info(
                             f"cell type: {cell_type}, skip OT smoothing due to empty active support"
                         )
+                        record_virtual_cell_not_applicable(
+                            self.config,
+                            problem_key=problem_key,
+                            reason="empty_active_support",
+                        )
                         continue
                     stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
                     stable_support[np.ix_(source_idx, target_idx)] = active_support
@@ -313,77 +259,89 @@ class ScSVCSr(ApplicationSVC):
                         similarity_matrix,
                         valid_neighbor_mask,
                     )
-                    reference_measure = None
-                    if posterior_local is not None:
-                        posterior_affinity = neighbor_posterior_affinity(
-                            posterior_local,
-                            neighbor_idx_matrix,
-                            beta=getattr(
-                                self.config,
-                                "posterior_conditioning_beta",
-                                1.0,
-                            ),
-                            min_affinity=getattr(
-                                self.config,
-                                "posterior_conditioning_min_affinity",
-                                0.05,
-                            ),
-                        )
-                        posterior_affinity = np.where(
-                            valid_neighbor_mask,
-                            posterior_affinity,
-                            float(
-                                getattr(
-                                    self.config,
-                                    "posterior_conditioning_min_affinity",
-                                    0.05,
+                    distance_matrix, reference_measure, attempted = (
+                        prepare_virtual_cell_guidance(
+                            self.config,
+                            problem_key=problem_key,
+                            state_loader=lambda idx=idx: (
+                                subset_virtual_assignment(
+                                    load_projected_state(),
+                                    self.svc_obs.iloc[idx]["cell_id"],
                                 )
                             ),
+                            neighbor_support=neighbor_idx_matrix,
+                            distance_matrix=distance_matrix,
+                            source_mass=nu,
+                            target_mass=mu,
                         )
-                        if posterior_conditioning_enabled(self.config, "cost"):
-                            distance_matrix = condition_cost_matrix(
-                                distance_matrix,
-                                posterior_affinity,
-                                getattr(
-                                    self.config,
-                                    "posterior_conditioning_cost_strength",
-                                    0.2,
-                                ),
-                            )
-                        if posterior_conditioning_enabled(self.config, "reference"):
-                            reference_measure = reference_measure_from_marginals(
-                                nu,
-                                mu,
-                                posterior_affinity.T,
-                            )
-                    distance_matrix[~valid_neighbor_mask] = np.inf
-                    T_transform = solve_local_ot(
-                        nu,
-                        mu,
-                        distance_matrix.T,
-                        method=self.config.rec_ot_method,
-                        pot_reg=self.config.rec_pot_reg,
-                        pot_reg_m=self.config.rec_pot_reg_m,
-                        pot_reg_type=self.config.rec_pot_reg_type,
-                        pot_verbose=False,
-                        pot_num_iter_max=5000,
-                        reference_measure=reference_measure,
-                        valid_support_mask=valid_neighbor_mask.T,
-                        event_callback=getattr(self.config, "ot_event_callback", None),
                     )
-                    adata_cell = self.graph_aggregate.run(
-                        adata=adata_cell,
-                        neighbor_idx_matrix=neighbor_idx_matrix,
-                        coupling_matrix=T_transform,
-                        valid_neighbor_mask=valid_neighbor_mask,
+                    distance_matrix[~valid_neighbor_mask] = np.inf
+                    try:
+                        T_transform = solve_local_ot(
+                            nu,
+                            mu,
+                            distance_matrix.T,
+                            method=self.config.rec_ot_method,
+                            pot_reg=self.config.rec_pot_reg,
+                            pot_reg_m=self.config.rec_pot_reg_m,
+                            pot_reg_type=self.config.rec_pot_reg_type,
+                            pot_verbose=False,
+                            pot_num_iter_max=5000,
+                            reference_measure=reference_measure,
+                            valid_support_mask=valid_neighbor_mask.T,
+                            event_callback=getattr(
+                                self.config,
+                                "ot_event_callback",
+                                None,
+                            ),
+                        )
+                        adata_cell = self.graph_aggregate.run(
+                            adata=adata_cell,
+                            neighbor_idx_matrix=neighbor_idx_matrix,
+                            coupling_matrix=T_transform,
+                            valid_neighbor_mask=valid_neighbor_mask,
+                        )
+                    except KeyboardInterrupt:
+                        record_virtual_cell_guidance_terminal(
+                            self.config,
+                            problem_key=problem_key,
+                            attempted=attempted,
+                            outcome="interrupted",
+                            reason="solver_interrupted",
+                        )
+                        raise
+                    except Exception:
+                        record_virtual_cell_guidance_terminal(
+                            self.config,
+                            problem_key=problem_key,
+                            attempted=attempted,
+                            outcome="failed",
+                            reason="solver_or_update_failure",
+                        )
+                        raise
+                    record_virtual_cell_guidance_terminal(
+                        self.config,
+                        problem_key=problem_key,
+                        attempted=attempted,
+                        outcome="applied",
                     )
                     SVC_X_smoothed[idx] = np.asarray(adata_cell.X)
                 else:
                     self.logger.info(f"cell type: {cell_type}, skip OT smoothing due to empty marginals")
+                    record_virtual_cell_not_applicable(
+                        self.config,
+                        problem_key=problem_key,
+                        reason="empty_marginals",
+                    )
 
             SVC_X = SVC_X_smoothed
         else:
             self.logger.info("Skipping OT enhancement due to small cell count")
+            record_virtual_cell_not_applicable(
+                self.config,
+                problem_key="sr-application:all",
+                reason="insufficient_virtual_cells",
+            )
 
         if getattr(self.config, "rec_match_spot_sum", False):
             self.logger.info("Rescaling single-cell expressions to match spot totals")
@@ -398,8 +356,9 @@ class ScSVCSr(ApplicationSVC):
         self.logger.info(f"Number of unique spots: {len(spots)}")
         self.logger.info(f"Shape of SVC_X: {SVC_X.shape}")
 
-        svc_adata = sc.AnnData(SVC_X)
+        svc_obs = self.svc_obs.copy()
+        svc_obs["cell_id"] = svc_obs["cell_id"].astype(str)
+        svc_obs.set_index("cell_id", inplace=True)
+        svc_adata = sc.AnnData(SVC_X, obs=svc_obs)
         svc_adata.var_names = st_adata_common.var_names
-        svc_adata.obs = self.svc_obs.copy()
-        svc_adata.obs.set_index("cell_id", inplace=True)
         self.svc["sc_svc_dec"] = svc_adata

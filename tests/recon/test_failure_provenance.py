@@ -231,6 +231,47 @@ class _FrameworkStrategy:
         return SVC(expr=None, spatial=None, svc_kind="sp", artifacts={"outputs": {}})
 
 
+class _GuidanceTerminationStrategy(_FrameworkStrategy):
+    def __init__(self, *, interrupt: bool, attempt_stopped: bool) -> None:
+        super().__init__("success")
+        self.interrupt = interrupt
+        self.attempt_stopped = attempt_stopped
+
+    @staticmethod
+    def _start(ctx, problem_key, *, attempt=True):
+        ctx.assignment_guidance_callback(
+            "start",
+            problem_key=problem_key,
+            route=ctx.route_key,
+            operator="local_ot",
+            phase="global_anchoring",
+            mode="prefer",
+            applicability="applicable",
+            numerics={},
+            solver="pot",
+            left_assignment=None,
+            right_assignment=None,
+        )
+        if attempt:
+            ctx.assignment_guidance_callback(
+                "attempt",
+                problem_key=problem_key,
+                availability="available",
+            )
+
+    def global_anchoring(self, ctx) -> None:
+        self._start(ctx, "completed-before-stop")
+        ctx.assignment_guidance_callback(
+            "terminal",
+            problem_key="completed-before-stop",
+            outcome="applied",
+        )
+        self._start(ctx, "stopped", attempt=self.attempt_stopped)
+        if self.interrupt:
+            raise KeyboardInterrupt("guided interruption")
+        raise RuntimeError("guided failure")
+
+
 def _framework_manifest(output_root: Path, sample_name: str) -> dict:
     paths = list((output_root / sample_name).rglob("provenance.json"))
     assert len(paths) == 1, paths
@@ -251,6 +292,106 @@ def _write_framework_inputs(data_root: Path, sample_name: str) -> None:
     )
     st.write_h5ad(data_root / f"{sample_name}_Xenium.h5ad")
     sc_ref.write_h5ad(data_root / "adata_sc_all_reanno.h5ad")
+
+
+@pytest.mark.parametrize(
+    ("interrupt", "terminal", "attempt_stopped"),
+    [
+        (False, "failed", True),
+        (False, "failed", False),
+        (True, "interrupted", True),
+        (True, "interrupted", False),
+    ],
+)
+def test_guidance_events_survive_framework_failure_or_interruption(
+    tmp_path,
+    interrupt,
+    terminal,
+    attempt_stopped,
+):
+    from revise.framework import REVISEPipeline
+
+    output_root = tmp_path / f"guidance-{terminal}"
+    sample_name = f"guidance-{terminal}-case"
+    _write_framework_inputs(tmp_path, sample_name)
+    pipeline = REVISEPipeline()
+    pipeline.registry = _Registry(
+        _GuidanceTerminationStrategy(
+            interrupt=interrupt,
+            attempt_stopped=attempt_stopped,
+        )
+    )
+
+    expected_error = KeyboardInterrupt if interrupt else RuntimeError
+    expected_message = "guided interruption" if interrupt else "guided failure"
+    with pytest.raises(expected_error, match=expected_message):
+        pipeline.run(
+            profile="application_sp",
+            io_overrides={
+                "data_root": str(tmp_path),
+                "output_root": str(output_root),
+                "sample_name": sample_name,
+            },
+        )
+
+    manifest = _framework_manifest(output_root, sample_name)
+    guidance = manifest["assignment_guidance"]
+    assert manifest["run"]["status"] == terminal
+    assert [event["outcome"] for event in guidance["events"]] == [
+        "applied",
+        terminal,
+    ]
+    assert guidance["events"][1]["attempted"] is attempt_stopped
+    assert guidance["summary"] == terminal
+
+
+def test_post_allocation_guidance_failure_keeps_both_durable_evidence(
+    tmp_path,
+):
+    from revise.framework import REVISEPipeline
+
+    ctx = _context(tmp_path)
+    ctx.set_provenance_callback(REVISEPipeline()._write_final_metadata)
+    ctx.record_sr_allocation(
+        {
+            "status": "completed",
+            "broad_key": "Level1",
+            "n_spots": 2,
+            "n_virtual_cells": 4,
+            "allocation_method": "posterior_reference_allocation",
+        }
+    )
+    ctx.assignment_guidance_callback(
+        "start",
+        problem_key="post-allocation-projection",
+        route="sc_svc_sr:spot_size",
+        operator="virtual_cell_ot",
+        phase="local_refinement",
+        mode="require",
+        applicability="applicable",
+        numerics={},
+        solver="pot",
+    )
+    ctx.assignment_guidance_callback(
+        "attempt",
+        problem_key="post-allocation-projection",
+        availability="available",
+    )
+
+    ctx.terminate_run(RuntimeError("projection failed after allocation"))
+
+    manifest = json.loads((tmp_path / "provenance.json").read_text())
+    assert manifest["run"]["status"] == "failed"
+    assert manifest["sr_allocation"][0]["status"] == "completed"
+    [event] = manifest["assignment_guidance"]["events"]
+    assert event["outcome"] == "failed"
+    assert event["reason"] == "upstream_failure"
+    assert event["attempted"] is True
+    assert "result" not in manifest
+    assert not any(
+        artifact["role"] == "public_result"
+        for artifact in manifest["artifacts"]
+    )
 
 
 def test_finalize_callback_failure_marks_finalize_and_run_failed(tmp_path):

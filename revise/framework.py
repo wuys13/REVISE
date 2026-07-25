@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from revise.backend import ModeEvaluationPolicy
 from revise.backend import ModeValidationPolicy
 from revise.backend import build_default_registry
+from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
 from revise.config import infer_default_profile
 from revise.config import load_raw_config
 from revise.config import merge_unified_config
@@ -25,6 +26,7 @@ from revise.utils import (
     exclusive_run_directory,
     hash_jsonable,
     set_global_seed,
+    sha256_file,
     write_json,
 )
 
@@ -66,6 +68,19 @@ def _temporary_sigterm_handler():
         yield
     finally:
         restore_handler()
+
+
+def _manifest_identity(path: Path) -> dict[str, int | str] | None:
+    try:
+        stat_result = path.stat()
+        digest = sha256_file(path)
+    except OSError:
+        return None
+    return {
+        "mtime_ns": stat_result.st_mtime_ns,
+        "size": stat_result.st_size,
+        "sha256": digest,
+    }
 
 
 class REVISEPipeline:
@@ -159,18 +174,33 @@ class REVISEPipeline:
             log_dir = run_dir
 
         with exclusive_run_directory(run_dir):
-            return self._run_in_directory(
-                merged_config=merged_config,
-                runtime=runtime,
-                route_key=route_key,
-                log_dir=log_dir,
-                run_dir=run_dir,
-                sample_name=sample_name,
-                profile=profile,
-                config_hash=config_hash,
-                dry_run=dry_run,
-                finalize_callback=finalize_callback,
-            )
+            manifest_path = run_dir / "provenance.json"
+            manifest_before = _manifest_identity(manifest_path)
+            try:
+                return self._run_in_directory(
+                    merged_config=merged_config,
+                    runtime=runtime,
+                    route_key=route_key,
+                    log_dir=log_dir,
+                    run_dir=run_dir,
+                    sample_name=sample_name,
+                    profile=profile,
+                    config_hash=config_hash,
+                    dry_run=dry_run,
+                    finalize_callback=finalize_callback,
+                )
+            except BaseException as exc:
+                manifest_after = _manifest_identity(manifest_path)
+                if (
+                    manifest_after is not None
+                    and manifest_after != manifest_before
+                ):
+                    exc._revise_failure_context = {
+                        "run_dir": str(run_dir),
+                        "manifest_path": str(manifest_path),
+                        "manifest_identity": manifest_after,
+                    }
+                raise
 
     def _run_in_directory(
         self,
@@ -299,6 +329,12 @@ class REVISEPipeline:
         write_json(Path(ctx.run_dir) / "merged_config.json", self._export_merged_config(ctx))
 
     def _write_final_metadata(self, ctx: PipelineContext) -> None:
+        assignment_guidance = getattr(ctx, "assignment_guidance", None)
+        if assignment_guidance is None:
+            assignment_guidance = AssignmentGuidanceCollector(
+                request_evidence=getattr(ctx.merged_config, "request_evidence", {}),
+                resolved_request=ctx.merged_config.get("local_refinement", {}),
+            )
         provenance = {
             "schema_version": 2,
             "run": copy.deepcopy(
@@ -347,6 +383,10 @@ class REVISEPipeline:
             "svc_summary": ctx.svc.summary() if ctx.svc else {},
             "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
             "ot_events": copy.deepcopy(ctx.ot_events),
+            "assignment_guidance": assignment_guidance.manifest(),
+            "sr_allocation": copy.deepcopy(
+                getattr(ctx, "sr_allocation_records", [])
+            ),
         }
         result = copy.deepcopy(getattr(ctx, "provenance", {}).get("result"))
         if result is not None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -9,7 +10,10 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
+from revise.backend.ops.assignment import AssignmentState, one_hot_assignment
+from revise.config.loader import ResolvedConfig
 from revise.framework import REVISEPipeline
+from revise.recon.context import PipelineContext
 from revise.utils import provenance
 from revise.utils.io import build_run_dir
 
@@ -43,6 +47,263 @@ def _write_benchmark_seg_inputs(data_root: Path, sample_name: str) -> None:
     st.write_h5ad(st_path)
     sc_ref.write_h5ad(data_root / sample_name / "adata_sc_all_reanno.h5ad")
     gt.write_h5ad(data_root / sample_name / "selected_xenium.h5ad")
+
+
+def _guidance_context(tmp_path) -> PipelineContext:
+    config = ResolvedConfig(
+        {
+            "io": {"save_outputs": False},
+            "ot": {
+                "ga": {"solver": "pot"},
+                "lr": {"solver": "pot"},
+            },
+            "local_refinement": {
+                "guidance": "prefer",
+                "compatibility": {
+                    "mode": "cost",
+                    "beta": 1.0,
+                    "min_affinity": 0.05,
+                    "strength": 0.2,
+                },
+            },
+        },
+        request_evidence={
+            "assignment_guidance": {
+                "configured_guidance": None,
+                "configured_compatibility_mode": None,
+                "resolution_source": "route_default",
+                "deprecations": [],
+            }
+        },
+    )
+    return PipelineContext(
+        merged_config=config,
+        raw_config={},
+        config_path="revise/revise.yaml",
+        profile="test",
+        runtime={"mode": "application", "svc_kind": "sp"},
+        route_key="sp_svc:bin2cell",
+        run_dir=tmp_path,
+        logger=logging.getLogger("test-assignment-guidance-manifest"),
+    )
+
+
+def test_assignment_guidance_callback_writes_canonical_request_and_events(tmp_path):
+    ctx = _guidance_context(tmp_path)
+    pipeline = REVISEPipeline()
+    ctx.set_provenance_callback(pipeline._write_final_metadata)
+    left_assignment = AssignmentState(
+        values=np.array([[0.8, 0.2], [0.1, 0.9]]),
+        observation_labels=("spot-1", "spot-2"),
+        category_labels=("A", "B"),
+        source="global_anchoring",
+        level="Level1",
+        value_semantics="soft",
+        lineage=[{"operation": "aggregate"}],
+    )
+    right_assignment = one_hot_assignment(
+        ("A", "B"),
+        observation_labels=("ref-1", "ref-2"),
+        category_labels=("A", "B"),
+        source="reference_argmax",
+        level="Level1",
+        lineage=[{"operation": "project"}],
+    )
+
+    ctx.assignment_guidance_callback(
+        "start",
+        problem_key="spot-1",
+        route=ctx.route_key,
+        operator="local_ot",
+        phase="local_refinement",
+        mode="prefer",
+        applicability="applicable",
+        numerics={"strength": 0.2},
+        solver="pot",
+        left_assignment=left_assignment,
+        right_assignment=None,
+    )
+    ctx.assignment_guidance_callback(
+        "attempt",
+        problem_key="spot-1",
+        availability="available",
+    )
+    attempted = json.loads((tmp_path / "provenance.json").read_text())
+    attempted_event = attempted["assignment_guidance"]["events"][0]
+    assert attempted_event["attempted"] is True
+    assert attempted_event["availability"] == "available"
+    assert attempted_event["outcome"] == "not_started"
+    ctx.assignment_guidance_callback(
+        "terminal",
+        problem_key="spot-1",
+        outcome="applied",
+        right_assignment=right_assignment,
+    )
+
+    manifest = json.loads((tmp_path / "provenance.json").read_text())
+    assert manifest["run"]["status"] == "running"
+    evidence = manifest["assignment_guidance"]
+    assert evidence["schema_version"] == 1
+    assert evidence["configured"] == {
+        "guidance": None,
+        "compatibility_mode": None,
+        "source": "route_default",
+        "deprecations": [],
+    }
+    assert evidence["resolved"] == {
+        "guidance": "prefer",
+        "compatibility_mode": "cost",
+        "beta": 1.0,
+        "min_affinity": 0.05,
+        "operator_strength": 0.2,
+    }
+    assert evidence["events"][0]["outcome"] == "applied"
+    assert evidence["events"][0]["left_assignment"]["value_semantics"] == "soft"
+    assert evidence["events"][0]["left_assignment"]["lineage"] == [
+        {"operation": "aggregate"}
+    ]
+    assert evidence["events"][0]["right_assignment"]["value_semantics"] == (
+        "one_hot"
+    )
+    assert evidence["events"][0]["right_assignment"]["lineage"] == [
+        {"operation": "project"}
+    ]
+    assert evidence["summary"] == "applied"
+    assert manifest["sr_allocation"] == []
+
+    ctx.skip_pending_stages("test_complete")
+    ctx.mark_run_succeeded()
+    completed = json.loads((tmp_path / "provenance.json").read_text())
+    assert completed["run"]["status"] == "succeeded"
+    assert completed["assignment_guidance"]["events"][0]["outcome"] == "applied"
+
+
+@pytest.mark.parametrize(
+    ("route", "operator"),
+    [
+        ("sp_svc:bin2cell", "neighbor_ot"),
+        ("sim2real:segmentation", "replacement_ot"),
+        ("sim2real:bin2cell", "replacement_ot"),
+        ("sc_svc:segmentation", "graph_edge"),
+        ("sc_svc_sr:spot_size", "virtual_cell_ot"),
+        ("sim2real:batch_effect", "virtual_cell_ot"),
+        ("sim2real:spot_size", "virtual_cell_ot"),
+        ("sim2real:gene_panel", "imputation_ot"),
+        ("sim2real:gene_dropout", "imputation_ot"),
+    ],
+)
+def test_nine_public_routes_share_one_bilateral_event_contract(
+    tmp_path,
+    route,
+    operator,
+):
+    ctx = _guidance_context(tmp_path)
+    ctx.route_key = route
+    state = AssignmentState(
+        values=np.array([[0.8, 0.2], [0.2, 0.8]]),
+        observation_labels=("left-1", "left-2"),
+        category_labels=("A", "B"),
+        source="route_assignment",
+        level="Level2" if operator == "graph_edge" else "Level1",
+        value_semantics="soft",
+        lineage=[{"operation": "route_projection", "route": route}],
+    )
+    ctx.assignment_guidance_callback(
+        "start",
+        problem_key=f"{route}:candidate",
+        route=route,
+        operator=operator,
+        phase="local_refinement",
+        mode="prefer",
+        applicability="applicable",
+        numerics={"beta": 1.0, "operator_strength": 0.2},
+        solver="pot",
+    )
+    ctx.assignment_guidance_callback(
+        "attempt",
+        problem_key=f"{route}:candidate",
+        availability="available",
+        left_assignment=state,
+        right_assignment=state,
+    )
+    ctx.assignment_guidance_callback(
+        "terminal",
+        problem_key=f"{route}:candidate",
+        outcome="applied",
+    )
+
+    [event] = ctx.assignment_guidance.manifest()["events"]
+    assert event["route"] == route
+    assert event["operator"] == operator
+    assert event["mode"] == "prefer"
+    assert event["solver"] == "pot"
+    assert event["outcome"] == "applied"
+    for side in ("left_assignment", "right_assignment"):
+        assert event[side]["source"] == "route_assignment"
+        assert event[side]["value_semantics"] == "soft"
+        assert event[side]["lineage"] == [
+            {"operation": "route_projection", "route": route}
+        ]
+
+
+def test_assignment_guidance_transition_rolls_back_when_manifest_write_fails(tmp_path):
+    ctx = _guidance_context(tmp_path)
+    ctx.assignment_guidance_callback(
+        "start",
+        problem_key="spot-1",
+        route=ctx.route_key,
+        operator="local_ot",
+        phase="local_refinement",
+        mode="prefer",
+        applicability="applicable",
+        numerics={},
+        solver="pot",
+        left_assignment=None,
+        right_assignment=None,
+    )
+
+    def fail_write(_ctx):
+        raise OSError("manifest write failed")
+
+    ctx.set_provenance_callback(fail_write, notify=False)
+    with pytest.raises(OSError, match="manifest write failed"):
+        ctx.assignment_guidance_callback(
+            "attempt",
+            problem_key="spot-1",
+            availability="available",
+        )
+
+    assert ctx.assignment_guidance.events[0]["attempted"] is False
+    assert ctx.assignment_guidance.events[0]["availability"] == "not_checked"
+
+
+def test_run_cannot_succeed_with_attempted_guidance_event_not_terminal(tmp_path):
+    ctx = _guidance_context(tmp_path)
+    ctx.assignment_guidance_callback(
+        "start",
+        problem_key="unfinished",
+        route=ctx.route_key,
+        operator="local_ot",
+        phase="local_refinement",
+        mode="prefer",
+        applicability="applicable",
+        numerics={},
+        solver="pot",
+        left_assignment=None,
+        right_assignment=None,
+    )
+    ctx.assignment_guidance_callback(
+        "attempt",
+        problem_key="unfinished",
+        availability="available",
+    )
+    ctx.skip_pending_stages("test")
+
+    with pytest.raises(RuntimeError, match="unfinished assignment guidance"):
+        ctx.mark_run_succeeded()
+
+    assert ctx.run_status == "running"
+    assert ctx.assignment_guidance.events[0]["outcome"] == "not_started"
 
 
 def test_atomic_json_failure_preserves_previous_manifest(monkeypatch, tmp_path):

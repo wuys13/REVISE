@@ -48,6 +48,26 @@ GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
 preserve the same two-stage selection even when a legacy runner has a different
 internal call shape.
 
+Assignment-guidance boundary
+----------------------------
+
+The assignment subsystem separates inference, mandatory use, and optional
+local-refinement guidance. Routes share one Assignment State carrier, one
+label-aligned compatibility definition, and one ``off|prefer|require`` policy.
+They do not share a single local-problem implementation:
+
+- sp-SVC injects compatibility into neighbor or replacement OT cost;
+- standard sc-SVC reweights existing Graph edges;
+- sc-SVC-sr injects projected spot assignment into virtual-cell OT cost;
+- imputation injects spatial-to-reference-subcluster compatibility into OT.
+
+Argmax labels are represented as one-hot Assignment States rather than a
+parallel mechanism. Standard sc-SVC uses Level1 for cohort routing and the
+newly inferred Level2 soft state for Graph guidance. It selects resolution on
+the unguided Graph and only then performs fixed-resolution guided clustering.
+sc-SVC-sr's composition and closed-form expression allocation are
+algorithm-defining steps and remain active when optional guidance is off.
+
 Run evidence
 ------------
 
@@ -68,6 +88,13 @@ The manifest records ``result.type`` as ``sp-SVC``, ``sc-SVC``, or
 ``sc-SVC-sr`` and records the internal route separately. Strategy artifacts remain in the
 canonical run but are not additional public output contracts.
 
+``provenance.json.assignment_guidance`` records schema version, configured
+request, resolved policy, resolution source, and every local invocation. Each
+event records route, operator, solver, compatibility numerics, bilateral
+assignment source/level/value semantics/lineage, attempted state, terminal
+outcome, and stable reason code. ``sr_allocation`` is adjacent durable evidence
+because mandatory allocation is not a guidance outcome.
+
 Failure model
 -------------
 
@@ -80,6 +107,12 @@ complete—not permission to infer success.
 Solver telemetry records requested, attempted, and completed events separately.
 A requested TACCO run cannot be reported as completed POT because TACCO does not
 fall back to POT.
+
+Guidance outcomes are likewise explicit: ``not_started``, ``not_applicable``,
+``off``, ``applied``, ``fallback``, ``mixed``, ``failed``, or ``interrupted``.
+Failure/interruption manifests retain earlier completed events. A required
+guidance failure follows the normal publication rollback and cannot publish a
+successful result.
 
 Extension boundary
 ------------------

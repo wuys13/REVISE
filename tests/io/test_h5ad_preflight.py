@@ -348,17 +348,52 @@ def test_benchmark_preflight_rejects_route_specific_missing_fields(
         )
 
 
-def test_sr_ground_truth_requires_clusters_or_level1(tmp_path):
+def test_sr_ground_truth_requires_configured_broad_column(tmp_path):
     runtime, io, specs, paths = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
     gt = read_h5ad(paths["gt"])
     del gt.obs["Level1"]
     gt.write_h5ad(paths["gt"])
 
-    with pytest.raises(KeyError, match=r"role=gt.*clusters or Level1"):
+    with pytest.raises(KeyError, match=r"role=gt.*Level1"):
         REVISEInputService(io).preflight(
             specs,
             runtime=runtime,
             columns=COLUMNS,
+        )
+
+
+def test_sr_ground_truth_default_accepts_historical_clusters_and_reports_source(
+    tmp_path,
+):
+    runtime, io, specs, paths = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
+    gt = read_h5ad(paths["gt"])
+    gt.obs["clusters"] = gt.obs.pop("Level1")
+    gt.write_h5ad(paths["gt"])
+
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    gt_report = next(item for item in report["inputs"] if item["role"] == "gt")
+    assert gt_report["ground_truth_label_source"] == "clusters"
+
+
+def test_sr_ground_truth_custom_broad_key_does_not_fallback_to_clusters(tmp_path):
+    runtime, io, specs, paths = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
+    sc_ref = read_h5ad(paths["sc_ref"])
+    sc_ref.obs["major_type"] = sc_ref.obs.pop("Level1")
+    sc_ref.write_h5ad(paths["sc_ref"])
+    gt = read_h5ad(paths["gt"])
+    gt.obs["clusters"] = gt.obs.pop("Level1")
+    gt.write_h5ad(paths["gt"])
+
+    with pytest.raises(KeyError, match=r"role=gt.*major_type"):
+        REVISEInputService(io).preflight(
+            specs,
+            runtime=runtime,
+            columns={**COLUMNS, "cell_type_col": "major_type"},
         )
 
 
@@ -509,7 +544,7 @@ def test_preflight_rejects_missing_reference_label(tmp_path):
         _preflight(tmp_path)
 
 
-@pytest.mark.parametrize("task", ["sc_svc", "sc_svc_sr"])
+@pytest.mark.parametrize("task", ["sc_svc"])
 def test_application_sc_routes_require_the_labels_used_by_full_runners(
     tmp_path,
     task,
@@ -551,6 +586,79 @@ def test_sc_svc_custom_columns_are_the_full_runner_contract(tmp_path):
     )
 
     assert report["status"] == "ready"
+
+
+@pytest.mark.parametrize("mode", ["application", "benchmark"])
+def test_sr_preflight_accepts_configured_broad_without_subtype_or_literal_level1(
+    tmp_path,
+    mode,
+):
+    columns = {
+        **COLUMNS,
+        "cell_type_col": "major_type",
+        "sub_cell_type_col": "minor_type",
+    }
+    if mode == "application":
+        _write_application_inputs(tmp_path)
+        _, io, specs = _application_specs(tmp_path)
+        sc_path = tmp_path / "sc.h5ad"
+    else:
+        runtime, io, specs, paths = _write_benchmark_inputs(
+            tmp_path,
+            "sc_svc_sr",
+        )
+        sc_path = paths["sc_ref"]
+        gt = read_h5ad(paths["gt"])
+        gt.obs["major_type"] = gt.obs.pop("Level1")
+        gt.write_h5ad(paths["gt"])
+    sc_ref = _adata("sc_ref")
+    sc_ref.obs["major_type"] = sc_ref.obs.pop("Level1")
+    del sc_ref.obs["Level2"]
+    sc_ref.write_h5ad(sc_path)
+
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime={
+            "mode": mode,
+            "task": "sc_svc_sr",
+            "platform": "sc_svc_sr" if mode == "application" else "sim2real",
+        },
+        columns=columns,
+    )
+
+    assert report["status"] == "ready"
+    if mode == "benchmark":
+        gt_report = next(
+            item for item in report["inputs"] if item["role"] == "gt"
+        )
+        assert gt_report["ground_truth_label_source"] == "major_type"
+
+
+@pytest.mark.parametrize("mode", ["application", "benchmark"])
+def test_sr_preflight_rejects_missing_configured_broad_column(tmp_path, mode):
+    columns = {
+        **COLUMNS,
+        "cell_type_col": "major_type",
+        "sub_cell_type_col": "minor_type",
+    }
+    if mode == "application":
+        _write_application_inputs(tmp_path)
+        _, io, specs = _application_specs(tmp_path)
+    else:
+        _, io, specs, _ = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
+
+    with pytest.raises(KeyError, match=r"role=sc_ref.*major_type"):
+        REVISEInputService(io).preflight(
+            specs,
+            runtime={
+                "mode": mode,
+                "task": "sc_svc_sr",
+                "platform": (
+                    "sc_svc_sr" if mode == "application" else "sim2real"
+                ),
+            },
+            columns=columns,
+        )
 
 
 def test_application_sr_preflight_rejects_mismatched_cell_locations(tmp_path):
@@ -635,20 +743,28 @@ def _policy_context(
     *,
     ga_solver="pot",
     lr_solver="pot",
-    conditioning="cost",
+    guidance="prefer",
+    compatibility_mode="cost",
+    mode="application",
+    task="sp_svc",
+    graph_enabled=True,
 ):
     runtime, io, _ = _application_specs(tmp_path)
+    runtime = {**runtime, "mode": mode, "task": task}
     merged = {
         "runtime": runtime,
         "io": {**io, "output_root": str(tmp_path / "output")},
         "columns": COLUMNS,
+        "sc": {"sr_graph_agg_enabled": graph_enabled},
         "ot": {
             "ga": {"solver": ga_solver},
             "lr": {"solver": lr_solver},
         },
-        "posterior_conditioning": {
-            "enabled": conditioning != "off",
-            "mode": conditioning,
+        "local_refinement": {
+            "guidance": guidance,
+            "compatibility": {
+                "mode": compatibility_mode if guidance != "off" else None,
+            },
         },
     }
     return PipelineContext(
@@ -671,7 +787,7 @@ def test_preflight_requires_tacco_before_reconstruction(monkeypatch, tmp_path, p
     _write_application_inputs(tmp_path)
     solvers = {"ga_solver": "pot", "lr_solver": "pot"}
     solvers[f"{phase}_solver"] = "tacco"
-    ctx = _policy_context(tmp_path, conditioning="off", **solvers)
+    ctx = _policy_context(tmp_path, guidance="off", **solvers)
 
     def missing_tacco():
         raise ModuleNotFoundError("TACCO is missing", name="tacco")
@@ -681,12 +797,108 @@ def test_preflight_requires_tacco_before_reconstruction(monkeypatch, tmp_path, p
         ModeValidationPolicy().validate(ctx)
 
 
-def test_preflight_rejects_tacco_reference_conditioning(tmp_path):
-    _write_application_inputs(tmp_path)
-    ctx = _policy_context(tmp_path, lr_solver="tacco", conditioning="reference")
+@pytest.mark.parametrize(
+    ("lr_solver", "compatibility_mode"),
+    [
+        ("tacco", "cost"),
+    ],
+)
+def test_preflight_accepts_supported_solver_guidance_pairs(
+    monkeypatch,
+    tmp_path,
+    lr_solver,
+    compatibility_mode,
+):
+    import revise.backend.policies as policies
 
-    with pytest.raises(ValueError, match=r"TACCO.*reference.*conditioning"):
-        ModeValidationPolicy().validate(ctx)
+    _write_application_inputs(tmp_path)
+    ctx = _policy_context(
+        tmp_path,
+        lr_solver=lr_solver,
+        compatibility_mode=compatibility_mode,
+    )
+    monkeypatch.setattr(policies, "require_tacco", lambda: None)
+
+    ModeValidationPolicy().validate(ctx)
+
+    assert (ctx.run_dir / "preflight.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("mode", "task", "lr_solver", "graph_enabled", "message"),
+    [
+        ("application", "sp_svc", "pot", True, "application"),
+        ("application", "sc_svc", "pot", True, "graph_edge"),
+        ("benchmark", "sp_svc", "tacco", True, "TACCO"),
+    ],
+)
+def test_preflight_rejects_unsupported_reference_guidance(
+    tmp_path,
+    mode,
+    task,
+    lr_solver,
+    graph_enabled,
+    message,
+):
+    ctx = _policy_context(
+        tmp_path,
+        mode=mode,
+        task=task,
+        lr_solver=lr_solver,
+        graph_enabled=graph_enabled,
+        compatibility_mode="reference",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        ModeValidationPolicy._validate_solver_compatibility(ctx)
+
+
+def test_preflight_allows_pot_benchmark_reference_guidance(tmp_path):
+    ctx = _policy_context(
+        tmp_path,
+        mode="benchmark",
+        task="sp_svc",
+        lr_solver="pot",
+        compatibility_mode="reference",
+    )
+
+    ModeValidationPolicy._validate_solver_compatibility(ctx)
+
+
+def test_preflight_rejects_required_guidance_when_sr_graph_branch_is_disabled(
+    tmp_path,
+):
+    ctx = _policy_context(
+        tmp_path,
+        mode="benchmark",
+        task="sc_svc_sr",
+        guidance="require",
+        graph_enabled=False,
+    )
+
+    with pytest.raises(ValueError, match=r"required.*disabled SR graph branch"):
+        ModeValidationPolicy._validate_solver_compatibility(ctx)
+
+    [event] = ctx.assignment_guidance.events
+    assert event["operator"] == "virtual_cell_ot"
+    assert event["availability"] == "unavailable"
+    assert event["attempted"] is False
+    assert event["outcome"] == "failed"
+    assert event["reason"] == "graph_branch_disabled"
+
+
+def test_preflight_allows_preferred_guidance_when_sr_graph_branch_is_disabled(
+    tmp_path,
+):
+    ctx = _policy_context(
+        tmp_path,
+        mode="benchmark",
+        task="sc_svc_sr",
+        guidance="prefer",
+        graph_enabled=False,
+    )
+
+    ModeValidationPolicy._validate_solver_compatibility(ctx)
 
 
 def test_preflight_report_is_persisted_without_scientific_outputs(tmp_path):

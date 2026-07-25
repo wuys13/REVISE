@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,7 +10,10 @@ from typing import Dict, List
 
 import numpy as np
 
+from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
+from revise.config import merge_unified_config
 from revise.framework import REVISEPipeline
+from revise.utils import build_run_dir
 
 # Base settings aligned with Sim2Real-ST benchmark convention.
 SEG_METHODS = ["seg_1", "seg_2", "seg_3", "seg_4"]
@@ -17,7 +22,14 @@ BATCH_NUMS = [1, 2, 3, 4]
 SPOT_SIZES = [20, 50, 100, 200]
 SR_CONFOUNDINGS = {"batch_effect", "spot_size"}
 POSTERIOR_MODES = ["off", "cost", "reference"]
-DEFAULT_POSTERIOR_MODE = "cost"
+BENCHMARK_PROFILES = {
+    "segmentation": "benchmark_seg",
+    "bin2cell": "benchmark_bin2cell",
+    "batch_effect": "benchmark_sr_batch",
+    "spot_size": "benchmark_sr_spot_size",
+    "gene_panel": "benchmark_impute_panel",
+    "gene_dropout": "benchmark_impute_dropout",
+}
 
 SR_REFINEMENT_PRESETS = {
     "none": {
@@ -41,7 +53,7 @@ SR_REFINEMENT_PRESETS = {
 }
 
 
-def get_args() -> argparse.Namespace:
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("REVISE benchmark (unified interface wrapper)")
     parser.add_argument(
         "--platform",
@@ -97,15 +109,30 @@ def get_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--local-refinement-guidance",
+        choices=["off", "prefer", "require"],
+        default=None,
+        help="Optional assignment-guidance policy; omitted uses the route default",
+    )
+    parser.add_argument(
+        "--local-refinement-compatibility-mode",
+        choices=["cost", "reference"],
+        default=None,
+        help="Compatibility injection mode when local-refinement guidance is enabled",
+    )
+    parser.add_argument(
         "--posterior-mode",
         choices=POSTERIOR_MODES,
-        default=DEFAULT_POSTERIOR_MODE,
-        help="Unified posterior-conditioning mode for every confounding route (default: cost)",
+        default=None,
+        help="Deprecated alias for local-refinement guidance and compatibility mode",
     )
     parser.add_argument(
         "--posterior-key",
         default=None,
-        help="AnnData obsm key for posterior probabilities",
+        help=(
+            "Deprecated: non-empty values are rejected; each route now uses "
+            "route-provided Assignment State"
+        ),
     )
     parser.add_argument(
         "--posterior-beta",
@@ -136,25 +163,79 @@ def get_args() -> argparse.Namespace:
         default=None,
         help="SR-only graph refinement preset; use confidence_anchor for controlled SR posterior-OT ablations",
     )
-    return parser.parse_args()
+    return parser
+
+
+def get_args() -> argparse.Namespace:
+    return get_parser().parse_args()
 
 
 def _build_posterior_overrides(args: argparse.Namespace) -> Dict[str, object]:
-    values: Dict[str, object] = {}
-    if args.posterior_mode is not None:
-        values["enabled"] = args.posterior_mode != "off"
-        values["mode"] = args.posterior_mode
-    if args.posterior_key is not None:
-        values["posterior_key"] = args.posterior_key
-    if args.posterior_beta is not None:
-        values["beta"] = args.posterior_beta
-    if args.posterior_min_affinity is not None:
-        values["min_affinity"] = args.posterior_min_affinity
-    if args.posterior_cost_strength is not None:
-        values["cost_strength"] = args.posterior_cost_strength
-    if args.posterior_strict:
-        values["strict"] = True
-    return {"posterior_conditioning": values} if values else {}
+    new_values: Dict[str, object] = {}
+    guidance = getattr(args, "local_refinement_guidance", None)
+    compatibility_mode = getattr(
+        args,
+        "local_refinement_compatibility_mode",
+        None,
+    )
+    if guidance is not None:
+        new_values["guidance"] = guidance
+    if compatibility_mode is not None:
+        new_values["compatibility"] = {"mode": compatibility_mode}
+
+    legacy_values: Dict[str, object] = {}
+    posterior_mode = getattr(args, "posterior_mode", None)
+    posterior_strict = bool(getattr(args, "posterior_strict", False))
+    posterior_key = getattr(args, "posterior_key", None)
+    if posterior_key not in (None, ""):
+        raise ValueError(
+            "--posterior-key is no longer supported; Assignment State is "
+            "provided explicitly by each local-refinement route"
+        )
+    if posterior_mode == "off" and posterior_strict:
+        raise ValueError("--posterior-mode off conflicts with --posterior-strict")
+    if posterior_mode is not None:
+        legacy_values["mode"] = posterior_mode
+    if posterior_key == "":
+        legacy_values["posterior_key"] = posterior_key
+    for arg_name, key in (
+        ("posterior_beta", "beta"),
+        ("posterior_min_affinity", "min_affinity"),
+        ("posterior_cost_strength", "cost_strength"),
+    ):
+        value = getattr(args, arg_name, None)
+        if value is not None:
+            legacy_values[key] = value
+    if posterior_strict:
+        legacy_values["strict"] = True
+
+    legacy_guidance = None
+    if posterior_mode == "off":
+        legacy_guidance = "off"
+    elif posterior_strict:
+        legacy_guidance = "require"
+    elif posterior_mode in {"cost", "reference"}:
+        legacy_guidance = "prefer"
+    if guidance is not None and legacy_guidance is not None and guidance != legacy_guidance:
+        raise ValueError(
+            "--local-refinement-guidance conflicts with deprecated posterior flags"
+        )
+    legacy_mode = posterior_mode if posterior_mode in {"cost", "reference"} else None
+    if (
+        compatibility_mode is not None
+        and legacy_mode is not None
+        and compatibility_mode != legacy_mode
+    ):
+        raise ValueError(
+            "--local-refinement-compatibility-mode conflicts with --posterior-mode"
+        )
+
+    overrides: Dict[str, object] = {}
+    if new_values:
+        overrides["local_refinement"] = new_values
+    if legacy_values:
+        overrides["posterior_conditioning"] = legacy_values
+    return overrides
 
 
 def _build_sr_refinement_overrides(args: argparse.Namespace) -> Dict[str, object]:
@@ -168,19 +249,137 @@ def _build_sr_refinement_overrides(args: argparse.Namespace) -> Dict[str, object
 
 
 def _build_algorithm_overrides(args: argparse.Namespace) -> Dict[str, object]:
-    if (
-        args.posterior_mode in {"cost", "reference"}
-        and args.confounding in SR_CONFOUNDINGS
-        and args.sr_refinement_preset == "none"
-    ):
-        raise ValueError(
-            "posterior-mode=cost/reference on SR benchmark routes requires graph aggregation; "
-            "use the profile default or --sr-refinement-preset confidence_anchor"
-        )
-
     overrides = _build_posterior_overrides(args)
     overrides.update(_build_sr_refinement_overrides(args))
     return overrides
+
+
+def _resolved_report_aliases(
+    *,
+    raw_config: Dict[str, object],
+    profile: str,
+    platform: str,
+    confounding: str,
+    algorithm_overrides: Dict[str, object],
+) -> Dict[str, object]:
+    resolved = merge_unified_config(
+        raw_config=raw_config,
+        profile=profile,
+        runtime_overrides={
+            "platform": platform,
+            "confounding": confounding,
+        },
+        io_overrides={},
+        algorithm_overrides=algorithm_overrides,
+    )
+    refinement = resolved["local_refinement"]
+    guidance = refinement["guidance"]
+    compatibility_mode = refinement["compatibility"]["mode"]
+    guidance_evidence = AssignmentGuidanceCollector(
+        request_evidence=getattr(resolved, "request_evidence", {}),
+        resolved_request=refinement,
+    ).manifest()
+    return {
+        "assignment_guidance": guidance_evidence,
+        "posterior_mode": (
+            "off" if guidance == "off" else compatibility_mode
+        ),
+        "posterior_strict": guidance == "require",
+    }
+
+
+def _aggregate_assignment_guidance(
+    results: List[Dict[str, object]],
+    *,
+    request_manifest: Dict[str, object],
+) -> Dict[str, object]:
+    leaves = [
+        (case_ordinal, item, item["assignment_guidance"])
+        for case_ordinal, item in enumerate(results, start=1)
+        if isinstance(item.get("assignment_guidance"), dict)
+    ]
+    if not leaves:
+        return copy.deepcopy(request_manifest)
+
+    configured = copy.deepcopy(leaves[0][2]["configured"])
+    resolved = copy.deepcopy(leaves[0][2]["resolved"])
+    if (
+        configured != request_manifest["configured"]
+        or resolved != request_manifest["resolved"]
+    ):
+        raise ValueError(
+            "inconsistent assignment-guidance resolved request and leaf evidence"
+        )
+
+    events: List[Dict[str, object]] = []
+    for case_ordinal, item, manifest in leaves:
+        if manifest.get("schema_version") != 1:
+            raise ValueError("unsupported assignment-guidance leaf schema")
+        if manifest.get("configured") != configured:
+            raise ValueError(
+                "inconsistent assignment-guidance configured leaf evidence"
+            )
+        if manifest.get("resolved") != resolved:
+            raise ValueError(
+                "inconsistent assignment-guidance resolved leaf evidence"
+            )
+        case_tag = str(item["tag"])
+        for event_index, leaf_event in enumerate(
+            manifest.get("events", []),
+            start=1,
+        ):
+            event = copy.deepcopy(leaf_event)
+            leaf_ordinal = event.get("ordinal", event_index)
+            leaf_problem_key = str(event["problem_key"])
+            event.update(
+                {
+                    "ordinal": len(events) + 1,
+                    "problem_key": f"{case_tag}::{leaf_problem_key}",
+                    "case_ordinal": case_ordinal,
+                    "case_tag": case_tag,
+                    "leaf_ordinal": leaf_ordinal,
+                }
+            )
+            events.append(event)
+
+    collector = AssignmentGuidanceCollector()
+    collector.events = copy.deepcopy(events)
+    return {
+        "schema_version": 1,
+        "configured": configured,
+        "resolved": resolved,
+        "events": events,
+        "summary": collector.summary(),
+    }
+
+
+def _read_manifest_snapshot(
+    path: Path,
+) -> tuple[dict[str, int | str], Dict[str, object]] | None:
+    try:
+        before = path.stat()
+        content = path.read_bytes()
+        after = path.stat()
+    except OSError:
+        return None
+    before_identity = (before.st_mtime_ns, before.st_size)
+    after_identity = (after.st_mtime_ns, after.st_size)
+    if before_identity != after_identity or len(content) != after.st_size:
+        return None
+    try:
+        manifest = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    return (
+        {
+            "mtime_ns": after.st_mtime_ns,
+            "size": after.st_size,
+            "sha256": hashlib.sha256(content).hexdigest(),
+        },
+        manifest,
+    )
 
 
 def _run_case(
@@ -193,6 +392,34 @@ def _run_case(
     runtime_seed: int | None,
     algorithm_overrides: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
+    expected_run_dir = None
+    expected_manifest_path = None
+    try:
+        resolved = merge_unified_config(
+            raw_config=pipeline.raw_config,
+            profile=profile,
+            runtime_overrides={
+                "platform": platform,
+                "confounding": confounding,
+                "seed": runtime_seed,
+            },
+            io_overrides=io_overrides,
+            algorithm_overrides=algorithm_overrides or {},
+        )
+        route_key = (
+            f"{resolved['runtime']['platform']}:"
+            f"{resolved['runtime']['confounding']}"
+        )
+        expected_run_dir = build_run_dir(
+            output_root=resolved["io"]["output_root"],
+            sample_name=resolved["io"]["sample_name"],
+            route_key=route_key,
+            io_cfg=resolved["io"],
+        )
+        expected_manifest_path = expected_run_dir / "provenance.json"
+    except (AttributeError, KeyError, TypeError, ValueError):
+        # A pre-context configuration error has no durable run envelope.
+        pass
     try:
         runtime_cfg = {
             "platform": platform,
@@ -207,20 +434,58 @@ def _run_case(
             dry_run=False,
         )
         summary = svc.summary()
+        run_dir = svc.provenance.get("run_dir")
         return {
             "ok": True,
             "profile": profile,
             "seed": runtime_seed,
-            "run_dir": svc.provenance.get("run_dir"),
+            "run_dir": run_dir,
+            "manifest_path": (
+                str(Path(run_dir) / "provenance.json")
+                if run_dir is not None
+                else None
+            ),
+            "assignment_guidance": svc.provenance.get(
+                "assignment_guidance"
+            ),
             "summary": summary,
             "error": None,
         }
     except Exception as exc:  # pragma: no cover - wrapper behavior
+        guidance_evidence = None
+        failure_context = getattr(exc, "_revise_failure_context", None)
+        current_identity = None
+        manifest = None
+        if expected_manifest_path is not None:
+            snapshot = _read_manifest_snapshot(expected_manifest_path)
+            if snapshot is not None:
+                current_identity, manifest = snapshot
+        current_manifest = bool(
+            isinstance(failure_context, dict)
+            and expected_run_dir is not None
+            and expected_manifest_path is not None
+            and failure_context.get("run_dir") == str(expected_run_dir)
+            and failure_context.get("manifest_path")
+            == str(expected_manifest_path)
+            and failure_context.get("manifest_identity") == current_identity
+        )
+        if current_manifest:
+            guidance_evidence = manifest.get("assignment_guidance")
         return {
             "ok": False,
             "profile": profile,
             "seed": runtime_seed,
-            "run_dir": None,
+            "run_dir": (
+                str(expected_run_dir)
+                if current_manifest
+                else None
+            ),
+            "manifest_path": (
+                str(expected_manifest_path)
+                if current_manifest
+                else None
+            ),
+            "assignment_guidance": guidance_evidence,
             "summary": None,
             "error": f"{type(exc).__name__}: {exc}",
         }
@@ -303,6 +568,16 @@ def main(args: argparse.Namespace | None = None) -> None:
         algorithm_overrides = _build_algorithm_overrides(args)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
+    profile = BENCHMARK_PROFILES.get(args.confounding)
+    if profile is None:
+        raise NotImplementedError(f"Unsupported confounding: {args.confounding}")
+    report_aliases = _resolved_report_aliases(
+        raw_config=pipeline.raw_config,
+        profile=profile,
+        platform=args.platform,
+        confounding=args.confounding,
+        algorithm_overrides=algorithm_overrides,
+    )
 
     if args.confounding == "segmentation":
         st_file = args.st_file or "xenium_spot.h5ad"
@@ -321,7 +596,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             run_result = _run_case(
                 pipeline,
                 platform=args.platform,
-                profile="benchmark_seg",
+                profile=profile,
                 confounding="segmentation",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
@@ -346,7 +621,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             run_result = _run_case(
                 pipeline,
                 platform=args.platform,
-                profile="benchmark_bin2cell",
+                profile=profile,
                 confounding="bin2cell",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
@@ -376,7 +651,7 @@ def main(args: argparse.Namespace | None = None) -> None:
                 run_result = _run_case(
                     pipeline,
                     platform=args.platform,
-                    profile="benchmark_sr_batch",
+                    profile=profile,
                     confounding="batch_effect",
                     io_overrides=io_cfg,
                     runtime_seed=next_runtime_seed(),
@@ -401,7 +676,7 @@ def main(args: argparse.Namespace | None = None) -> None:
             run_result = _run_case(
                 pipeline,
                 platform=args.platform,
-                profile="benchmark_sr_spot_size",
+                profile=profile,
                 confounding="spot_size",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
@@ -421,7 +696,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         run_result = _run_case(
             pipeline,
             platform=args.platform,
-            profile="benchmark_impute_panel",
+            profile=profile,
             confounding="gene_panel",
             io_overrides=io_cfg,
             runtime_seed=next_runtime_seed(),
@@ -441,7 +716,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         run_result = _run_case(
             pipeline,
             platform=args.platform,
-            profile="benchmark_impute_dropout",
+            profile=profile,
             confounding="gene_dropout",
             io_overrides=io_cfg,
             runtime_seed=next_runtime_seed(),
@@ -452,6 +727,10 @@ def main(args: argparse.Namespace | None = None) -> None:
     else:
         raise NotImplementedError(f"Unsupported confounding: {args.confounding}")
 
+    report_aliases["assignment_guidance"] = _aggregate_assignment_guidance(
+        results,
+        request_manifest=report_aliases["assignment_guidance"],
+    )
     report = {
         "platform": args.platform,
         "confounding": args.confounding,
@@ -460,8 +739,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         "output_task": args.dataset_task or args.confounding,
         "seed": args.seed,
         "seed_scope": seed_scope,
-        "posterior_mode": args.posterior_mode,
-        "posterior_strict": bool(args.posterior_strict),
+        **report_aliases,
         "sr_refinement_preset": args.sr_refinement_preset,
         "ok": all(item["ok"] for item in results),
         "total_runs": len(results),

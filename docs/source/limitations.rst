@@ -13,6 +13,11 @@ Data and biology
   localization accuracy, or biological parity across OT implementations.
 - Historical notebook outputs are preserved material, not results reproduced
   by the current checkout.
+- Assignment-guidance tests establish software behavior, not that posterior
+  compatibility improves reconstruction, subtype recovery, or imputation.
+- Cost guidance is the unified product mechanism because it is portable across
+  supported local solvers; this is not evidence that it is scientifically
+  superior to the POT-only reference ablation.
 - Paper data and reproduced results are available at
   ``https://zenodo.org/records/17705737``.
 
@@ -56,3 +61,13 @@ Optional capabilities require their corresponding installation extras.
 Selecting a missing or incompatible implementation fails explicitly. The
 tested dependency constraints target Linux with Python 3.10 and 3.11; other
 systems require their own validation.
+
+The CI TACCO gate downloads the candidate wheel produced by the package job,
+installs it with TACCO 0.5.0, verifies the import from outside the source
+checkout, copies the solver tests outside that checkout, and runs them with
+pytest importlib mode. The test process also asserts that ``revise.__file__``
+is under the isolated candidate-wheel environment before running the base
+TACCO and assignment-guidance solver smokes. An ad-hoc local run may still
+report the TACCO checks as skipped when the exact optional dependency is
+absent; a synthetic stub or source-checkout import is not installed-solver
+evidence.

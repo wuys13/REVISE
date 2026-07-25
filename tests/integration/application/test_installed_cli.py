@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -227,6 +228,53 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
     assert version.stdout.strip() == f"revise-reconstruct {__version__}"
 
 
+def test_installed_wheel_benchmark_module_and_report_aliases(installed_cli):
+    python = installed_cli["python"]
+    root = installed_cli["root"]
+    env = installed_cli["env"]
+
+    help_result = _run(
+        [python, "-m", "revise.benchmark.cli", "--help"],
+        cwd=root,
+        env=env,
+    )
+    assert help_result.returncode == 0, help_result.stderr
+    assert "--local-refinement-guidance" in help_result.stdout
+    assert "--posterior-key" in help_result.stdout
+
+    probe = _run(
+        [
+            python,
+            "-c",
+            (
+                "import json, revise.benchmark.cli as cli;"
+                "from revise.framework import REVISEPipeline;"
+                "pipeline=REVISEPipeline();"
+                "aliases=cli._resolved_report_aliases("
+                "raw_config=pipeline.raw_config,"
+                "profile='benchmark_seg',"
+                "platform='sim2real',"
+                "confounding='segmentation',"
+                "algorithm_overrides={});"
+                "print(json.dumps({'module': cli.__file__, 'aliases': aliases}))"
+            ),
+        ],
+        cwd=root,
+        env=env,
+    )
+    assert probe.returncode == 0, probe.stderr
+    payload = json.loads(probe.stdout)
+    assert str(installed_cli["root"] / "venv") in payload["module"]
+    assert payload["aliases"]["posterior_mode"] == "cost"
+    assert payload["aliases"]["posterior_strict"] is False
+    guidance = payload["aliases"]["assignment_guidance"]
+    assert guidance["schema_version"] == 1
+    assert guidance["resolved"]["guidance"] == "prefer"
+    assert guidance["resolved"]["compatibility_mode"] == "cost"
+    assert guidance["events"] == []
+    assert guidance["summary"] == "not_started"
+
+
 def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
     root = installed_cli["root"]
     data_root = root / "dry-data"
@@ -289,7 +337,6 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         n_neighbors=5,
         exp_neighbors=5,
     )
-    config["defaults"]["posterior_conditioning"]["enabled"] = False
     config["defaults"]["plot"]["enabled"] = False
     config_path = installed_cli["root"] / "minimal-pot.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
@@ -335,7 +382,15 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
             "filename": "SVC.h5ad",
             "type": "sp-SVC",
         }
+        assert "result_hash" not in manifest
         assert manifest["stages"][3]["status"] == "succeeded"
+        guidance = manifest["assignment_guidance"]
+        assert guidance["schema_version"] == 1
+        assert guidance["configured"]["source"] == "route_default"
+        assert guidance["resolved"]["guidance"] == "prefer"
+        assert guidance["resolved"]["compatibility_mode"] == "cost"
+        assert guidance["summary"] in {"applied", "not_applicable", "mixed"}
+        assert guidance["events"]
         public_artifacts = [
             artifact
             for artifact in manifest["artifacts"]
@@ -344,6 +399,9 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         ]
         assert len(public_artifacts) == 1
         assert Path(public_artifacts[0]["path"]) == public
+        assert public_artifacts[0]["sha256"] == hashlib.sha256(
+            public.read_bytes()
+        ).hexdigest()
         published = read_h5ad(public)
         backlink = published.uns["revise_reconstruction"]["run_manifest"]
         assert (public.parent / backlink).resolve() == manifest_path.resolve()

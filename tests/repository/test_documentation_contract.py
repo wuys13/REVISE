@@ -6,6 +6,8 @@ import runpy
 from pathlib import Path
 from types import SimpleNamespace
 
+from revise.config import load_raw_config
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10
@@ -106,8 +108,12 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
     assert st_path in quickstart
     assert sc_path in quickstart
     assert "unique ``obs_names`` and unique ``var_names``" in normalized
-    assert "sp-SVC requires ``Level1``" in normalized
-    assert "sc-SVC and sc-SVC-sr require both ``Level1`` and ``Level2``" in normalized
+    assert "Every route requires the configured broad annotation" in normalized
+    assert "Only standard sc-SVC requires the configured subtype annotation" in normalized
+    assert (
+        "sc-SVC-sr composition and expression allocation use the broad "
+        "assignment and do not require a subtype column"
+    ) in normalized
     assert "default ``Patient`` column" in normalized
     assert "--spot-size" not in quickstart
 
@@ -213,6 +219,8 @@ def test_benchmark_docs_describe_dedicated_configuration_controls():
     text = " ".join(_read(ROOT / "docs/source/benchmark.rst").split())
 
     for option in (
+        "--local-refinement-guidance",
+        "--local-refinement-compatibility-mode",
         "--posterior-mode",
         "--posterior-key",
         "--posterior-beta",
@@ -223,8 +231,35 @@ def test_benchmark_docs_describe_dedicated_configuration_controls():
     ):
         assert option in text
     assert "applied after the selected profile or custom ``--config``" in text
-    assert "defaults to ``cost``" in text
+    assert "Omitting guidance flags creates no algorithm override" in text
+    assert "canonical ``assignment_guidance`` object" in text
+    assert "deprecated report aliases" in text
+    assert "explicit POT benchmark ablation" in text
+    assert "never fall back to POT" in text
     assert "--set" not in text
+
+
+def test_assignment_guidance_docs_match_three_layer_runtime_contract():
+    configuration = " ".join(
+        _read(ROOT / "docs/source/configuration.rst").split()
+    )
+    architecture = " ".join(
+        _read(ROOT / "docs/source/architecture.rst").split()
+    )
+    limitations = " ".join(
+        _read(ROOT / "docs/source/limitations.rst").split()
+    )
+
+    assert "three separate layers" in configuration
+    assert "off | prefer | require" in configuration
+    assert "closed-form expression allocation remains mandatory" in configuration
+    assert "Level1 assignment selects the broad cohort" in configuration
+    assert "Resolution is selected on the unguided Graph" in configuration
+    assert "one Assignment State carrier" in architecture
+    assert "bilateral assignment source/level/value semantics/lineage" in architecture
+    assert "not_started" in architecture
+    assert "publication rollback" in architecture
+    assert "not that posterior compatibility improves" in limitations
 
 
 def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path):
@@ -233,6 +268,7 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
     class FakePipeline:
         def __init__(self, config_path):
             self.config_path = config_path
+            self.raw_config = load_raw_config(ROOT / "revise/revise.yaml")
 
     monkeypatch.setattr(benchmark_main, "REVISEPipeline", FakePipeline)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
@@ -431,3 +467,26 @@ def test_docs_version_and_support_match_project_sources():
         "myst-parser==4.0.1",
         "PyYAML==6.0.3",
     ]
+
+
+def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():
+    workflow = _read(ROOT / ".github/workflows/ci.yml")
+    tacco_job = workflow.split("  tacco-smoke:", maxsplit=1)[1]
+
+    assert "needs: package" in tacco_job
+    assert "actions/download-artifact@v4" in tacco_job
+    assert "name: candidate-dist" in tacco_job
+    assert "revise_svc-0.1.0rc1-py3-none-any.whl" in tacco_job
+    assert "working-directory: ${{ runner.temp }}" in tacco_job
+    assert 'python -m venv "${RUNNER_TEMP}/candidate-venv"' in tacco_job
+    assert '"${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install' in tacco_job
+    assert "wheel-smoke-tests/tests/integration/solvers" in tacco_job
+    assert "tests/integration/solvers/conftest.py" in tacco_job
+    assert "REVISE_EXPECT_INSTALLED_PREFIX" in tacco_job
+    assert "--import-mode=importlib" in tacco_job
+    assert '"${GITHUB_WORKSPACE}/tests/integration/solvers/' not in tacco_job
+    assert "tests/integration/solvers/test_tacco_solver_smoke.py" in tacco_job
+    assert (
+        "tests/integration/solvers/test_assignment_guidance_solver_smoke.py"
+        in tacco_job
+    )

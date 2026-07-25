@@ -4,7 +4,7 @@ import copy
 import math
 from numbers import Real
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypedDict
 
 try:
     import yaml
@@ -31,6 +31,7 @@ DEFAULT_SECTION_KEYS = {
     "benchmark",
     "sc",
     "impute",
+    "local_refinement",
     "posterior_conditioning",
 }
 RUNTIME_KEYS = {
@@ -116,6 +117,15 @@ POSTERIOR_CONDITIONING_KEYS = {
     "cost_strength",
     "strict",
 }
+LOCAL_REFINEMENT_KEYS = {"guidance", "compatibility"}
+LOCAL_REFINEMENT_COMPATIBILITY_KEYS = {
+    "mode",
+    "beta",
+    "min_affinity",
+    "strength",
+}
+GUIDANCE_POLICIES = {"off", "prefer", "require"}
+GUIDANCE_COMPATIBILITY_MODES = {"cost", "reference"}
 ROUTE_LEAF_KEYS = {"mode", "task", "svc_kind", "strategy"}
 LOCKED_PARAMS_KEYS = {"keys"}
 ALGORITHM_IDENTITY_PATHS = {"sc.hyperresolution"}
@@ -123,6 +133,50 @@ ALGORITHM_IDENTITY_PATHS = {"sc.hyperresolution"}
 
 class ConfigError(ValueError):
     """Unified configuration error."""
+
+
+class AssignmentGuidanceRequestRecord(TypedDict):
+    configured_guidance: str | None
+    configured_compatibility_mode: str | None
+    resolution_source: str
+    deprecations: list[str]
+
+
+class AssignmentGuidanceRequestEvidence(TypedDict, total=False):
+    assignment_guidance: AssignmentGuidanceRequestRecord
+
+
+class ResolvedConfig(dict[str, Any]):
+    """Algorithm config with separately copied, non-canonical request evidence.
+
+    Coercing this object with ``dict(config)`` intentionally keeps only the
+    algorithm mapping; use ``copy()``/``copy.copy``/``copy.deepcopy`` when the
+    request evidence must travel with it.
+    """
+
+    request_evidence: AssignmentGuidanceRequestEvidence
+
+    def __init__(
+        self,
+        *args: Any,
+        request_evidence: AssignmentGuidanceRequestEvidence | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.request_evidence = copy.deepcopy(request_evidence or {})
+
+    def copy(self) -> "ResolvedConfig":
+        return type(self)(self, request_evidence=self.request_evidence)
+
+    def __copy__(self) -> "ResolvedConfig":
+        return self.copy()
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "ResolvedConfig":
+        copied = type(self)()
+        memo[id(self)] = copied
+        copied.update(copy.deepcopy(dict(self), memo))
+        copied.request_evidence = copy.deepcopy(self.request_evidence, memo)
+        return copied
 
 
 def _ensure_mapping(value: Any, ctx: str) -> Dict[str, Any]:
@@ -216,6 +270,113 @@ def _validate_sc_section(sc_cfg: Dict[str, Any], ctx: str) -> None:
         _reject_unknown_keys(hyper_map, SC_HYPER_KEYS, f"{ctx}.hyperresolution")
 
 
+def _validate_guidance_number(
+    value: Any,
+    ctx: str,
+    *,
+    allow_zero: bool = False,
+    maximum: float | None = None,
+) -> None:
+    valid = (
+        not isinstance(value, bool)
+        and isinstance(value, Real)
+        and math.isfinite(value)
+        and (value >= 0 if allow_zero else value > 0)
+        and (maximum is None or value <= maximum)
+    )
+    if not valid:
+        bounds = "greater than or equal to 0" if allow_zero else "greater than 0"
+        if maximum is not None:
+            bounds += f" and less than or equal to {maximum:g}"
+        raise ConfigError(f"{ctx} must be a finite real number {bounds}; got {value!r}")
+
+
+def _validate_local_refinement(section: Dict[str, Any], ctx: str) -> None:
+    _reject_unknown_keys(section, LOCAL_REFINEMENT_KEYS, ctx)
+    if "guidance" in section:
+        guidance = section["guidance"]
+        if not isinstance(guidance, str) or guidance not in GUIDANCE_POLICIES:
+            raise ConfigError(
+                f"{ctx}.guidance must be one of {sorted(GUIDANCE_POLICIES)}; "
+                f"got {guidance!r}"
+            )
+    compatibility = section.get("compatibility")
+    if compatibility is None:
+        return
+    compatibility = _ensure_mapping(compatibility, f"{ctx}.compatibility")
+    _reject_unknown_keys(
+        compatibility,
+        LOCAL_REFINEMENT_COMPATIBILITY_KEYS,
+        f"{ctx}.compatibility",
+    )
+    if (
+        section.get("guidance") == "off"
+        and set(compatibility) == LOCAL_REFINEMENT_COMPATIBILITY_KEYS
+        and all(
+            compatibility[key] is None
+            for key in LOCAL_REFINEMENT_COMPATIBILITY_KEYS
+        )
+    ):
+        return
+    if "mode" in compatibility:
+        mode = compatibility["mode"]
+        if not isinstance(mode, str) or mode not in GUIDANCE_COMPATIBILITY_MODES:
+            raise ConfigError(
+                f"{ctx}.compatibility.mode must be one of "
+                f"{sorted(GUIDANCE_COMPATIBILITY_MODES)}; got {mode!r}"
+            )
+    if "beta" in compatibility:
+        _validate_guidance_number(compatibility["beta"], f"{ctx}.compatibility.beta")
+    if "min_affinity" in compatibility:
+        _validate_guidance_number(
+            compatibility["min_affinity"],
+            f"{ctx}.compatibility.min_affinity",
+            maximum=1,
+        )
+    if "strength" in compatibility and compatibility["strength"] is not None:
+        _validate_guidance_number(
+            compatibility["strength"],
+            f"{ctx}.compatibility.strength",
+            allow_zero=True,
+        )
+
+
+def _validate_legacy_posterior_conditioning(
+    section: Dict[str, Any],
+    ctx: str,
+) -> None:
+    _reject_unknown_keys(section, POSTERIOR_CONDITIONING_KEYS, ctx)
+    posterior_key = section.get("posterior_key")
+    if posterior_key not in (None, ""):
+        raise ConfigError(
+            f"{ctx}.posterior_key is no longer supported; Assignment State is "
+            "provided explicitly by each local-refinement route"
+        )
+    if "mode" in section:
+        mode = section["mode"]
+        if mode not in {"off", "cost", "reference"}:
+            raise ConfigError(
+                f"{ctx}.mode must be one of ['cost', 'off', 'reference']; got {mode!r}"
+            )
+    for key in ("enabled", "strict"):
+        if key in section and not isinstance(section[key], bool):
+            raise ConfigError(f"{ctx}.{key} must be a boolean; got {section[key]!r}")
+    if "beta" in section:
+        _validate_guidance_number(section["beta"], f"{ctx}.beta")
+    if "min_affinity" in section:
+        _validate_guidance_number(
+            section["min_affinity"],
+            f"{ctx}.min_affinity",
+            maximum=1,
+        )
+    if "cost_strength" in section:
+        _validate_guidance_number(
+            section["cost_strength"],
+            f"{ctx}.cost_strength",
+            allow_zero=True,
+        )
+
+
 def _validate_sections(section_map: Dict[str, Any], ctx: str) -> None:
     if "annotate" in section_map:
         raise ConfigError(
@@ -255,10 +416,11 @@ def _validate_sections(section_map: Dict[str, Any], ctx: str) -> None:
             _validate_sc_section(value_map, f"{ctx}.sc")
         elif section == "impute":
             _reject_unknown_keys(value_map, IMPUTE_KEYS, f"{ctx}.impute")
+        elif section == "local_refinement":
+            _validate_local_refinement(value_map, f"{ctx}.local_refinement")
         elif section == "posterior_conditioning":
-            _reject_unknown_keys(
+            _validate_legacy_posterior_conditioning(
                 value_map,
-                POSTERIOR_CONDITIONING_KEYS,
                 f"{ctx}.posterior_conditioning",
             )
 
@@ -405,6 +567,215 @@ def _validate_resolved_config(merged: Dict[str, Any]) -> None:
         raise ConfigError("sc.svc_completeness must be exactly true")
 
 
+def _guidance_route_defaults(merged: Dict[str, Any]) -> Dict[str, Any]:
+    runtime = merged["runtime"]
+    guidance = "prefer" if runtime.get("task") == "sp_svc" else "off"
+    strength = 1.0 if runtime.get("task") == "sc_svc" else 0.2
+    return {
+        "guidance": guidance,
+        "compatibility": {
+            "mode": "cost",
+            "beta": 1.0,
+            "min_affinity": 0.05,
+            "strength": strength,
+        },
+    }
+
+
+def _translate_legacy_guidance(
+    legacy: Dict[str, Any],
+    *,
+    defaults: Dict[str, Any],
+) -> Dict[str, Any]:
+    enabled = legacy.get("enabled")
+    mode = legacy.get("mode")
+    strict = legacy.get("strict")
+    disabled = enabled is False or mode == "off"
+
+    if enabled is False and mode in {"cost", "reference"}:
+        raise ConfigError(
+            "posterior_conditioning has conflicting legacy enablement and mode"
+        )
+    if mode == "off" and enabled is True:
+        raise ConfigError(
+            "posterior_conditioning has conflicting legacy enablement and mode"
+        )
+    if disabled and strict is True:
+        raise ConfigError(
+            "posterior_conditioning strict=true conflicts with disabled guidance"
+        )
+
+    translated = copy.deepcopy(defaults)
+    if disabled:
+        translated["guidance"] = "off"
+    elif strict is True:
+        translated["guidance"] = "require"
+    elif enabled is True or mode in {"cost", "reference"}:
+        translated["guidance"] = "prefer"
+
+    compatibility = translated["compatibility"]
+    if mode in {"cost", "reference"}:
+        compatibility["mode"] = mode
+    for old, new in (
+        ("beta", "beta"),
+        ("min_affinity", "min_affinity"),
+        ("cost_strength", "strength"),
+    ):
+        if old in legacy:
+            compatibility[new] = legacy[old]
+    return translated
+
+
+def _normalize_guidance_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = copy.deepcopy(state)
+    if normalized["guidance"] == "off":
+        normalized["compatibility"] = {
+            "mode": None,
+            "beta": None,
+            "min_affinity": None,
+            "strength": None,
+        }
+    return normalized
+
+
+def _finalize_guidance_state(
+    state: Dict[str, Any],
+    *,
+    defaults: Dict[str, Any],
+) -> Dict[str, Any]:
+    finalized = copy.deepcopy(state)
+    if (
+        finalized["guidance"] != "off"
+        and finalized["compatibility"].get("strength") is None
+    ):
+        finalized["compatibility"]["strength"] = defaults["compatibility"]["strength"]
+    return _normalize_guidance_state(finalized)
+
+
+def _resolve_assignment_guidance(
+    merged: Dict[str, Any],
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    defaults = _guidance_route_defaults(merged)
+    new = merged.pop("local_refinement", None)
+    legacy = merged.pop("posterior_conditioning", None)
+    if new is not None:
+        _validate_local_refinement(
+            _ensure_mapping(new, "resolved.local_refinement"),
+            "resolved.local_refinement",
+        )
+    if legacy is not None:
+        _validate_legacy_posterior_conditioning(
+            _ensure_mapping(legacy, "resolved.posterior_conditioning"),
+            "resolved.posterior_conditioning",
+        )
+
+    new_state = deep_merge(defaults, new or {})
+    new_effective = _finalize_guidance_state(new_state, defaults=defaults)
+    legacy_state = (
+        _translate_legacy_guidance(legacy, defaults=defaults)
+        if legacy is not None
+        else None
+    )
+    legacy_effective = (
+        _finalize_guidance_state(legacy_state, defaults=defaults)
+        if legacy_state is not None
+        else None
+    )
+    if new is not None and legacy_effective is not None:
+        new_dimensions = set()
+        if "guidance" in new:
+            new_dimensions.add("guidance")
+        new_dimensions.update((new.get("compatibility") or {}).keys())
+
+        legacy_dimensions = set()
+        if set(legacy) & {"enabled", "mode", "strict"}:
+            legacy_dimensions.add("guidance")
+        if legacy.get("mode") in {"cost", "reference", "off"}:
+            legacy_dimensions.add("mode")
+        for legacy_key, dimension in (
+            ("beta", "beta"),
+            ("min_affinity", "min_affinity"),
+            ("cost_strength", "strength"),
+        ):
+            if legacy_key in legacy:
+                legacy_dimensions.add(dimension)
+
+        overlap = new_dimensions & legacy_dimensions
+        conflicting = (
+            "guidance" in overlap
+            and new_effective["guidance"] != legacy_effective["guidance"]
+        )
+        composed = deep_merge(legacy_state, new)
+        resolved = _finalize_guidance_state(composed, defaults=defaults)
+        if resolved["guidance"] != "off":
+            for dimension in overlap - {"guidance"}:
+                if (
+                    new_effective["compatibility"][dimension]
+                    != legacy_effective["compatibility"][dimension]
+                ):
+                    conflicting = True
+        if conflicting:
+            raise ConfigError(
+                "local_refinement conflicts with legacy posterior_conditioning"
+            )
+        source = "new"
+    elif new is not None:
+        resolved = new_effective
+        source = "new"
+    elif legacy_effective is not None:
+        resolved = legacy_effective
+        source = "legacy"
+    else:
+        resolved = _finalize_guidance_state(defaults, defaults=defaults)
+        source = "route_default"
+
+    if new is not None:
+        configured_guidance = new.get(
+            "guidance",
+            legacy_state["guidance"]
+            if legacy is not None
+            and set(legacy) & {"enabled", "mode", "strict"}
+            else None,
+        )
+        configured_mode = (new.get("compatibility") or {}).get(
+            "mode",
+            legacy.get("mode")
+            if legacy is not None
+            and legacy.get("mode") in GUIDANCE_COMPATIBILITY_MODES
+            else None,
+        )
+    elif legacy is not None:
+        configured_guidance = (
+            legacy_state["guidance"]
+            if set(legacy) & {"enabled", "mode", "strict"}
+            else None
+        )
+        configured_mode = (
+            legacy.get("mode")
+            if legacy.get("mode") in GUIDANCE_COMPATIBILITY_MODES
+            else None
+        )
+    else:
+        configured_guidance = None
+        configured_mode = None
+    evidence = {
+        "assignment_guidance": {
+            "configured_guidance": configured_guidance,
+            "configured_compatibility_mode": configured_mode,
+            "resolution_source": source,
+            "deprecations": (
+                [
+                    f"posterior_conditioning.{key}"
+                    for key in sorted(legacy)
+                ]
+                if legacy is not None
+                else []
+            ),
+        }
+    }
+    return resolved, evidence
+
+
 def _paths_overlap(left: str, right: str) -> bool:
     return (
         left == right
@@ -430,7 +801,7 @@ def merge_unified_config(
     runtime_overrides: Dict[str, Any],
     io_overrides: Dict[str, Any],
     algorithm_overrides: Dict[str, Any],
-) -> Dict[str, Any]:
+) -> ResolvedConfig:
     # Merge order is intentionally strict and explicit:
     # 1) defaults
     # 2) selected profile overrides
@@ -493,8 +864,10 @@ def merge_unified_config(
     merged = deep_merge(merged, algorithm_overrides)
 
     _resolve_runtime_route(raw_config, merged)
+    resolved_guidance, request_evidence = _resolve_assignment_guidance(merged)
+    merged["local_refinement"] = resolved_guidance
     _validate_resolved_config(merged)
-    return merged
+    return ResolvedConfig(merged, request_evidence=request_evidence)
 
 
 def infer_default_profile(raw_config: Dict[str, Any], runtime_overrides: Dict[str, Any]) -> str | None:

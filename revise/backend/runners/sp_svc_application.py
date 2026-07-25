@@ -9,14 +9,12 @@ from tqdm import tqdm
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.ops.distance import similarity_to_distance
-from revise.backend.ops.posterior_conditioning import (
-    condition_cost_matrix,
-    get_posterior_matrix,
-    neighbor_posterior_affinity,
-    posterior_conditioning_enabled,
-    posterior_conditioning_mode,
-    posterior_conditioning_strict,
-    reference_measure_from_marginals,
+from revise.backend.runners.sp_svc_assignment_guidance import (
+    assignment_categories,
+    guidance_mode,
+    prepare_assignment_guidance,
+    record_guidance_terminal,
+    record_not_applicable,
 )
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.shaver import trim_sp_adata
@@ -203,8 +201,16 @@ class SpSVC(ApplicationSVC):
         self.logger.info(f"after trim: {svc_recon_adata.X.data.shape}")
 
         svc_recon_adata.obsm = self.st_adata.obsm.copy()
+        assignment_category_labels = []
+        if guidance_mode(self.config) != "off":
+            assignment_category_labels = assignment_categories(
+                self.sc_ref_adata,
+                svc_recon_adata,
+                key=self.config.cell_type_col,
+            )
         cell_type_adata_list = []
         for cell_type in tqdm(svc_recon_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstructing"):
+            guidance_problem_key = f"sp_svc_application:{cell_type}"
             svc_recon_adata_cell_type = svc_recon_adata[svc_recon_adata.obs[self.config.cell_type_col] == cell_type]
             raw_st_adata_cell_type = svc_recon_adata_cell_type.copy()
             self.logger.info(f"begin OT smoothing for cell type: {cell_type}, adata shape: {svc_recon_adata_cell_type.shape}")
@@ -213,6 +219,18 @@ class SpSVC(ApplicationSVC):
             # established no-smoothing fallback instead of failing in PCA.
             if svc_recon_adata_cell_type.shape[0] <= 50:
                 self.logger.info(f"cell type: {cell_type}, has too few spots, skip OT smoothing")
+                if getattr(
+                    self.config,
+                    "assignment_guidance_callback",
+                    None,
+                ) is not None:
+                    record_not_applicable(
+                        self.config,
+                        route="sp_svc_application",
+                        operator="neighbor_ot",
+                        problem_key=guidance_problem_key,
+                        reason="insufficient_observations",
+                    )
                 cell_type_adata_list.append(svc_recon_adata_cell_type)
             else:
                 adjacent_matrix = get_adjacency_graph(
@@ -256,6 +274,18 @@ class SpSVC(ApplicationSVC):
                     self.logger.info(
                         f"cell type: {cell_type}, skip OT smoothing due to empty active support"
                     )
+                    if getattr(
+                        self.config,
+                        "assignment_guidance_callback",
+                        None,
+                    ) is not None:
+                        record_not_applicable(
+                            self.config,
+                            route="sp_svc_application",
+                            operator="neighbor_ot",
+                            problem_key=guidance_problem_key,
+                            reason="empty_active_support",
+                        )
                     cell_type_adata_list.append(svc_recon_adata_cell_type)
                     continue
                 stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
@@ -265,71 +295,77 @@ class SpSVC(ApplicationSVC):
                     similarity_matrix,
                     valid_neighbor_mask,
                 )
-
-                posterior_affinity = None
-                pc_mode = posterior_conditioning_mode(self.config)
-                if pc_mode != "off":
-                    posterior_key = getattr(
-                        self.config,
-                        "posterior_conditioning_key",
-                        self.config.cell_type_col,
-                    )
-                    q = get_posterior_matrix(svc_recon_adata_cell_type, posterior_key)
-                    if q is None and posterior_key != self.config.cell_type_col:
-                        q = get_posterior_matrix(svc_recon_adata_cell_type, self.config.cell_type_col)
-                    if q is None:
-                        msg = (
-                            "Posterior conditioning requested for "
-                            f"{cell_type} but obsm[{posterior_key!r}] is unavailable"
-                        )
-                        if posterior_conditioning_strict(self.config):
-                            raise ValueError(msg)
-                        self.logger.warning("%s; falling back to the unconditioned OT objective.", msg)
-                    else:
-                        posterior_affinity = neighbor_posterior_affinity(
-                            q,
-                            neighbor_idx_matrix,
-                            beta=getattr(self.config, "posterior_conditioning_beta", 1.0),
-                            min_affinity=getattr(self.config, "posterior_conditioning_min_affinity", 0.05),
-                        )
-                        if posterior_conditioning_enabled(self.config, "cost"):
-                            distance_matrix = condition_cost_matrix(
-                                distance_matrix,
-                                posterior_affinity,
-                                getattr(self.config, "posterior_conditioning_cost_strength", 0.2),
-                            )
+                (
+                    distance_matrix,
+                    reference_measure,
+                    guidance_attempted,
+                ) = prepare_assignment_guidance(
+                    self.config,
+                    route="sp_svc_application",
+                    operator="neighbor_ot",
+                    problem_key=guidance_problem_key,
+                    left_adata=svc_recon_adata_cell_type,
+                    right_adata=svc_recon_adata_cell_type,
+                    category_labels=assignment_category_labels,
+                    support=neighbor_idx_matrix,
+                    distance_matrix=distance_matrix,
+                    source_mass=nu,
+                    target_mass=mu,
+                )
                 distance_matrix[~valid_neighbor_mask] = np.inf
-                reference_measure = None
-                if posterior_affinity is not None and posterior_conditioning_enabled(self.config, "reference"):
-                    reference_measure = reference_measure_from_marginals(nu, mu, posterior_affinity.T)
-                T_transform = solve_local_ot(
-                    nu,
-                    mu,
-                    distance_matrix.T,
-                    method=self.config.rec_ot_method,
-                    pot_reg=self.config.rec_pot_reg,
-                    pot_reg_m=self.config.rec_pot_reg_m,
-                    pot_reg_type=self.config.rec_pot_reg_type,
-                    pot_verbose=True,
-                    pot_num_iter_max=5000,
-                    reference_measure=reference_measure,
-                    valid_support_mask=valid_neighbor_mask.T,
-                    event_callback=getattr(self.config, "ot_event_callback", None),
+                try:
+                    T_transform = solve_local_ot(
+                        nu,
+                        mu,
+                        distance_matrix.T,
+                        method=self.config.rec_ot_method,
+                        pot_reg=self.config.rec_pot_reg,
+                        pot_reg_m=self.config.rec_pot_reg_m,
+                        pot_reg_type=self.config.rec_pot_reg_type,
+                        pot_verbose=True,
+                        pot_num_iter_max=5000,
+                        reference_measure=reference_measure,
+                        valid_support_mask=valid_neighbor_mask.T,
+                        event_callback=getattr(self.config, "ot_event_callback", None),
+                    )
+                except Exception:
+                    record_guidance_terminal(
+                        self.config,
+                        problem_key=guidance_problem_key,
+                        attempted=guidance_attempted,
+                        outcome="failed",
+                        reason="solver_failed",
+                    )
+                    raise
+                try:
+                    # Ensure expressions are unchanged before aggregation
+                    _validate_expression_unchanged(
+                        svc_recon_adata_cell_type.X,
+                        raw_st_adata_cell_type.X,
+                        cell_type=cell_type,
+                    )
+                    svc_recon_adata_cell_type = self.graph_aggregate.run(
+                        adata=svc_recon_adata_cell_type,
+                        neighbor_idx_matrix=neighbor_idx_matrix,
+                        coupling_matrix=T_transform,
+                        valid_neighbor_mask=valid_neighbor_mask,
+                    )
+                    cell_type_adata_list.append(svc_recon_adata_cell_type)
+                except Exception:
+                    record_guidance_terminal(
+                        self.config,
+                        problem_key=guidance_problem_key,
+                        attempted=guidance_attempted,
+                        outcome="failed",
+                        reason="expression_update_failed",
+                    )
+                    raise
+                record_guidance_terminal(
+                    self.config,
+                    problem_key=guidance_problem_key,
+                    attempted=guidance_attempted,
+                    outcome="applied",
                 )
-
-                # Ensure expressions are unchanged before aggregation
-                _validate_expression_unchanged(
-                    svc_recon_adata_cell_type.X,
-                    raw_st_adata_cell_type.X,
-                    cell_type=cell_type,
-                )
-                svc_recon_adata_cell_type = self.graph_aggregate.run(
-                    adata=svc_recon_adata_cell_type,
-                    neighbor_idx_matrix=neighbor_idx_matrix,
-                    coupling_matrix=T_transform,
-                    valid_neighbor_mask=valid_neighbor_mask,
-                )
-                cell_type_adata_list.append(svc_recon_adata_cell_type)
         self.svc["sp_svc"] = sc.concat(cell_type_adata_list)
         self.svc["sp_svc"].X = sparse.csr_matrix(self.svc["sp_svc"].X)
 

@@ -331,6 +331,47 @@ def test_true_cell_type_keeps_randomly_allocated_cells_as_unknown(adapters):
     assert result.loc[1, ["x", "y"]].tolist() == [9.0, 8.0]
 
 
+def test_true_cell_type_default_falls_back_to_historical_level1(adapters):
+    meta = importlib.import_module("revise.backend.ops.meta")
+    svc_obs = pd.DataFrame(
+        {"cell_id": ["known"], "x": [1.0], "y": [2.0]}
+    )
+    gt = SimpleNamespace(
+        obs=pd.DataFrame(
+            {
+                "cell_id": ["known"],
+                "Level1": ["T"],
+                "x": [3.0],
+                "y": [4.0],
+            }
+        )
+    )
+
+    result = meta.get_true_cell_type(svc_obs, gt)
+
+    assert result["true_cell_type"].tolist() == ["T"]
+
+
+def test_true_cell_type_explicit_label_key_does_not_fallback(adapters):
+    meta = importlib.import_module("revise.backend.ops.meta")
+    svc_obs = pd.DataFrame(
+        {"cell_id": ["known"], "x": [1.0], "y": [2.0]}
+    )
+    gt = SimpleNamespace(
+        obs=pd.DataFrame(
+            {
+                "cell_id": ["known"],
+                "Level1": ["T"],
+                "x": [3.0],
+                "y": [4.0],
+            }
+        )
+    )
+
+    with pytest.raises(KeyError, match="clusters"):
+        meta.get_true_cell_type(svc_obs, gt, label_key="clusters")
+
+
 @pytest.mark.parametrize(
     ("strategy_name", "profile", "runner_module", "runner_class"),
     [

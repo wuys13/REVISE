@@ -7,14 +7,12 @@ from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import SegEvaluateKernel as SegEvaluate
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
-from revise.backend.ops.posterior_conditioning import (
-    condition_cost_matrix,
-    get_posterior_matrix,
-    neighbor_posterior_affinity,
-    posterior_conditioning_enabled,
-    posterior_conditioning_mode,
-    posterior_conditioning_strict,
-    reference_measure_from_marginals,
+from revise.backend.runners.sp_svc_assignment_guidance import (
+    assignment_categories,
+    guidance_mode,
+    prepare_assignment_guidance,
+    record_guidance_terminal,
+    record_not_applicable,
 )
 from revise.backend.ops.topology import get_adjacency_graph
 
@@ -49,18 +47,50 @@ class SpSVC(BenchmarkSVC):
             self.logger.warning("No 'seg_error' not in st_adata.obs, evaluation skip.")
         cell_type_adata_list = []
         for cell_type in tqdm(self.st_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstruting"):
+            guidance_problem_key = f"sp_svc_benchmark:{cell_type}"
             svc_adata_cell_type = self.st_adata[self.st_adata.obs[self.config.cell_type_col] == cell_type]
             svc_replace_adata = svc_adata_cell_type[~svc_adata_cell_type.obs["no_effect"]]
             svc_candidate_adata = svc_adata_cell_type[svc_adata_cell_type.obs["no_effect"]]
             if svc_replace_adata.shape[0] < 50:
                 self.logger.info(f"cell type: {cell_type} has too few spots, skip OT smoothing")
+                if getattr(
+                    self.config,
+                    "assignment_guidance_callback",
+                    None,
+                ) is not None:
+                    record_not_applicable(
+                        self.config,
+                        route="sp_svc_benchmark",
+                        operator="replacement_ot",
+                        problem_key=guidance_problem_key,
+                        reason="insufficient_observations",
+                    )
                 svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                 cell_type_adata_list.append(svc_replace_adata)
             elif svc_candidate_adata.shape[0] == 0:
                 self.logger.info(f"cell type: {cell_type} has no candidate cells, skip OT smoothing")
+                if getattr(
+                    self.config,
+                    "assignment_guidance_callback",
+                    None,
+                ) is not None:
+                    record_not_applicable(
+                        self.config,
+                        route="sp_svc_benchmark",
+                        operator="replacement_ot",
+                        problem_key=guidance_problem_key,
+                        reason="missing_donors",
+                    )
                 svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                 cell_type_adata_list.append(svc_replace_adata)
             else:
+                assignment_category_labels = []
+                if guidance_mode(self.config) != "off":
+                    assignment_category_labels = assignment_categories(
+                        self.sc_ref_adata,
+                        self.st_adata,
+                        key=self.config.cell_type_col,
+                    )
                 # Build adjacency on ordered data to align replace and candidate partitions
                 svc_ordered = sc.concat([svc_replace_adata, svc_candidate_adata])
                 adjacent_matrix_all = get_adjacency_graph(
@@ -127,6 +157,18 @@ class SpSVC(BenchmarkSVC):
                     self.logger.info(
                         f"cell type: {cell_type}, skip OT smoothing due to empty active support"
                     )
+                    if getattr(
+                        self.config,
+                        "assignment_guidance_callback",
+                        None,
+                    ) is not None:
+                        record_not_applicable(
+                            self.config,
+                            route="sp_svc_benchmark",
+                            operator="replacement_ot",
+                            problem_key=guidance_problem_key,
+                            reason="empty_active_support",
+                        )
                     svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                     cell_type_adata_list.append(svc_replace_adata)
                     continue
@@ -137,107 +179,97 @@ class SpSVC(BenchmarkSVC):
                     similarity_matrix,
                     valid_neighbor_mask,
                 )
-                posterior_affinity = None
-                pc_mode = posterior_conditioning_mode(self.config)
-                if pc_mode != "off":
-                    posterior_key = getattr(
-                        self.config,
-                        "posterior_conditioning_key",
-                        self.config.cell_type_col,
-                    )
-                    q_replace = get_posterior_matrix(svc_replace_adata, posterior_key)
-                    q_candidate = get_posterior_matrix(svc_candidate_adata, posterior_key)
-                    if (
-                        (q_replace is None or q_candidate is None)
-                        and posterior_key != self.config.cell_type_col
-                    ):
-                        q_replace = get_posterior_matrix(svc_replace_adata, self.config.cell_type_col)
-                        q_candidate = get_posterior_matrix(svc_candidate_adata, self.config.cell_type_col)
-                    if q_replace is None or q_candidate is None:
-                        msg = (
-                            "Posterior conditioning requested for "
-                            f"{cell_type} but compatible obsm[{posterior_key!r}] is unavailable"
-                        )
-                        if posterior_conditioning_strict(self.config):
-                            raise ValueError(msg)
-                        self.logger.warning(
-                            "%s; falling back to the unconditioned OT objective.",
-                            msg,
-                        )
-                    elif q_replace.shape[1] != q_candidate.shape[1]:
-                        msg = (
-                            "Posterior conditioning requested for "
-                            f"{cell_type} but posterior dimensions differ "
-                            f"(replace={q_replace.shape[1]}, candidate={q_candidate.shape[1]})"
-                        )
-                        if posterior_conditioning_strict(self.config):
-                            raise ValueError(msg)
-                        self.logger.warning("%s; falling back to the unconditioned OT objective.", msg)
-                    else:
-                        posterior_affinity = neighbor_posterior_affinity(
-                            q_replace,
-                            neighbor_idx_matrix,
-                            q_neighbors=q_candidate,
-                            beta=getattr(self.config, "posterior_conditioning_beta", 1.0),
-                            min_affinity=getattr(self.config, "posterior_conditioning_min_affinity", 0.05),
-                        )
-                        if posterior_conditioning_enabled(self.config, "cost"):
-                            distance_matrix = condition_cost_matrix(
-                                distance_matrix,
-                                posterior_affinity,
-                                getattr(self.config, "posterior_conditioning_cost_strength", 0.2),
-                            )
-
+                (
+                    distance_matrix,
+                    reference_measure,
+                    guidance_attempted,
+                ) = prepare_assignment_guidance(
+                    self.config,
+                    route="sp_svc_benchmark",
+                    operator="replacement_ot",
+                    problem_key=guidance_problem_key,
+                    left_adata=svc_replace_adata,
+                    right_adata=svc_candidate_adata,
+                    category_labels=assignment_category_labels,
+                    support=neighbor_idx_matrix,
+                    distance_matrix=distance_matrix,
+                    source_mass=nu,
+                    target_mass=mu,
+                )
                 distance_matrix[~valid_neighbor_mask] = np.inf
-                reference_measure = None
-                if posterior_affinity is not None and posterior_conditioning_enabled(self.config, "reference"):
-                    reference_measure = reference_measure_from_marginals(
+                try:
+                    T_transform = solve_local_ot(
                         nu,
                         mu,
-                        posterior_affinity.T,
+                        distance_matrix.T,
+                        method=self.config.rec_ot_method,
+                        pot_reg=self.config.rec_pot_reg,
+                        pot_reg_m=self.config.rec_pot_reg_m,
+                        pot_reg_type=self.config.rec_pot_reg_type,
+                        pot_verbose=True,
+                        pot_num_iter_max=5000,
+                        reference_measure=reference_measure,
+                        valid_support_mask=valid_neighbor_mask.T,
+                        event_callback=getattr(self.config, "ot_event_callback", None),
                     )
-                T_transform = solve_local_ot(
-                    nu,
-                    mu,
-                    distance_matrix.T,
-                    method=self.config.rec_ot_method,
-                    pot_reg=self.config.rec_pot_reg,
-                    pot_reg_m=self.config.rec_pot_reg_m,
-                    pot_reg_type=self.config.rec_pot_reg_type,
-                    pot_verbose=True,
-                    pot_num_iter_max=5000,
-                    reference_measure=reference_measure,
-                    valid_support_mask=valid_neighbor_mask.T,
-                    event_callback=getattr(self.config, "ot_event_callback", None),
+                except Exception:
+                    record_guidance_terminal(
+                        self.config,
+                        problem_key=guidance_problem_key,
+                        attempted=guidance_attempted,
+                        outcome="failed",
+                        reason="solver_failed",
+                    )
+                    raise
+                try:
+                    alpha = float(self.config.rec_alpha)
+                    smoothed = scipy.sparse.lil_matrix(
+                        recon_X_csr.shape,
+                        dtype=recon_X_csr.dtype,
+                    )
+
+                    for i in range(n_recon):
+                        idx = neighbor_idx_matrix[i]
+                        valid_mask = valid_neighbor_mask[i]
+                        if not np.any(valid_mask):
+                            smoothed[i] = recon_X_csr.getrow(i)
+                            continue
+
+                        idx = idx[valid_mask]
+                        w = T_transform[valid_mask, i]
+                        w_sum = w.sum()
+                        if w_sum <= 0:
+                            smoothed[i] = recon_X_csr.getrow(i)
+                            continue
+                        w = w / w_sum
+
+                        neigh_expr = cand_X_csr[idx]
+                        weighted = neigh_expr.T @ w
+                        weighted = np.asarray(weighted).ravel()
+
+                        base = recon_X_csr.getrow(i).toarray().ravel()
+                        new_vec = (1.0 - alpha) * base + alpha * weighted
+
+                        smoothed[i] = scipy.sparse.csr_matrix(new_vec)
+                    svc_replace_adata.layers["ot_smooth"] = (
+                        smoothed.tocsr().copy()
+                    )
+                    cell_type_adata_list.append(svc_replace_adata)
+                except Exception:
+                    record_guidance_terminal(
+                        self.config,
+                        problem_key=guidance_problem_key,
+                        attempted=guidance_attempted,
+                        outcome="failed",
+                        reason="expression_update_failed",
+                    )
+                    raise
+                record_guidance_terminal(
+                    self.config,
+                    problem_key=guidance_problem_key,
+                    attempted=guidance_attempted,
+                    outcome="applied",
                 )
-                alpha = float(self.config.rec_alpha)
-                smoothed = scipy.sparse.lil_matrix(recon_X_csr.shape, dtype=recon_X_csr.dtype)
-
-                for i in range(n_recon):
-                    idx = neighbor_idx_matrix[i]
-                    valid_mask = valid_neighbor_mask[i]
-                    if not np.any(valid_mask):
-                        smoothed[i] = recon_X_csr.getrow(i)
-                        continue
-
-                    idx = idx[valid_mask]
-                    w = T_transform[valid_mask, i]
-                    w_sum = w.sum()
-                    if w_sum <= 0:
-                        smoothed[i] = recon_X_csr.getrow(i)
-                        continue
-                    w = w / w_sum
-
-                    neigh_expr = cand_X_csr[idx]
-                    weighted = (neigh_expr.T @ w)
-                    weighted = np.asarray(weighted).ravel()
-
-                    base = recon_X_csr.getrow(i).toarray().ravel()
-                    new_vec = (1.0 - alpha) * base + alpha * weighted
-
-                    smoothed[i] = scipy.sparse.csr_matrix(new_vec)
-                svc_replace_adata.layers["ot_smooth"] = smoothed.tocsr().copy()
-                cell_type_adata_list.append(svc_replace_adata)
 
         svc_recon_adata = sc.concat(cell_type_adata_list)
         svc_recon_adata.X = svc_recon_adata.layers["ot_smooth"].copy()

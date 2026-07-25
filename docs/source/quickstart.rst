@@ -46,8 +46,11 @@ For ``--sample-name sample``, ``--st-file st.h5ad``, and
 The resolved paths are ``data/sample_st.h5ad`` and ``data/sc_ref.h5ad``. Both
 inputs require non-empty ``X``, unique ``obs_names`` and unique ``var_names``.
 The ST input requires two spatial coordinate columns in ``obsm["spatial"]``.
-sp-SVC requires ``Level1`` in reference ``obs``; sc-SVC and sc-SVC-sr require
-both ``Level1`` and ``Level2``. The inputs must share at least one gene.
+Every route requires the configured broad annotation in reference ``obs``
+(``Level1`` by default). Only standard sc-SVC requires the configured subtype
+annotation (``Level2`` by default). sc-SVC-sr composition and expression
+allocation use the broad assignment and do not require a subtype column. The
+inputs must share at least one gene.
 
 If the reference has the default ``Patient`` column, its values are matched to
 ``--sample-name``. Select another column with ``--patient-key``.
@@ -68,8 +71,8 @@ Application command
 Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
 sc-SVC-sr`` for spot super-resolution. ``--cell-type-col`` selects the broad
 reference annotation on every route. ``--sub-cell-type-col`` selects the
-refined annotation required by both sc-SVC routes; the current sc-SVC-sr
-composition assignment uses the broad column. sc-SVC also accepts
+refined annotation required only by standard sc-SVC. sc-SVC-sr uses the broad
+assignment for composition and expression allocation. sc-SVC also accepts
 ``--select-ct`` and ``--sc-mapping mean|random``.
 
 For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in

@@ -3,6 +3,7 @@ import scanpy as sc
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphClusterKernel as GraphCluster
 from revise.backend.kernels import LocalAnchoringKernel as LocalAnchoring
+from revise.backend.ops.assignment_guidance import assignment_guidance_mode
 from revise.analysis.bio import get_degs
 from revise.analysis.bio import conclusions_write
 from revise.analysis.bio import plot_volcano
@@ -38,10 +39,40 @@ class ScSVC(ApplicationSVC):
         cell_type_col = self.config.cell_type_col
         ct_adata_sp = self.st_adata[self.st_adata.obs[cell_type_col] == select_ct]
         ct_adata_sc = self.sc_ref_adata[self.sc_ref_adata.obs[cell_type_col] == select_ct]
+        problem_key = f"standard-sc:{select_ct}"
+        if ct_adata_sc.n_obs == 0:
+            self.graph_cluster.record_not_applicable(
+                problem_key=problem_key,
+                reason="missing_reference_cells",
+            )
+            raise ValueError(
+                f"Selected cell type {select_ct!r} has no reference cells"
+            )
+        if ct_adata_sp.n_obs < 2:
+            self.graph_cluster.record_not_applicable(
+                problem_key=problem_key,
+                reason="insufficient_spatial_cells",
+            )
+            raise ValueError(
+                "Graph clustering requires at least two spatial cells"
+            )
         annotate_kwargs = dict(self.config.__dict__)
         annotate_kwargs["cell_type_col"] = sub_cell_type_col
         ct_adata_sp = self.local_annotate_method.run(ct_adata_sp, ct_adata_sc, **annotate_kwargs)
-        sc_SVC_adata, merge_df, best_res = self.graph_cluster.run(ct_adata_sp, resolutions, sub_cell_type_col)
+        guidance_state = None
+        if assignment_guidance_mode(self.config) != "off":
+            guidance_state = self.local_annotate_method.assignment_state(
+                ct_adata_sp,
+                sub_cell_type_col,
+            )
+        sc_SVC_adata, _merge_df, best_res = self.graph_cluster.run(
+            ct_adata_sp,
+            resolutions,
+            sub_cell_type_col,
+            guidance_state=guidance_state,
+            problem_key=problem_key,
+            selected_resolution=select_res,
+        )
         if select_res is None:
             self.logger.info(f"User does not input select_res, use best_res {best_res} based on spatial alignment score")
             select_res = best_res
@@ -49,7 +80,9 @@ class ScSVC(ApplicationSVC):
             self.logger.info(f"Use resolution {select_res} from user input")
 
         sc_SVC_adata.obs[self.cluster_col] = sc_SVC_adata.obs[f'leiden_{select_res}'].astype('category')
-        sp_cluster_num = merge_df.loc[merge_df['resolution'] == best_res, 'cluster_num'].values[0]
+        sp_cluster_num = int(
+            sc_SVC_adata.obs[f"leiden_{select_res}"].nunique()
+        )
         self.logger.info(f"resolution {select_res} got cluster number {sp_cluster_num}")
 
         annotate_kwargs = dict(self.config.__dict__)

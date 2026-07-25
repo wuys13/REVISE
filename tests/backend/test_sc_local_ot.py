@@ -10,6 +10,61 @@ import pytest
 from anndata import AnnData
 
 
+_ISOLATED_PREFIXES = (
+    "scanpy",
+    "revise.backend.adapters",
+    "revise.backend.runners.sc_svc_application",
+)
+_MISSING = object()
+
+
+def _isolated_module_names():
+    return tuple(
+        name
+        for name in sys.modules
+        if any(
+            name == prefix or name.startswith(f"{prefix}.")
+            for prefix in _ISOLATED_PREFIXES
+        )
+    )
+
+
+@pytest.fixture(autouse=True)
+def _restore_sc_test_modules():
+    names = _isolated_module_names()
+    modules = {name: sys.modules.get(name, _MISSING) for name in names}
+    parent_attributes = {}
+    for name in names:
+        parent_name, separator, attribute = name.rpartition(".")
+        if separator and parent_name in sys.modules:
+            parent_attributes[(parent_name, attribute)] = getattr(
+                sys.modules[parent_name],
+                attribute,
+                _MISSING,
+            )
+    yield
+    current = _isolated_module_names()
+    for name in current:
+        sys.modules.pop(name, None)
+    for name in current:
+        parent_name, separator, attribute = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if separator and parent is not None and hasattr(parent, attribute):
+            delattr(parent, attribute)
+    for name, module in modules.items():
+        if module is not _MISSING:
+            sys.modules[name] = module
+    for (parent_name, attribute), value in parent_attributes.items():
+        parent = sys.modules.get(parent_name)
+        if parent is None:
+            continue
+        if value is _MISSING:
+            if hasattr(parent, attribute):
+                delattr(parent, attribute)
+        else:
+            setattr(parent, attribute, value)
+
+
 def _import_sc_svc(monkeypatch):
     scanpy = types.ModuleType("scanpy")
     scanpy.pp = SimpleNamespace()
@@ -185,6 +240,13 @@ def test_local_anchoring_routes_normalized_problem_to_shared_solver(
         "event_callback": None,
     }
     assert result.obs["Level2"].tolist() == ["A", "B"]
+    state = kernel.assignment_state(result, "Level2")
+    assert state is not None
+    assert state.level == "Level2"
+    assert state.source == "local_anchoring:obsm[Level2]"
+    assert tuple(state.observation_labels) == ("sp1", "sp2")
+    assert tuple(state.category_labels) == ("A", "B")
+    np.testing.assert_allclose(state.values, [[1.0, 0.0], [0.0, 1.0]])
 
 
 @pytest.mark.parametrize(
@@ -247,7 +309,15 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
             "preprocess": {},
             "graph": {},
             "sc": {},
-            "posterior_conditioning": {},
+            "local_refinement": {
+                "guidance": "off",
+                "compatibility": {
+                    "mode": "off",
+                    "beta": 1.0,
+                    "min_affinity": 0.05,
+                    "strength": 0.2,
+                },
+            },
         },
         io={
             "sample_name": "sample",

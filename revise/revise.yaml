@@ -109,15 +109,6 @@ defaults:
     n_neighbors: 1
     method: mean
 
-  posterior_conditioning:
-    enabled: true
-    mode: "cost"       # off | cost | reference
-    posterior_key: null
-    beta: 1.0
-    min_affinity: 0.05
-    cost_strength: 0.2
-    strict: false
-
 router:
   sim2real:
     segmentation:

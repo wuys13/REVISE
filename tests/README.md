@@ -24,14 +24,19 @@ environment variables documented in their modules and CI jobs.
 | `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
 | `application/test_service.py` | `revise/application/service.py` | sc-SVC merge and `SVC.h5ad` publication | Result-assembly edits | No kernels or real data |
 | `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
+| `backend/test_assignment_guidance_policy.py` | `revise/backend/ops/assignment*.py` | Assignment axes, value semantics, compatibility penalties, policy, and invocation outcomes | Assignment-guidance contract edits | Synthetic states and collector transitions only |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
 | `backend/test_graph_cluster_spatial_score.py` | `revise/backend/` graph code | Graph aggregation, clustering, and scale smoke | Graph/backend edits | Component scale, not full pipeline |
 | `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | sc-SVC LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
+| `backend/test_sc_graph_guidance.py` | sc-SVC graph route | Level2 Graph guidance and unguided-resolution/fixed-guided clustering | Graph-route edits | Synthetic Graph and public-route proof only |
+| `backend/test_sc_imputation_guidance.py` | sc-SVC imputation route | Spatial-to-reference-subcluster compatibility and public panel/dropout routes | Imputation-route edits | Synthetic imputation proof |
+| `backend/test_sc_sr_guidance.py` | sc-SVC-SR route | Mandatory allocation invariance, projected virtual assignment, and three public routes | SR-route edits | Synthetic SR proof |
 | `backend/test_scientific_contracts.py` | Backend kernels/ops and analysis formulas | Cross-cutting scientific invariants | Scientific implementation edits | Formula/array contracts only |
 | `backend/test_solver_routing.py` | `revise/backend/ops/` and route callers | Solver dispatch, event recording, and caller coverage | OT edits | Mocked/synthetic solver boundaries |
 | `backend/test_spot_sr_assignment.py` | `revise/backend/kernels/spot_sr.py` | PM-on-cell and random cell-type allocation | Spot-SR edits | Assignment, not localization truth |
 | `backend/test_spot_sr_min_cells.py` | `revise/backend/adapters.py` | Spot-SR gene filtering and overlap checks | Spot-SR preprocessing edits | Synthetic matrices |
 | `backend/test_spot_sr_quota.py` | `revise/backend/kernels/spot_sr.py` | Rounded quota repair and large component smoke | Spot-SR allocation edits | Quota correctness only |
+| `backend/test_sp_assignment_guidance.py` | sp-SVC route | Neighbor/replacement OT guidance, solver/mode capability, and public application/benchmark routes | sp-route edits | Synthetic local-problem proof |
 | `backend/test_tacco_global_freshness.py` | TACCO global anchoring | Freshness and failure behavior | TACCO edits | Synthetic solver interaction |
 | `benchmark/test_cli_contract.py` | `revise/benchmark/cli.py` | Public benchmark options produce typed algorithm configuration without a generic override flag; process-scoped seeds become explicit per-leaf seeds | Benchmark CLI/config edits | Argument, seed, and wrapper contract only |
 | `benchmark/test_launcher.py` | `reproduce/benchmark_main.sh`, `revise/benchmark/launcher.py` | Bounded parallel launch and failure propagation | Benchmark launcher edits | Fake worker processes |
@@ -54,6 +59,7 @@ environment variables documented in their modules and CI jobs.
 | `integration/application/test_installed_cli.py` | Built wheel + application CLI | Wheel install, external-CWD preflight, small POT source/wheel parity | Release candidate | 52x52 synthetic run; no biology |
 | `integration/distribution/test_artifacts.py` | Build metadata and artifacts | Exact wheel/sdist contents and clean installation | Release candidate | Packaging only |
 | `integration/solvers/test_tacco_solver_smoke.py` | Optional TACCO installation | Real TACCO 0.5.0 GA/LR smoke and import order | TACCO/CI release gate | Tiny solver smoke; no parity claim |
+| `integration/solvers/test_assignment_guidance_solver_smoke.py` | Installed POT/TACCO | Real conditioned-cost candidate and reference+TACCO preflight rejection | Guidance solver/release gate | Tiny matrices; skipped solvers are not evidence |
 
 When adding a test module, place it under its production owner, add it to this
 table, and state both what it detects and what it cannot prove.

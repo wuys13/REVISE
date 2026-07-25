@@ -10,6 +10,10 @@ CLAUDE.md
 
 # Local-only reviewer/development material
 SMI/
+/docs/design/
+/docs/plans/
+/.codegraph/
+/assignment-guidance-collaboration.zip
 
 plot/
 results/

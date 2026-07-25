@@ -71,18 +71,22 @@ def _ot_runner_kwargs(cfg: Dict[str, Any], *, impute: bool = False) -> Dict[str,
 
 
 def _attach_posterior_conditioning_conf(conf, cfg: Dict[str, Any]) -> None:
-    pcfg = _cfg_get(cfg, "posterior_conditioning", default={}) or {}
-    conf.posterior_conditioning_enabled = bool(pcfg.get("enabled", False))
-    mode = pcfg.get("mode", "off")
-    conf.posterior_conditioning_mode = "off" if mode is False or mode is None else str(mode)
-    posterior_key = pcfg.get("posterior_key")
-    conf.posterior_conditioning_key = str(
-        conf.cell_type_col if posterior_key is None else posterior_key
+    resolved = cfg["local_refinement"]
+    guidance = str(resolved["guidance"])
+    compatibility = resolved["compatibility"]
+    conf.assignment_guidance_policy = guidance
+    conf.posterior_conditioning_enabled = guidance != "off"
+    conf.posterior_conditioning_mode = str(compatibility["mode"] or "off")
+    conf.posterior_conditioning_key = str(conf.cell_type_col)
+    conf.posterior_conditioning_beta = float(compatibility["beta"] or 1.0)
+    conf.posterior_conditioning_min_affinity = float(
+        compatibility["min_affinity"] or 0.05
     )
-    conf.posterior_conditioning_beta = float(pcfg.get("beta", 1.0))
-    conf.posterior_conditioning_min_affinity = float(pcfg.get("min_affinity", 0.05))
-    conf.posterior_conditioning_cost_strength = float(pcfg.get("cost_strength", 0.2))
-    conf.posterior_conditioning_strict = bool(pcfg.get("strict", False))
+    strength = compatibility["strength"]
+    conf.posterior_conditioning_cost_strength = float(
+        0.2 if strength is None else strength
+    )
+    conf.posterior_conditioning_strict = guidance == "require"
 
 
 def _resolve_runtime_seed(ctx) -> int:
@@ -473,12 +477,20 @@ def _install_safe_topology_patch() -> None:
 class RunnerBackedStrategy(LocalRefinementStrategy):
     strategy_id: str = "RunnerBackedStrategy"
 
+    @staticmethod
+    def _attach_assignment_guidance_callback(ctx) -> None:
+        ctx.runner_config.assignment_guidance_callback = (
+            ctx.assignment_guidance_callback
+        )
+        ctx.runner_config.assignment_guidance_route = ctx.route_key
+
     def global_anchoring(self, ctx) -> None:
         # Use backend kernel registry so all algorithm implementations are
         # centrally managed under revise.backend.kernels.
         from revise.backend.kernels import build_kernel
 
         ctx.runner_config.ot_event_callback = ctx.record_ot_event
+        self._attach_assignment_guidance_callback(ctx)
         kernel = build_kernel("global_anchoring", config=ctx.runner_config, logger=ctx.logger)
         ctx.runner.st_adata = kernel.run(
             ctx.runner.st_adata,
@@ -487,6 +499,7 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
         )
 
     def solve_ot(self, ctx) -> None:
+        self._attach_assignment_guidance_callback(ctx)
         ctx.runner.local_refinement()
 
 
@@ -666,11 +679,19 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
                 st_count = int(st_counts.get(candidate, 0))
                 ref_count = int(sc_counts.get(candidate, 0))
                 if ref_count == 0:
+                    ctx.runner.graph_cluster.record_not_applicable(
+                        problem_key=f"standard-sc:{candidate}",
+                        reason="missing_reference_cells",
+                    )
                     skipped_cell_types.append(
                         {"cell_type": candidate, "reason": "missing_reference_cells", "spatial_cells": st_count}
                     )
                     continue
                 if st_count < 2:
+                    ctx.runner.graph_cluster.record_not_applicable(
+                        problem_key=f"standard-sc:{candidate}",
+                        reason="insufficient_spatial_cells",
+                    )
                     ctx.logger.info(
                         "[adapter] all-cell-type sc-SVC singleton fallback: cell_type=%s spatial_cells=%s reference_cells=%s",
                         candidate,
@@ -863,6 +884,10 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc
         ctx.runner = ScSrAppRunner(adata_st, adata_sc, conf, ctx.logger)
+
+    def solve_ot(self, ctx) -> None:
+        ctx.runner_config.sr_allocation_callback = ctx.record_sr_allocation
+        super().solve_ot(ctx)
 
     def finalize_svc(self, ctx) -> SVC:
         outputs = dict(getattr(ctx.runner, "svc", {}))
@@ -1073,6 +1098,10 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
             ctx.logger.info("[sr-noise] disabled for SR benchmark run")
 
         super().global_anchoring(ctx)
+
+    def solve_ot(self, ctx) -> None:
+        ctx.runner_config.sr_allocation_callback = ctx.record_sr_allocation
+        super().solve_ot(ctx)
 
     def finalize_svc(self, ctx) -> SVC:
         outputs = dict(getattr(ctx.runner, "svc", {}))

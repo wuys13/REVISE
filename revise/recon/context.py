@@ -11,6 +11,7 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional
 
 from anndata import AnnData
 
+from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
 from revise.svc import SVC
 
 
@@ -50,6 +51,7 @@ class PipelineContext:
     provenance: Dict[str, Any] = field(default_factory=dict)
     ot_events: List[Dict[str, str | int]] = field(default_factory=list)
     artifact_records: List[Dict[str, Any]] = field(default_factory=list)
+    sr_allocation_records: List[Dict[str, Any]] = field(default_factory=list)
     data_fingerprint: Optional[str] = None
     data_fingerprint_error: Optional[Dict[str, str]] = None
 
@@ -72,6 +74,7 @@ class PipelineContext:
         init=False, default=None, repr=False
     )
     _run_started_monotonic: float = field(init=False, repr=False)
+    assignment_guidance: AssignmentGuidanceCollector = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.run_started_at = self._timestamp()
@@ -88,6 +91,10 @@ class PipelineContext:
             }
             for name, owner in self.STAGES
         ]
+        self.assignment_guidance = AssignmentGuidanceCollector(
+            request_evidence=getattr(self.merged_config, "request_evidence", {}),
+            resolved_request=self.merged_config.get("local_refinement", {}),
+        )
         for phase in ("ga", "lr"):
             solver = self.merged_config["ot"][phase]["solver"]
             self.record_ot_event(phase, solver, "requested")
@@ -167,7 +174,9 @@ class PipelineContext:
             "stage_records": copy.deepcopy(self.stage_records),
             "stage_started_monotonic": dict(self._stage_started_monotonic),
             "artifact_records": copy.deepcopy(self.artifact_records),
+            "sr_allocation_records": copy.deepcopy(self.sr_allocation_records),
             "ot_events": copy.deepcopy(self.ot_events),
+            "assignment_guidance_events": self.assignment_guidance.snapshot(),
         }
         try:
             yield
@@ -182,7 +191,11 @@ class PipelineContext:
                 "stage_started_monotonic"
             ]
             self.artifact_records = snapshot["artifact_records"]
+            self.sr_allocation_records = snapshot["sr_allocation_records"]
             self.ot_events = snapshot["ot_events"]
+            self.assignment_guidance.restore(
+                snapshot["assignment_guidance_events"]
+            )
             raise
 
     def _stage_record(self, name: str) -> Dict[str, Any]:
@@ -253,6 +266,10 @@ class PipelineContext:
             )
 
         with self._durable_transition():
+            self.assignment_guidance.terminate_open(
+                outcome="interrupted" if interrupted else "failed",
+                reason="run_interrupted" if interrupted else "upstream_failure",
+            )
             record["status"] = "interrupted" if interrupted else "failed"
             record["duration_seconds"] = max(
                 0.0, time.monotonic() - self._stage_started_monotonic.pop(name)
@@ -298,6 +315,10 @@ class PipelineContext:
             return
 
         with self._durable_transition():
+            self.assignment_guidance.terminate_open(
+                outcome="interrupted" if interrupted else "failed",
+                reason="run_interrupted" if interrupted else "upstream_failure",
+            )
             skip_reason = "run_interrupted" if interrupted else "upstream_failure"
             for record in self.stage_records:
                 if record["status"] == "pending":
@@ -320,6 +341,16 @@ class PipelineContext:
         ]
         if unfinished:
             raise RuntimeError(f"Cannot succeed run with unfinished stages: {unfinished}")
+        unfinished_guidance = [
+            event["problem_key"]
+            for event in self.assignment_guidance.events
+            if event["outcome"] == "not_started"
+        ]
+        if unfinished_guidance:
+            raise RuntimeError(
+                "Cannot succeed run with unfinished assignment guidance: "
+                f"{unfinished_guidance}"
+            )
         with self._durable_transition():
             self.run_status = "succeeded"
             self.run_ended_at = self._timestamp()
@@ -330,6 +361,25 @@ class PipelineContext:
     def record_artifact(self, artifact: Dict[str, Any]) -> None:
         with self._durable_transition():
             self.artifact_records.append(dict(artifact))
+
+    def assignment_guidance_callback(
+        self,
+        action: str,
+        *,
+        problem_key: str,
+        **fields: Any,
+    ) -> Dict[str, Any]:
+        with self._durable_transition():
+            event = self.assignment_guidance.callback(
+                action,
+                problem_key=problem_key,
+                **fields,
+            )
+        return event
+
+    def record_sr_allocation(self, evidence: Dict[str, Any]) -> None:
+        with self._durable_transition():
+            self.sr_allocation_records.append(copy.deepcopy(evidence))
 
     def record_ot_event(self, phase: str, solver: str, status: str) -> None:
         if phase not in {"ga", "lr"}:

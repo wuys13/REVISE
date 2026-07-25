@@ -10,7 +10,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
+from anndata import AnnData, concat as anndata_concat
+from scipy import sparse
 
 from revise.backend.ops.local_ot import solve_local_ot
 from revise.recon.context import PipelineContext
@@ -26,6 +29,29 @@ LOCAL_OT_CALLERS = {
     "revise/backend/runners/sc_svc_sr_benchmark.py": 1,
     "revise/backend/runners/sc_svc_impute_benchmark.py": 1,
 }
+
+
+def _load_runner_method(relative_path, class_name, method_name, namespace):
+    tree = ast.parse((ROOT / relative_path).read_text())
+    class_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+    )
+    method_node = next(
+        node
+        for node in class_node.body
+        if isinstance(node, ast.FunctionDef) and node.name == method_name
+    )
+    exec(
+        compile(
+            ast.fix_missing_locations(ast.Module(body=[method_node], type_ignores=[])),
+            ROOT / relative_path,
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace[method_name]
 
 
 def _context(tmp_path: Path, *, ga: str = "pot", lr: str = "tacco"):
@@ -250,6 +276,139 @@ def test_local_empty_support_does_not_fabricate_branch_events(monkeypatch):
 
     np.testing.assert_array_equal(coupling, np.zeros((2, 2)))
     assert events == []
+
+
+def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
+    apply_graph_aggregation = _load_runner_method(
+        "revise/backend/runners/sc_svc_sr_benchmark.py",
+        "ScSVCSr",
+        "_apply_graph_aggregation",
+        {
+            "np": np,
+            "record_virtual_cell_not_applicable": (
+                lambda *_args, **_kwargs: None
+            ),
+        },
+    )
+    runner = SimpleNamespace(
+        config=SimpleNamespace(),
+        logger=SimpleNamespace(info=lambda *_args, **_kwargs: None),
+        _get_graphagg_posterior_matrix=lambda: pytest.fail(
+            "singleton has no local problem to validate"
+        ),
+    )
+
+    result = types.MethodType(apply_graph_aggregation, runner)(
+        np.array([[3.0, 7.0]])
+    )
+
+    np.testing.assert_array_equal(result, [[3.0, 7.0]])
+
+
+def test_sp_benchmark_insufficient_units_short_circuit_before_assignment_validation():
+    local_refinement = _load_runner_method(
+        "revise/backend/runners/sp_svc_benchmark.py",
+        "SpSVC",
+        "local_refinement",
+        {
+            "np": np,
+            "scipy": SimpleNamespace(sparse=sparse),
+            "sc": SimpleNamespace(concat=anndata_concat),
+            "tqdm": lambda values, **_kwargs: values,
+            "posterior_conditioning_mode": lambda _config: pytest.fail(
+                "insufficient units have no local problem to validate"
+            ),
+        },
+    )
+    st = AnnData(
+        X=sparse.csr_matrix(np.ones((2, 2))),
+        obs=pd.DataFrame(
+            {"major_type": ["A", "A"], "no_effect": [False, False]},
+            index=["cell-1", "cell-2"],
+        ),
+    )
+    runner = SimpleNamespace(
+        st_adata=st,
+        config=SimpleNamespace(cell_type_col="major_type"),
+        logger=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+        svc={},
+    )
+
+    types.MethodType(local_refinement, runner)()
+
+    assert runner.svc["sp_svc"].n_obs == 2
+
+
+def test_sr_benchmark_required_graph_disabled_fails_before_allocation():
+    allocation_reached = {"value": False}
+
+    def fail_required_guidance(_config, *, problem_key, reason):
+        assert problem_key == "sr-benchmark:graph-branch"
+        assert reason == "graph_branch_disabled"
+        raise ValueError("required assignment guidance unavailable: graph_branch_disabled")
+
+    local_refinement = _load_runner_method(
+        "revise/backend/runners/sc_svc_sr_benchmark.py",
+        "ScSVCSr",
+        "local_refinement",
+        {
+            "np": np,
+            "pd": pd,
+            "guidance_mode": lambda _config: "require",
+            "record_virtual_cell_unavailable": fail_required_guidance,
+        },
+    )
+    st = AnnData(
+        X=np.array([[2.0, 8.0]]),
+        obs=pd.DataFrame(index=["spot-1"]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    st.obsm["Level1"] = pd.DataFrame(
+        [[1.0]],
+        index=st.obs_names,
+        columns=["A"],
+    )
+    reference = AnnData(
+        X=np.array([[1.0, 3.0]]),
+        obs=pd.DataFrame({"clusters": ["A"]}, index=["ref-1"]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    svc_obs = pd.DataFrame(
+        {
+            "spot_name": ["spot-1", "spot-1"],
+            "cell_id": ["virtual-1", "virtual-2"],
+        }
+    )
+
+    def assign_rows(target):
+        allocation_reached["value"] = True
+        target.svc_obs["cell_type"] = "A"
+
+    runner = SimpleNamespace(
+        st_adata=st,
+        sc_ref_adata=reference,
+        svc_obs=svc_obs,
+        spot_sr=SimpleNamespace(run=assign_rows),
+        config=SimpleNamespace(rec_graph_agg_enabled=False),
+        logger=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+        svc={},
+        _apply_graph_aggregation=lambda *_args, **_kwargs: pytest.fail(
+            "disabled graph branch must not validate assignment"
+        ),
+        _get_graphagg_posterior_matrix=lambda: pytest.fail(
+            "disabled graph branch must not load assignment"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="graph_branch_disabled"):
+        types.MethodType(local_refinement, runner)()
+    assert allocation_reached["value"] is False
 
 
 def test_local_multiple_invocations_record_each_actual_call(monkeypatch):

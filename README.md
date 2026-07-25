@@ -105,10 +105,11 @@ data/
   and at least one shared gene.
 - The ST input must contain finite two-dimensional coordinates in
   `obsm["spatial"]`.
-- The reference must contain the broad annotation selected by
-  `--cell-type-col` (default `obs["Level1"]`) on every route. `sc-SVC` and
-  `sc-SVC-sr` also require the refined annotation selected by
-  `--sub-cell-type-col` (default `obs["Level2"]`).
+- Every route requires the configured broad annotation selected by
+  `--cell-type-col` (default `obs["Level1"]`). Only standard `sc-SVC` requires
+  the configured subtype annotation selected by `--sub-cell-type-col`
+  (default `obs["Level2"]`). `sc-SVC-sr` composition and expression allocation
+  use the broad assignment and do not require a subtype column.
 - If the reference contains the default `Patient` column, at least one row must
   match `--sample-name`; use `--patient-key` to select another column.
 - For sST inputs with segmentation-derived centers, the optional
@@ -133,9 +134,8 @@ data/
   default `all`.
 - `--cell-type-col`: selects the broad reference annotation column for all
   three routes.
-- `--sub-cell-type-col`: selects the refined annotation required by `sc-SVC`
-  and `sc-SVC-sr`. `sc-SVC-sr` validates this column, but its current
-  composition assignment is driven by the broad column.
+- `--sub-cell-type-col`: selects the refined annotation required only by
+  standard `sc-SVC`; `sc-SVC-sr` does not require this column.
 - `--sc-mapping mean|random`: for `sc-SVC`, map each reconstructed spatial row
   to its cluster mean expression or to a seeded same-cluster reference row.
 

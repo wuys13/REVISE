@@ -36,19 +36,31 @@ Dedicated configuration controls
 Benchmark variants use named options rather than a generic key/value override.
 These options are applied after the selected profile or custom ``--config``:
 
-- ``--posterior-mode off|cost|reference`` selects posterior conditioning and
-  defaults to ``cost``;
-- ``--posterior-key``, ``--posterior-beta``,
-  ``--posterior-min-affinity``, and ``--posterior-cost-strength`` set the
-  corresponding posterior inputs when provided;
-- ``--posterior-strict`` makes an unavailable active posterior mode fail;
+- ``--local-refinement-guidance off|prefer|require`` selects the optional
+  assignment-guidance policy;
+- ``--local-refinement-compatibility-mode cost|reference`` selects the
+  compatibility Adapter;
+- ``--posterior-mode``, ``--posterior-beta``,
+  ``--posterior-min-affinity``, ``--posterior-cost-strength``, and
+  ``--posterior-strict`` are deprecated compatibility aliases;
+- a non-empty ``--posterior-key`` is rejected because each route supplies an
+  axis-labelled Assignment State;
 - ``--sr-refinement-preset confidence_anchor`` selects the controlled graph
   refinement used by ``batch_effect`` and ``spot_size`` runs, while ``none``
   disables that refinement.
 
-Because ``--posterior-mode`` has a CLI default, it overrides the corresponding
-profile value even when the flag is omitted. The other optional values leave
-their profile settings unchanged unless they are supplied explicitly.
+Omitting guidance flags creates no algorithm override. Route resolution remains
+authoritative and is observable in the report's canonical
+``assignment_guidance`` object. ``posterior_mode`` and ``posterior_strict``
+remain deprecated report aliases derived from that same resolved object; they
+are not a second source of truth.
+
+Cost guidance is the formal cross-solver benchmark mode. Reference
+conditioning is retained only as an explicit POT benchmark ablation. TACCO
+reference requests fail before reconstruction and never fall back to POT.
+sc-SVC-sr always performs its composition, row assignment, and closed-form
+expression allocation; the guidance policy controls only the subsequent
+virtual-cell graph refinement.
 
 ``--seed-scope process`` (the default) derives a reproducible effective seed
 for each leaf run from ``--seed``. Every effective seed is stored as
@@ -141,6 +153,14 @@ order sensitivity on synthetic arrays. They do not prove biological
 validation, real-tissue reconstruction quality, or comparability across
 datasets with different preprocessing. The current real-data end-to-end suite
 is deferred and is not part of this candidate's evidence.
+
+Assignment-guidance route tests and candidate-wheel solver smoke prove
+configuration, axis alignment, Adapter invocation, solver dispatch, and
+provenance mechanics. The CI solver gate imports the packaged candidate outside
+the source checkout, runs copied tests in pytest importlib mode, asserts the
+test process is importing from the isolated wheel environment, and exercises
+both POT and TACCO conditioned-cost paths. These checks do not show that
+guidance improves any biological or benchmark metric.
 
 Benchmark notebooks
 -------------------
