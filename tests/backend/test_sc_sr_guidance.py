@@ -14,7 +14,11 @@ from anndata import AnnData
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
 from revise.backend.ops.assignment import AssignmentStateError
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
+from revise.backend.ops.assignment_guidance import (
+    AssignmentGuidanceCollector,
+    FallbackReason,
+    NotApplicableReason,
+)
 
 
 def _spot_and_virtual_inputs():
@@ -42,6 +46,7 @@ def _guidance_config(*, guidance="prefer", compatibility_mode="cost"):
     collector = AssignmentGuidanceCollector()
     return SimpleNamespace(
         cell_type_col="major_type",
+        assignment_guidance_policy=guidance,
         posterior_conditioning_enabled=guidance != "off",
         posterior_conditioning_mode=compatibility_mode,
         posterior_conditioning_strict=guidance == "require",
@@ -172,7 +177,10 @@ def test_missing_projected_assignment_follows_policy_after_allocation(
     config, collector = _guidance_config(guidance=guidance)
 
     if guidance == "require":
-        with pytest.raises(ValueError, match="assignment_missing"):
+        with pytest.raises(
+            AssignmentStateError,
+            match="assignment_state_unavailable",
+        ):
             prepare_virtual_cell_guidance(
                 config,
                 problem_key="sr:A",
@@ -197,7 +205,11 @@ def test_missing_projected_assignment_follows_policy_after_allocation(
         assert attempted is False
 
     assert collector.events[0]["outcome"] == expected_outcome
-    assert collector.events[0]["reason"] == "assignment_missing"
+    assert collector.events[0]["reason"] == (
+        None
+        if guidance == "require"
+        else FallbackReason.ASSIGNMENT_MISSING.value
+    )
 
 
 def test_cost_guidance_uses_projected_soft_state_and_records_bilateral_lineage():
@@ -289,7 +301,12 @@ def test_not_applicable_block_does_not_load_assignment():
     record_virtual_cell_not_applicable(
         config,
         problem_key="sr:small",
-        reason="insufficient_virtual_cells",
+        reason=NotApplicableReason.INSUFFICIENT_UNITS,
+        reason_details={
+            "unit": "virtual_cell",
+            "observed": 1,
+            "required": 2,
+        },
     )
 
     [event] = collector.events
@@ -378,6 +395,7 @@ def _runner_config(
         svc_completeness=True,
         sr_assignment_seed=seed,
         cell_type_col="major_type",
+        assignment_guidance_policy=guidance,
         posterior_conditioning_enabled=guidance != "off",
         posterior_conditioning_mode=compatibility_mode,
         posterior_conditioning_strict=guidance == "require",
@@ -542,7 +560,8 @@ def test_benchmark_custom_broad_column_and_disabled_graph_prefer_fallback(
     )
     [event] = collector.events
     assert event["outcome"] == "fallback"
-    assert event["reason"] == "graph_branch_disabled"
+    assert event["reason"] == FallbackReason.OPERATOR_UNAVAILABLE.value
+    assert event["reason_details"]["condition"] == "graph_branch_disabled"
 
 
 def test_benchmark_required_disabled_graph_fails_before_allocation(
@@ -863,7 +882,12 @@ def _install_public_sr_route_stubs(monkeypatch):
                 problem_key=(
                     f"public-route:{self.config.assignment_guidance_route}"
                 ),
-                reason="insufficient_virtual_cells",
+                reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                reason_details={
+                    "unit": "virtual_cell",
+                    "observed": 1,
+                    "required": 2,
+                },
             )
             self.svc["sc_svc_dec"] = AnnData(
                 X=np.ones((1, 2), dtype=np.float64),

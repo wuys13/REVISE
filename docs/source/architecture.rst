@@ -78,22 +78,27 @@ metric tables. The exact directory leaf is unique and should be discovered
 through the public result link or manifest rather than reconstructed from a
 hard-coded timestamp pattern.
 
-The canonical CLI separately publishes one stable-facing result:
+The canonical CLI publishes stable-facing application results. sp-SVC and
+sc-SVC-sr use:
 
 .. code-block:: text
 
    <output-root>/<sample-name>/SVC.h5ad
 
-The manifest records ``result.type`` as ``sp-SVC``, ``sc-SVC``, or
-``sc-SVC-sr`` and records the internal route separately. Strategy artifacts remain in the
-canonical run but are not additional public output contracts.
+Standard sc-SVC publishes ``sc_SVC_spatial.h5ad`` and ``sc_SVC_expr.h5ad``
+under a cell-type subdirectory. The manifest records each public result role
+and the internal route separately. Strategy artifacts remain in the canonical
+run but are not additional public output contracts.
 
-``provenance.json.assignment_guidance`` records schema version, configured
+``provenance.json.assignment_guidance`` schema version 2 records configured
 request, resolved policy, resolution source, and every local invocation. Each
 event records route, operator, solver, compatibility numerics, bilateral
 assignment source/level/value semantics/lineage, attempted state, terminal
-outcome, and stable reason code. ``sr_allocation`` is adjacent durable evidence
-because mandatory allocation is not a guidance outcome.
+outcome, and optional reason details. Stable reason codes are required only for
+``fallback`` and ``not_applicable``; ``off``, ``applied``, ``failed``, and
+``interrupted`` do not duplicate outcome or exception information.
+``sr_allocation`` is adjacent durable evidence because mandatory allocation is
+not a guidance outcome.
 
 Failure model
 -------------
@@ -111,8 +116,9 @@ fall back to POT.
 Guidance outcomes are likewise explicit: ``not_started``, ``not_applicable``,
 ``off``, ``applied``, ``fallback``, ``mixed``, ``failed``, or ``interrupted``.
 Failure/interruption manifests retain earlier completed events. A required
-guidance failure follows the normal publication rollback and cannot publish a
-successful result.
+guidance failure raises through the normal stage error and publication rollback
+and cannot publish a successful result. Its guidance event has a null reason;
+the typed stage/run error is the authoritative failure explanation.
 
 Extension boundary
 ------------------

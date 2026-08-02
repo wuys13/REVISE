@@ -24,7 +24,10 @@ from revise.backend.ops.assignment import (
 )
 from revise.backend.ops.assignment_guidance import (
     AssignmentGuidanceCollector,
+    FallbackReason,
+    NotApplicableReason,
     assignment_compatibility,
+    assignment_guidance_mode,
     graph_guidance,
     ot_cost_guidance,
     resolve_assignment_guidance,
@@ -48,6 +51,32 @@ def _state(
         value_semantics=semantics,
         lineage=list(lineage or []),
     )
+
+
+@pytest.mark.parametrize("mode", ["off", "prefer", "require"])
+def test_assignment_guidance_mode_requires_canonical_resolved_policy(mode):
+    config = SimpleNamespace(
+        assignment_guidance_policy=mode,
+        posterior_conditioning_enabled=mode == "off",
+        posterior_conditioning_mode="reference",
+        posterior_conditioning_strict=mode != "require",
+    )
+
+    assert assignment_guidance_mode(config) == mode
+
+
+def test_assignment_guidance_mode_rejects_legacy_only_runner_config():
+    config = SimpleNamespace(
+        posterior_conditioning_enabled=True,
+        posterior_conditioning_mode="cost",
+        posterior_conditioning_strict=False,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="missing resolved assignment_guidance_policy",
+    ):
+        assignment_guidance_mode(config)
 
 
 def test_assignment_axes_align_by_label_and_argmax_is_one_hot():
@@ -377,7 +406,7 @@ def test_compatibility_rejects_invalid_support_indices_without_coercion(support)
         assignment_compatibility(left, right, support=support)
 
 
-def test_policy_off_does_not_read_state_and_invalid_prefer_or_require_is_structured():
+def test_policy_off_does_not_read_state_prefer_falls_back_and_require_raises():
     reads = []
 
     def invalid_loader():
@@ -386,24 +415,21 @@ def test_policy_off_does_not_read_state_and_invalid_prefer_or_require_is_structu
 
     off = resolve_assignment_guidance("off", invalid_loader)
     prefer = resolve_assignment_guidance("prefer", invalid_loader)
-    require = resolve_assignment_guidance("require", invalid_loader)
+    with pytest.raises(AssignmentStateError, match="values_negative"):
+        resolve_assignment_guidance("require", invalid_loader)
 
     assert reads == [True, True]
     assert (off.availability, off.outcome, off.reason) == (
         "not_checked",
         "off",
-        "guidance_off",
+        None,
     )
     assert (prefer.availability, prefer.outcome, prefer.reason) == (
         "unavailable",
         "fallback",
-        "invalid_assignment_values",
+        FallbackReason.ASSIGNMENT_INVALID,
     )
-    assert (require.availability, require.outcome, require.reason) == (
-        "unavailable",
-        "failed",
-        "invalid_assignment_values",
-    )
+    assert prefer.reason_details == {"cause": "values_negative"}
 
 
 def _event(collector, key, *, applicability="applicable", mode="prefer"):
@@ -434,7 +460,6 @@ def test_collector_records_pre_solver_availability_attempt_and_terminal_outcome(
         "terminal",
         problem_key="available-then-failed",
         outcome="failed",
-        reason="solver_failed",
     )
     _event(collector, "unavailable")
     collector.callback(
@@ -442,7 +467,7 @@ def test_collector_records_pre_solver_availability_attempt_and_terminal_outcome(
         problem_key="unavailable",
         availability="unavailable",
         outcome="fallback",
-        reason="assignment_state_unavailable",
+        reason=FallbackReason.ASSIGNMENT_MISSING,
     )
 
     first, second = collector.events
@@ -468,7 +493,6 @@ def test_collector_summary_distinguishes_zero_inapplicable_mixed_and_interrupted
         "terminal",
         problem_key="disabled",
         outcome="off",
-        reason="guidance_off",
     )
     assert off.summary() == "off"
 
@@ -478,7 +502,7 @@ def test_collector_summary_distinguishes_zero_inapplicable_mixed_and_interrupted
         "terminal",
         problem_key="no-local-problem",
         outcome="not_applicable",
-        reason="no_local_problem",
+        reason=NotApplicableReason.INSUFFICIENT_UNITS,
     )
     assert inapplicable.summary() == "not_applicable"
 
@@ -492,7 +516,11 @@ def test_collector_summary_distinguishes_zero_inapplicable_mixed_and_interrupted
             problem_key=key,
             outcome=outcome,
             availability="unavailable" if outcome == "fallback" else "available",
-            reason=None if outcome == "applied" else "assignment_missing",
+            reason=(
+                None
+                if outcome == "applied"
+                else FallbackReason.ASSIGNMENT_MISSING
+            ),
         )
     assert mixed.summary() == "mixed"
 
@@ -506,7 +534,6 @@ def test_collector_summary_distinguishes_zero_inapplicable_mixed_and_interrupted
         "terminal",
         problem_key="stopped",
         outcome="interrupted",
-        reason="run_interrupted",
     )
     assert [event["outcome"] for event in interrupted.events] == [
         "applied",
@@ -515,38 +542,21 @@ def test_collector_summary_distinguishes_zero_inapplicable_mixed_and_interrupted
     assert interrupted.summary() == "interrupted"
 
 
-@pytest.mark.parametrize(
-    "outcome",
-    ["off", "not_applicable", "fallback", "failed", "interrupted"],
-)
-def test_non_applied_terminal_outcomes_require_a_stable_reason_code(outcome):
+@pytest.mark.parametrize("outcome", ["not_applicable", "fallback"])
+def test_tolerated_terminal_outcomes_require_a_stable_reason(outcome):
     collector = AssignmentGuidanceCollector()
-    if outcome == "off":
-        _event(collector, "reason-required", mode="off")
-        terminal_fields = {}
-    elif outcome == "not_applicable":
+    if outcome == "not_applicable":
         _event(
             collector,
             "reason-required",
             applicability="not_applicable",
         )
         terminal_fields = {}
-    elif outcome == "fallback":
-        _event(collector, "reason-required")
-        terminal_fields = {"availability": "unavailable"}
-    elif outcome == "failed":
-        _event(collector, "reason-required", mode="require")
-        terminal_fields = {"availability": "unavailable"}
     else:
         _event(collector, "reason-required")
-        collector.callback(
-            "attempt",
-            problem_key="reason-required",
-            availability="available",
-        )
-        terminal_fields = {}
+        terminal_fields = {"availability": "unavailable"}
 
-    with pytest.raises(ValueError, match="reason"):
+    with pytest.raises(ValueError, match="Reason"):
         collector.callback(
             "terminal",
             problem_key="reason-required",
@@ -557,18 +567,76 @@ def test_non_applied_terminal_outcomes_require_a_stable_reason_code(outcome):
     assert collector.events[0]["outcome"] == "not_started"
 
 
-def test_applied_terminal_outcome_allows_no_reason():
+@pytest.mark.parametrize("outcome", ["off", "applied", "failed", "interrupted"])
+def test_non_tolerated_terminal_outcomes_forbid_reason(outcome):
     collector = AssignmentGuidanceCollector()
-    _event(collector, "applied")
-    collector.callback("attempt", problem_key="applied", availability="available")
+    mode = "off" if outcome == "off" else "prefer"
+    _event(collector, "reason-forbidden", mode=mode)
+    fields = {}
+    if outcome in {"applied", "failed", "interrupted"}:
+        collector.callback(
+            "attempt",
+            problem_key="reason-forbidden",
+            availability="available",
+        )
 
     collector.callback(
         "terminal",
-        problem_key="applied",
-        outcome="applied",
+        problem_key="reason-forbidden",
+        outcome=outcome,
+        **fields,
     )
-
     assert collector.events[0]["reason"] is None
+    assert collector.events[0]["reason_details"] == {}
+
+    other = AssignmentGuidanceCollector()
+    _event(other, "invalid-reason", mode=mode)
+    if outcome in {"applied", "failed", "interrupted"}:
+        other.callback(
+            "attempt",
+            problem_key="invalid-reason",
+            availability="available",
+        )
+    with pytest.raises(ValueError, match="must not record a reason"):
+        other.callback(
+            "terminal",
+            problem_key="invalid-reason",
+            outcome=outcome,
+            reason="duplicated_outcome_detail",
+        )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "reason"),
+    [
+        ("fallback", NotApplicableReason.EMPTY_SUPPORT),
+        ("not_applicable", FallbackReason.ASSIGNMENT_MISSING),
+        ("fallback", "new_unregistered_reason"),
+        ("not_applicable", "new_unregistered_reason"),
+    ],
+)
+def test_reason_vocabulary_is_closed_and_outcome_scoped(outcome, reason):
+    collector = AssignmentGuidanceCollector()
+    _event(
+        collector,
+        "closed-vocabulary",
+        applicability=(
+            "not_applicable"
+            if outcome == "not_applicable"
+            else "applicable"
+        ),
+    )
+    fields = {"reason": reason}
+    if outcome == "fallback":
+        fields["availability"] = "unavailable"
+
+    with pytest.raises(ValueError, match="Reason"):
+        collector.callback(
+            "terminal",
+            problem_key="closed-vocabulary",
+            outcome=outcome,
+            **fields,
+        )
 
 
 @pytest.mark.parametrize(
@@ -609,46 +677,70 @@ def test_invalid_collector_transition_is_rejected_atomically(case):
         "off_attempt": ("attempt", {"availability": "available"}),
         "off_wrong_terminal": (
             "terminal",
-            {"outcome": "fallback", "availability": "unavailable", "reason": "assignment_missing"},
+            {
+                "outcome": "fallback",
+                "availability": "unavailable",
+                "reason": FallbackReason.ASSIGNMENT_MISSING,
+            },
         ),
         "off_wrong_availability": (
             "terminal",
-            {"outcome": "off", "availability": "unavailable", "reason": "guidance_off"},
+            {"outcome": "off", "availability": "unavailable"},
         ),
         "not_applicable_attempt": ("attempt", {"availability": "available"}),
         "not_applicable_wrong_terminal": (
             "terminal",
-            {"outcome": "off", "reason": "guidance_off"},
+            {"outcome": "off"},
         ),
         "not_applicable_wrong_availability": (
             "terminal",
-            {"outcome": "not_applicable", "availability": "available", "reason": "no_local_problem"},
+            {
+                "outcome": "not_applicable",
+                "availability": "available",
+                "reason": NotApplicableReason.EMPTY_SUPPORT,
+            },
         ),
         "attempt_unavailable": ("attempt", {"availability": "unavailable"}),
         "applied_without_attempt": ("terminal", {"outcome": "applied"}),
         "fallback_without_unavailable": (
             "terminal",
-            {"outcome": "fallback", "reason": "assignment_missing"},
+            {
+                "outcome": "fallback",
+                "reason": FallbackReason.ASSIGNMENT_MISSING,
+            },
         ),
         "fallback_after_attempt": (
             "terminal",
-            {"outcome": "fallback", "availability": "unavailable", "reason": "assignment_missing"},
+            {
+                "outcome": "fallback",
+                "availability": "unavailable",
+                "reason": FallbackReason.ASSIGNMENT_MISSING,
+            },
         ),
         "require_fallback": (
             "terminal",
-            {"outcome": "fallback", "availability": "unavailable", "reason": "assignment_missing"},
+            {
+                "outcome": "fallback",
+                "availability": "unavailable",
+                "reason": FallbackReason.ASSIGNMENT_MISSING,
+            },
         ),
         "prefer_unavailable_failed": (
             "terminal",
-            {"outcome": "failed", "availability": "unavailable", "reason": "assignment_missing"},
+            {"outcome": "failed", "availability": "unavailable"},
         ),
         "interrupted_without_attempt": (
             "terminal",
-            {"outcome": "interrupted", "reason": "solver_interrupted"},
+            {"outcome": "interrupted"},
         ),
         "unknown_field": (
             "terminal",
-            {"outcome": "fallback", "availability": "unavailable", "reason": "assignment_missing", "unknown": True},
+            {
+                "outcome": "fallback",
+                "availability": "unavailable",
+                "reason": FallbackReason.ASSIGNMENT_MISSING,
+                "unknown": True,
+            },
         ),
     }[case]
 
@@ -666,7 +758,6 @@ def test_require_unavailable_failed_and_attempted_solver_failure_are_valid():
         problem_key="missing",
         outcome="failed",
         availability="unavailable",
-        reason="assignment_missing",
     )
     solver = AssignmentGuidanceCollector()
     _event(solver, "solver")
@@ -675,7 +766,6 @@ def test_require_unavailable_failed_and_attempted_solver_failure_are_valid():
         "terminal",
         problem_key="solver",
         outcome="failed",
-        reason="solver_failed",
     )
 
     assert unavailable.events[0]["attempted"] is False
@@ -694,7 +784,7 @@ def test_run_termination_atomically_closes_pre_attempt_and_attempted_open_events
         availability="available",
     )
 
-    collector.terminate_open(outcome="failed", reason="upstream_failure")
+    collector.terminate_open(outcome="failed")
 
     assert [event["outcome"] for event in collector.events] == [
         "failed",
@@ -705,28 +795,20 @@ def test_run_termination_atomically_closes_pre_attempt_and_attempted_open_events
         "not_checked",
         "available",
     ]
-    assert {event["reason"] for event in collector.events} == {
-        "upstream_failure"
+    assert {event["reason"] for event in collector.events} == {None}
+    assert {tuple(event["reason_details"]) for event in collector.events} == {
+        ()
     }
 
 
-@pytest.mark.parametrize(
-    ("outcome", "reason"),
-    [
-        ("applied", "upstream_failure"),
-        ("fallback", "upstream_failure"),
-        ("not_started", "upstream_failure"),
-        ("failed", None),
-        ("interrupted", ""),
-    ],
-)
-def test_invalid_run_termination_does_not_mutate_events(outcome, reason):
+@pytest.mark.parametrize("outcome", ["applied", "fallback", "not_started"])
+def test_invalid_run_termination_does_not_mutate_events(outcome):
     collector = AssignmentGuidanceCollector()
     _event(collector, "open")
     before = copy.deepcopy(collector.events)
 
     with pytest.raises(ValueError):
-        collector.terminate_open(outcome=outcome, reason=reason)
+        collector.terminate_open(outcome=outcome)
 
     assert collector.events == before
 
@@ -741,7 +823,6 @@ def test_run_termination_validates_all_proposals_before_batch_commit():
     with pytest.raises(ValueError, match="mode"):
         collector.terminate_open(
             outcome="interrupted",
-            reason="run_interrupted",
         )
 
     assert collector.events == before

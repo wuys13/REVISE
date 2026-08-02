@@ -210,11 +210,16 @@ def _preflight(tmp_path: Path):
     return specs, report
 
 
-def _write_benchmark_inputs(tmp_path: Path, task: str):
+def _write_benchmark_inputs(
+    tmp_path: Path,
+    task: str,
+    *,
+    sample_name: str = "sample",
+):
     runtime = {"mode": "benchmark", "task": task}
     io = {
         "data_root": str(tmp_path),
-        "sample_name": "sample",
+        "sample_name": sample_name,
         "st_file": "st.h5ad",
         "sc_ref_file": "sc.h5ad",
         "gt_svc_file": "gt.h5ad",
@@ -270,6 +275,86 @@ def test_valid_benchmark_preflight_requires_ground_truth(tmp_path, task):
     )
 
     assert [item["role"] for item in report["inputs"]] == ["st", "sc_ref", "gt"]
+
+
+def test_benchmark_preflight_matches_patient_to_sample_path_prefix(tmp_path):
+    runtime, io, specs, paths = _write_benchmark_inputs(
+        tmp_path,
+        "sp_svc",
+        sample_name="P2CRC/cut_part1",
+    )
+    io["patient_key"] = "Patient"
+    sc_ref = read_h5ad(paths["sc_ref"])
+    sc_ref.obs["Patient"] = ["P2CRC"] * sc_ref.n_obs
+    sc_ref.write_h5ad(paths["sc_ref"])
+
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    assert report["status"] == "ready"
+    assert io["sample_name"] == "P2CRC/cut_part1"
+
+
+def test_benchmark_preflight_rejects_wrong_patient_for_sample_path(tmp_path):
+    runtime, io, specs, paths = _write_benchmark_inputs(
+        tmp_path,
+        "sp_svc",
+        sample_name="P2CRC/cut_part1",
+    )
+    io["patient_key"] = "Patient"
+    sc_ref = read_h5ad(paths["sc_ref"])
+    sc_ref.obs["Patient"] = ["P3CRC"] * sc_ref.n_obs
+    sc_ref.write_h5ad(paths["sc_ref"])
+
+    with pytest.raises(ValueError, match=r"sample 'P2CRC'"):
+        REVISEInputService(io).preflight(
+            specs,
+            runtime=runtime,
+            columns=COLUMNS,
+        )
+
+
+def test_application_preflight_keeps_exact_patient_match(tmp_path):
+    runtime, io, _ = _application_specs(tmp_path)
+    io["sample_name"] = "P2CRC/cut_part1"
+    io["patient_key"] = "Patient"
+    specs = resolve_input_specs(runtime, io)
+    _write(Path(specs[0].path), "st")
+    sc_ref_path = tmp_path / "sc.h5ad"
+    sc_ref = _adata("sc_ref")
+    sc_ref.obs["Patient"] = ["P2CRC"] * sc_ref.n_obs
+    sc_ref.write_h5ad(sc_ref_path)
+
+    with pytest.raises(ValueError, match=r"sample 'P2CRC/cut_part1'"):
+        REVISEInputService(io).preflight(
+            specs,
+            runtime=runtime,
+            columns=COLUMNS,
+        )
+
+
+def test_batch_effect_preflight_allows_reference_without_target_patient(tmp_path):
+    runtime, io, specs, paths = _write_benchmark_inputs(
+        tmp_path,
+        "sc_svc_sr",
+        sample_name="P2CRC/cut_part1",
+    )
+    runtime["confounding"] = "batch_effect"
+    io["patient_key"] = "Patient"
+    sc_ref = read_h5ad(paths["sc_ref"])
+    sc_ref.obs["Patient"] = ["P3CRC"] * sc_ref.n_obs
+    sc_ref.write_h5ad(paths["sc_ref"])
+
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    assert report["status"] == "ready"
 
 
 def test_impute_preflight_does_not_require_unused_spatial_coordinates(tmp_path):
@@ -884,7 +969,7 @@ def test_preflight_rejects_required_guidance_when_sr_graph_branch_is_disabled(
     assert event["availability"] == "unavailable"
     assert event["attempted"] is False
     assert event["outcome"] == "failed"
-    assert event["reason"] == "graph_branch_disabled"
+    assert event["reason"] is None
 
 
 def test_preflight_allows_preferred_guidance_when_sr_graph_branch_is_disabled(

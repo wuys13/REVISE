@@ -73,15 +73,22 @@ sc-SVC-sr`` for spot super-resolution. ``--cell-type-col`` selects the broad
 reference annotation on every route. ``--sub-cell-type-col`` selects the
 refined annotation required only by standard sc-SVC. sc-SVC-sr uses the broad
 assignment for composition and expression allocation. sc-SVC also accepts
-``--select-ct`` and ``--sc-mapping mean|random``.
+``--select-ct``. Its application profile defaults to TACCO; install it with
+``python -m pip install ".[tacco]"`` from source or ``python -m pip install
+"revise-svc[tacco]"`` from a published package. If TACCO is unavailable and a
+different algorithm is acceptable, explicitly add ``--ot-method pot``. REVISE
+never switches algorithms automatically.
 
 For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in
 ``st_adata.uns["revise_cell_locations"]`` with a unique ``cell_id`` index and
 ``spot_name/x/y`` columns. Its assignments agree with
 ``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
 and scale as ``obsm["spatial"]``; rows without centers remain at the spot center.
-Without ``PM_on_cell.csv``, those coordinates are retained while inferred cell
-types are assigned to the existing rows by a seeded random permutation.
+When ``PM_on_cell.csv`` is present, it must cover every current virtual-cell ID
+and requested normalized cell type. Extra Patient/case rows and class columns
+are allowed; REVISE strictly subsets and reorders the active case matrix.
+Without that file, those coordinates are retained while inferred cell types are
+assigned to the existing rows by a seeded random permutation.
 
 After installation, the equivalent package command is:
 
@@ -101,23 +108,28 @@ without running reconstruction.
 Application output
 ------------------
 
-All application routes publish:
+``sp-SVC`` and ``sc-SVC-sr`` publish:
 
 .. code-block:: text
 
    <output-root>/<sample-name>/SVC.h5ad
 
-The file links to the canonical run's ``provenance.json``. The manifest's
-``result.type`` identifies the result as ``sp-SVC``, ``sc-SVC``, or
-``sc-SVC-sr`` and records the route, stages, configuration, inputs, and
-artifacts.
+Standard ``sc-SVC`` publishes:
+
+.. code-block:: text
+
+   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
+   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
+
+Each file links to the canonical run's ``provenance.json``. The manifest
+records the result role, route, stages, configuration, inputs, and artifacts.
 
 Paper reproduction notebooks
 ----------------------------
 
-Curated application notebooks are tracked under ``reproduce/case/``. They may
-refer to historical output layouts, but the current application command has
-only the canonical ``SVC.h5ad`` output contract.
+Curated application notebooks are tracked under ``reproduce/case/``. Standard
+sc-SVC now preserves the notebook spatial and reference-expression carriers as
+separate public outputs.
 
 Application utilities
 ---------------------

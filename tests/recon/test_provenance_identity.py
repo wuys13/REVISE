@@ -568,6 +568,16 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
         "filename": "SVC.h5ad",
         "type": "sp-SVC",
     }
+    ctx.provenance["results"] = {
+        "spatial": {
+            "filename": "sc_SVC_spatial.h5ad",
+            "type": "sc-SVC",
+        },
+        "expression": {
+            "filename": "sc_SVC_expr.h5ad",
+            "type": "sc-SVC",
+        },
+    }
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
     manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
@@ -576,4 +586,15 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
         "filename": "SVC.h5ad",
         "type": "sp-SVC",
     }
+    assert manifest["results"] == {
+        "spatial": {
+            "filename": "sc_SVC_spatial.h5ad",
+            "type": "sc-SVC",
+        },
+        "expression": {
+            "filename": "sc_SVC_expr.h5ad",
+            "type": "sc-SVC",
+        },
+    }
+    assert ctx.provenance["results"] == manifest["results"]
     assert manifest["data_fingerprint"] is None

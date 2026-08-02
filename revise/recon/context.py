@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import logging
 import time
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -268,7 +269,6 @@ class PipelineContext:
         with self._durable_transition():
             self.assignment_guidance.terminate_open(
                 outcome="interrupted" if interrupted else "failed",
-                reason="run_interrupted" if interrupted else "upstream_failure",
             )
             record["status"] = "interrupted" if interrupted else "failed"
             record["duration_seconds"] = max(
@@ -317,7 +317,6 @@ class PipelineContext:
         with self._durable_transition():
             self.assignment_guidance.terminate_open(
                 outcome="interrupted" if interrupted else "failed",
-                reason="run_interrupted" if interrupted else "upstream_failure",
             )
             skip_reason = "run_interrupted" if interrupted else "upstream_failure"
             for record in self.stage_records:
@@ -350,6 +349,22 @@ class PipelineContext:
             raise RuntimeError(
                 "Cannot succeed run with unfinished assignment guidance: "
                 f"{unfinished_guidance}"
+            )
+        fallback_reasons = Counter(
+            str(event["reason"])
+            for event in self.assignment_guidance.events
+            if event["outcome"] == "fallback"
+        )
+        if fallback_reasons:
+            reason_counts = ", ".join(
+                f"{reason}={count}"
+                for reason, count in sorted(fallback_reasons.items())
+            )
+            self.logger.warning(
+                "[assignment-guidance] base-path fallback used for %s "
+                "invocation(s): %s",
+                sum(fallback_reasons.values()),
+                reason_counts,
             )
         with self._durable_transition():
             self.run_status = "succeeded"

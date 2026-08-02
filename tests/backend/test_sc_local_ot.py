@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 import types
 from types import SimpleNamespace
@@ -126,6 +127,7 @@ def test_ist_local_refinement_uses_configured_columns_and_local_ot(
         cell_type_col=cell_type_col,
         confidence_col="Confidence",
         unknown_key="Unknown",
+        assignment_guidance_policy="off",
     )
     runner = ScSVC(
         _adata(["sp1", "sp2"], ["A", "A"], cell_type_col),
@@ -171,10 +173,113 @@ def test_application_sc_config_carries_local_ot_method():
         sc_ref_file="sc.h5ad",
         annotate_mode="pot",
         rec_ot_method="tacco",
+        tacco_annotate_multi_center=1,
+        tacco_annotate_lamb=0.001,
     )
 
     assert config.annotate_mode == "pot"
     assert config.rec_ot_method == "tacco"
+
+
+def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
+    monkeypatch,
+):
+    from revise.backend.kernels import global_anchoring, local_anchoring
+    from revise.config.runner_conf import ApplicationScConf
+
+    events = []
+    config = ApplicationScConf(
+        sample_name="sample",
+        raw_data_path="data",
+        result_root_path="output",
+        cell_type_col="Level1",
+        confidence_col="Confidence",
+        unknown_key="Unknown",
+        st_file="sp.h5ad",
+        sc_ref_file="sc.h5ad",
+        annotate_mode="tacco",
+        rec_ot_method="tacco",
+        tacco_annotate_multi_center=1,
+        tacco_annotate_lamb=0.001,
+    )
+    config.ot_event_callback = lambda *event: events.append(event)
+    calls = []
+
+    def annotate(
+        adata,
+        reference,
+        annotation_key,
+        *,
+        result_key,
+        return_reference,
+        multi_center,
+        lamb,
+    ):
+        calls.append(
+            {
+                "annotation_key": annotation_key,
+                "return_reference": return_reference,
+                "multi_center": multi_center,
+                "lamb": lamb,
+            }
+        )
+        categories = pd.Index(
+            pd.unique(reference.obs[annotation_key].astype(str))
+        )
+        adata.obsm[result_key] = pd.DataFrame(
+            np.full((adata.n_obs, len(categories)), 1.0 / len(categories)),
+            index=adata.obs_names,
+            columns=categories,
+        )
+        return adata, reference
+
+    monkeypatch.setattr(
+        global_anchoring,
+        "require_tacco",
+        lambda: SimpleNamespace(tl=SimpleNamespace(annotate=annotate)),
+    )
+
+    target = AnnData(
+        X=np.array([[2.0, 1.0], [1.0, 2.0]]),
+        obs=pd.DataFrame(index=["sp1", "sp2"]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    level1_reference = AnnData(
+        X=np.array([[2.0, 0.0], [0.0, 2.0]]),
+        obs=pd.DataFrame({"Level1": ["A", "B"]}, index=["sc1", "sc2"]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    global_anchoring.GlobalAnchoringKernel(
+        config,
+        logging.getLogger("test"),
+    ).run(target, level1_reference, cell_type_col="Level1")
+
+    level2_reference = level1_reference.copy()
+    level2_reference.obs["Level2"] = ["A1", "A2"]
+    local = local_anchoring.LocalAnchoringKernel(
+        config,
+        logging.getLogger("test"),
+    )
+    spatial = local.run(target, level2_reference, cell_type_col="Level2")
+    spatial.obs["SVC_cluster"] = pd.Categorical(["0", "1"])
+    local.run(level1_reference, spatial, cell_type_col="SVC_cluster")
+
+    assert [call["annotation_key"] for call in calls] == [
+        "Level1",
+        "Level2",
+        "SVC_cluster",
+    ]
+    assert all(call["return_reference"] is True for call in calls)
+    assert all(call["multi_center"] == 1 for call in calls)
+    assert all(call["lamb"] == 0.001 for call in calls)
+    assert events == [
+        ("ga", "tacco", "attempted"),
+        ("ga", "tacco", "completed"),
+        ("lr", "tacco", "attempted"),
+        ("lr", "tacco", "completed"),
+        ("lr", "tacco", "attempted"),
+        ("lr", "tacco", "completed"),
+    ]
 
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
@@ -308,7 +413,12 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
             },
             "preprocess": {},
             "graph": {},
-            "sc": {},
+            "sc": {
+                "tacco_annotate": {
+                    "multi_center": 1,
+                    "lamb": 0.001,
+                }
+            },
             "local_refinement": {
                 "guidance": "off",
                 "compatibility": {
@@ -340,6 +450,8 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
 
     assert ctx.runner_config.annotate_mode == "pot"
     assert ctx.runner_config.rec_ot_method == "tacco"
+    assert ctx.runner_config.tacco_annotate_multi_center == 1
+    assert ctx.runner_config.tacco_annotate_lamb == 0.001
     assert ctx.runner.local_annotate_method.method == "tacco"
     assert list(ctx.runner.sc_ref_adata.obs.columns) == [
         cell_type_col,

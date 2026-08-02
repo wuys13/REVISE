@@ -385,7 +385,7 @@ def test_post_allocation_guidance_failure_keeps_both_durable_evidence(
     assert manifest["sr_allocation"][0]["status"] == "completed"
     [event] = manifest["assignment_guidance"]["events"]
     assert event["outcome"] == "failed"
-    assert event["reason"] == "upstream_failure"
+    assert event["reason"] is None
     assert event["attempted"] is True
     assert "result" not in manifest
     assert not any(

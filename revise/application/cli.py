@@ -33,13 +33,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-root", required=True)
     parser.add_argument("--output-root", default="output/reconstruct")
     parser.add_argument("--config", default="revise/revise.yaml")
-    parser.add_argument("--ot-method", choices=("pot", "tacco"), default=None)
+    parser.add_argument(
+        "--ot-method",
+        choices=("pot", "tacco"),
+        default=None,
+        help=(
+            "Set both Global Anchoring and Local Refinement OT solvers; "
+            "standard sc-SVC defaults to TACCO, while 'pot' explicitly "
+            "selects a different algorithm"
+        ),
+    )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--patient-key", default="Patient")
     parser.add_argument("--select-ct", default="all")
     parser.add_argument("--cell-type-col", default=None)
     parser.add_argument("--sub-cell-type-col", default=None)
-    parser.add_argument("--sc-mapping", choices=("mean", "random"), default="mean")
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -71,12 +79,20 @@ def main() -> None:
     else:
         with redirect_stdout(sys.stderr):
             result, output_path, pipeline_summary = reconstruct(args)
-        payload = {
-            "svc_type": args.svc_type,
-            "output": str(output_path),
-            "shape": list(result.shape),
-            "pipeline": pipeline_summary,
-        }
+        if args.svc_type == "sc-SVC":
+            payload = {
+                "svc_type": args.svc_type,
+                "outputs": {key: str(path) for key, path in output_path.items()},
+                "shapes": {key: list(adata.shape) for key, adata in result.items()},
+                "pipeline": pipeline_summary,
+            }
+        else:
+            payload = {
+                "svc_type": args.svc_type,
+                "output": str(output_path),
+                "shape": list(result.shape),
+                "pipeline": pipeline_summary,
+            }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 

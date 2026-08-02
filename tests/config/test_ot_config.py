@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import importlib
 import inspect
 import logging
@@ -39,6 +40,46 @@ def _write_config(tmp_path, raw):
     path = tmp_path / "revise.yaml"
     path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
     return path
+
+
+def test_application_sc_profile_uses_configured_notebook_tacco_defaults():
+    merged = _merge(_raw_config(), "application_sc")
+
+    assert merged["ot"]["ga"]["solver"] == "tacco"
+    assert merged["ot"]["lr"]["solver"] == "tacco"
+    assert merged["sc"]["resolutions"] == [0.6, 0.7, 0.8]
+    assert merged["sc"]["tacco_annotate"] == {
+        "multi_center": 1,
+        "lamb": 0.001,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("multi_center", True),
+        ("multi_center", 0),
+        ("multi_center", 1.5),
+        ("lamb", True),
+        ("lamb", 0),
+        ("lamb", math.nan),
+    ],
+)
+def test_application_sc_tacco_annotation_parameters_are_strict(field, value):
+    raw = copy.deepcopy(_raw_config())
+    raw["profiles"]["application_sc"]["sc"]["tacco_annotate"][field] = value
+
+    with pytest.raises(ConfigError, match=field):
+        _merge(raw, "application_sc")
+
+
+def test_application_sc_tacco_annotation_parameters_are_locked():
+    with pytest.raises(ConfigError, match="locked parameter"):
+        _merge(
+            _raw_config(),
+            "application_sc",
+            {"sc": {"tacco_annotate": {"lamb": 0.1}}},
+        )
 
 
 @pytest.mark.parametrize(

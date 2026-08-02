@@ -388,9 +388,11 @@ class REVISEPipeline:
                 getattr(ctx, "sr_allocation_records", [])
             ),
         }
-        result = copy.deepcopy(getattr(ctx, "provenance", {}).get("result"))
-        if result is not None:
-            provenance["result"] = result
+        current_provenance = getattr(ctx, "provenance", {})
+        for result_key in ("result", "results"):
+            result_value = copy.deepcopy(current_provenance.get(result_key))
+            if result_value is not None:
+                provenance[result_key] = result_value
 
         write_json(Path(ctx.run_dir) / "provenance.json", provenance)
 

@@ -11,6 +11,7 @@ from scipy import sparse
 from scipy.spatial import cKDTree
 
 from revise.backend.contracts import LocalRefinementStrategy
+from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.config.runner_conf import (
     ApplicationScConf,
     ApplicationScSrConf,
@@ -514,7 +515,6 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-
         conf = ApplicationSpConf(
             sample_name=io_cfg["sample_name"],
             raw_data_path=io_cfg["data_root"],
@@ -591,6 +591,9 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
+        tacco_annotate_cfg = dict(
+            (cfg.get("sc", {}) or {}).get("tacco_annotate", {}) or {}
+        )
 
         conf = ApplicationScConf(
             sample_name=io_cfg["sample_name"],
@@ -610,6 +613,8 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             rec_graph_method=str(_cfg_get(cfg, "graph", "method", default="joint")),
             rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.2)),
             rec_match_spot_sum=bool(_cfg_get(cfg, "sc", "match_spot_sum", default=False)),
+            tacco_annotate_multi_center=tacco_annotate_cfg.get("multi_center"),
+            tacco_annotate_lamb=tacco_annotate_cfg.get("lamb"),
             **_ot_runner_kwargs(cfg),
         )
         _attach_posterior_conditioning_conf(conf, cfg)
@@ -681,7 +686,8 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
                 if ref_count == 0:
                     ctx.runner.graph_cluster.record_not_applicable(
                         problem_key=f"standard-sc:{candidate}",
-                        reason="missing_reference_cells",
+                        reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
+                        reason_details={"role": "reference_cell"},
                     )
                     skipped_cell_types.append(
                         {"cell_type": candidate, "reason": "missing_reference_cells", "spatial_cells": st_count}
@@ -690,7 +696,12 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
                 if st_count < 2:
                     ctx.runner.graph_cluster.record_not_applicable(
                         problem_key=f"standard-sc:{candidate}",
-                        reason="insufficient_spatial_cells",
+                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                        reason_details={
+                            "unit": "spatial_cell",
+                            "observed": st_count,
+                            "required": 2,
+                        },
                     )
                     ctx.logger.info(
                         "[adapter] all-cell-type sc-SVC singleton fallback: cell_type=%s spatial_cells=%s reference_cells=%s",

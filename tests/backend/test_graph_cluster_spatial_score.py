@@ -9,7 +9,7 @@ import pytest
 from anndata import AnnData
 from scipy import sparse
 
-from revise.backend.ops.assignment import AssignmentState
+from revise.backend.ops.assignment import AssignmentState, AssignmentStateError
 from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
 
 
@@ -166,6 +166,7 @@ def _run_graph_cluster(
         rec_random_state=0,
         rec_graph_alpha=0.5,
         rec_graph_method="pca",
+        assignment_guidance_policy=guidance,
         posterior_conditioning_enabled=guidance != "off",
         posterior_conditioning_mode="cost",
         posterior_conditioning_key="Level1",
@@ -240,7 +241,10 @@ def test_graph_cluster_missing_level2_obeys_prefer_require_policy(
 ):
     module = graph_cluster_module
     if raises:
-        with pytest.raises(ValueError, match="assignment guidance unavailable"):
+        with pytest.raises(
+            AssignmentStateError,
+            match="assignment_state_unavailable",
+        ):
             _run_graph_cluster(
                 module,
                 monkeypatch,

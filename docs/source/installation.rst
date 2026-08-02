@@ -29,9 +29,9 @@ The package contains ``revise/revise.yaml``, so installed code can construct
 Dependency layers
 -----------------
 
-The base package contains reconstruction, benchmarking, the default OT
-implementation, clustering, and the core scientific stack. Additional
-capabilities are installed only when needed:
+The base package contains reconstruction, benchmarking, the POT implementation,
+clustering, and the core scientific stack. Additional capabilities are
+installed only when needed:
 
 .. list-table::
    :header-rows: 1
@@ -40,9 +40,9 @@ capabilities are installed only when needed:
    * - Capability
      - Source-checkout install
      - Purpose
-   * - Additional OT implementation
+   * - Standard sc-SVC default solver
      - ``python -m pip install ".[tacco]"``
-     - Adds another selectable OT implementation, such as TACCO
+     - Installs TACCO 0.5.0, required by the default standard sc-SVC route
    * - Pathway analysis
      - ``python -m pip install ".[pathway]"``
      - Dependencies used by pathway notebooks
@@ -59,7 +59,9 @@ capabilities are installed only when needed:
 After a matching package version is published, replace ``.`` with
 ``revise-svc`` in those commands. Optional dependency selection and runtime
 algorithm selection are separate: installing an extra makes that capability
-available but does not activate it.
+available but does not activate it. Without the TACCO extra, users who accept a
+different reconstruction algorithm must explicitly pass ``--ot-method pot``;
+REVISE never selects POT as an automatic fallback.
 
 The CCI extra does not download a CellPhoneDB database. None of these commands
 downloads research data or external analysis resources.

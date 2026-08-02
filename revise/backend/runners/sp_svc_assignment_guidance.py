@@ -13,6 +13,7 @@ from revise.backend.ops.assignment import (
     validate_assignment,
 )
 from revise.backend.ops.assignment_guidance import (
+    NotApplicableReason,
     assignment_guidance_mode,
     assignment_compatibility,
     ot_cost_guidance,
@@ -125,7 +126,8 @@ def record_not_applicable(
     route,
     operator,
     problem_key,
-    reason,
+    reason: NotApplicableReason,
+    reason_details=None,
 ):
     callback = _problem_start(
         config,
@@ -140,6 +142,7 @@ def record_not_applicable(
             problem_key=problem_key,
             outcome="not_applicable",
             reason=reason,
+            reason_details=reason_details or {},
         )
 
 
@@ -171,7 +174,6 @@ def prepare_assignment_guidance(
                 "terminal",
                 problem_key=problem_key,
                 outcome="off",
-                reason="guidance_off",
             )
         return distance_matrix, None, False
 
@@ -197,20 +199,31 @@ def prepare_assignment_guidance(
         )
         return left
 
-    resolution = resolve_assignment_guidance(mode, load_state)
-    if resolution.availability != "available":
+    try:
+        resolution = resolve_assignment_guidance(mode, load_state)
+    except (AssignmentStateError, KeyError):
         if callback is not None:
             callback(
                 "terminal",
                 problem_key=problem_key,
-                outcome=resolution.outcome,
-                availability=resolution.availability,
-                reason=resolution.reason,
+                outcome="failed",
+                availability="unavailable",
             )
-        if resolution.outcome == "failed":
-            raise ValueError(
-                f"assignment guidance unavailable: {resolution.reason}"
-            )
+        raise
+    if resolution.availability != "available":
+        if callback is not None:
+            fields = {
+                "outcome": resolution.outcome,
+                "availability": resolution.availability,
+            }
+            if resolution.outcome == "fallback":
+                fields.update(
+                    {
+                        "reason": resolution.reason,
+                        "reason_details": resolution.reason_details,
+                    }
+                )
+            callback("terminal", problem_key=problem_key, **fields)
         return distance_matrix, None, False
 
     affinity = assignment_compatibility(
@@ -259,12 +272,8 @@ def record_guidance_terminal(
     problem_key,
     attempted,
     outcome,
-    reason=None,
 ):
     callback = getattr(config, "assignment_guidance_callback", None)
     if not attempted or callback is None:
         return
-    fields = {"outcome": outcome}
-    if outcome == "failed":
-        fields["reason"] = reason
-    callback("terminal", problem_key=problem_key, **fields)
+    callback("terminal", problem_key=problem_key, outcome=outcome)

@@ -4,6 +4,7 @@ import scanpy as sc
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.kernels import SpotSrKernel as SpotSr
+from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.meta import construct_sc_ref
 from revise.backend.ops.meta import get_sc_obs
@@ -178,7 +179,12 @@ class ScSVCSr(ApplicationSVC):
                     record_virtual_cell_not_applicable(
                         self.config,
                         problem_key=problem_key,
-                        reason="insufficient_virtual_cells",
+                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                        reason_details={
+                            "unit": "virtual_cell",
+                            "observed": int(idx.size),
+                            "required": 50,
+                        },
                     )
                     SVC_X_smoothed[idx] = SVC_X[idx]
                     continue
@@ -200,7 +206,8 @@ class ScSVCSr(ApplicationSVC):
                     record_virtual_cell_not_applicable(
                         self.config,
                         problem_key=problem_key,
-                        reason="empty_neighbor_support",
+                        reason=NotApplicableReason.EMPTY_SUPPORT,
+                        reason_details={"support": "neighbor"},
                     )
                     continue
 
@@ -249,7 +256,8 @@ class ScSVCSr(ApplicationSVC):
                         record_virtual_cell_not_applicable(
                             self.config,
                             problem_key=problem_key,
-                            reason="empty_active_support",
+                            reason=NotApplicableReason.EMPTY_SUPPORT,
+                            reason_details={"support": "active"},
                         )
                         continue
                     stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
@@ -307,7 +315,6 @@ class ScSVCSr(ApplicationSVC):
                             problem_key=problem_key,
                             attempted=attempted,
                             outcome="interrupted",
-                            reason="solver_interrupted",
                         )
                         raise
                     except Exception:
@@ -316,7 +323,6 @@ class ScSVCSr(ApplicationSVC):
                             problem_key=problem_key,
                             attempted=attempted,
                             outcome="failed",
-                            reason="solver_or_update_failure",
                         )
                         raise
                     record_virtual_cell_guidance_terminal(
@@ -331,7 +337,11 @@ class ScSVCSr(ApplicationSVC):
                     record_virtual_cell_not_applicable(
                         self.config,
                         problem_key=problem_key,
-                        reason="empty_marginals",
+                        reason=NotApplicableReason.INVALID_MASS,
+                        reason_details={
+                            "side": "source_and_target",
+                            "condition": "empty",
+                        },
                     )
 
             SVC_X = SVC_X_smoothed
@@ -340,7 +350,12 @@ class ScSVCSr(ApplicationSVC):
             record_virtual_cell_not_applicable(
                 self.config,
                 problem_key="sr-application:all",
-                reason="insufficient_virtual_cells",
+                reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                reason_details={
+                    "unit": "virtual_cell",
+                    "observed": int(n_cells),
+                    "required": 2,
+                },
             )
 
         if getattr(self.config, "rec_match_spot_sum", False):

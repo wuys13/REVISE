@@ -14,8 +14,16 @@ import pytest
 from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
-from revise.backend.ops.assignment import AssignmentState, one_hot_assignment
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
+from revise.backend.ops.assignment import (
+    AssignmentState,
+    AssignmentStateError,
+    one_hot_assignment,
+)
+from revise.backend.ops.assignment_guidance import (
+    AssignmentGuidanceCollector,
+    FallbackReason,
+    NotApplicableReason,
+)
 
 
 _MISSING = object()
@@ -130,6 +138,7 @@ def _config(
         rec_graph_method="pca",
         rec_ot_method="pot",
         plot_flag=False,
+        assignment_guidance_policy=guidance,
         posterior_conditioning_enabled=guidance != "off",
         posterior_conditioning_mode=compatibility_mode,
         posterior_conditioning_strict=guidance == "require",
@@ -457,7 +466,7 @@ def test_missing_level2_falls_back_under_prefer(
     [event] = collector.events
     assert event["outcome"] == "fallback"
     assert event["availability"] == "unavailable"
-    assert event["reason"] == "assignment_missing"
+    assert event["reason"] == FallbackReason.ASSIGNMENT_MISSING.value
 
 
 def test_missing_level2_fails_require_after_unguided_resolution_selection(
@@ -472,7 +481,7 @@ def test_missing_level2_fails_require_after_unguided_resolution_selection(
         logging.getLogger("test-standard-sc-require"),
     )
 
-    with pytest.raises(ValueError, match="assignment guidance unavailable"):
+    with pytest.raises(AssignmentStateError, match="assignment_state_unavailable"):
         kernel.run(
             adata,
             resolution=[0.5, 1.0],
@@ -485,7 +494,7 @@ def test_missing_level2_fails_require_after_unguided_resolution_selection(
     [event] = collector.events
     assert event["outcome"] == "failed"
     assert event["attempted"] is False
-    assert event["reason"] == "assignment_missing"
+    assert event["reason"] is None
 
 
 @pytest.mark.parametrize(
@@ -513,7 +522,7 @@ def test_invalid_level2_obeys_prefer_require_policy(
     )
 
     if raises:
-        with pytest.raises(ValueError, match="assignment guidance unavailable"):
+        with pytest.raises(AssignmentStateError, match="values_nan"):
             kernel.run(
                 adata,
                 resolution=[0.5, 1.0],
@@ -533,7 +542,11 @@ def test_invalid_level2_obeys_prefer_require_policy(
         assert [call["guided"] for call in captured["leiden"]] == [False, False]
     [event] = collector.events
     assert event["outcome"] == expected_outcome
-    assert event["reason"] == "invalid_assignment_values"
+    assert event["reason"] == (
+        None
+        if raises
+        else FallbackReason.ASSIGNMENT_INVALID.value
+    )
 
 
 def test_base_resolution_failure_leaves_guidance_provenance_unstarted(
@@ -598,7 +611,7 @@ def test_guided_clustering_failure_is_terminal_and_rethrown(
     [event] = collector.events
     assert event["attempted"] is True
     assert event["outcome"] == "failed"
-    assert event["reason"] == "graph_clustering_failed"
+    assert event["reason"] is None
 
 
 def test_graph_compatibility_failure_is_terminal_and_rethrown(
@@ -632,7 +645,7 @@ def test_graph_compatibility_failure_is_terminal_and_rethrown(
     [event] = collector.events
     assert event["attempted"] is True
     assert event["outcome"] == "failed"
-    assert event["reason"] == "graph_guidance_failed"
+    assert event["reason"] is None
 
 
 def test_guided_clustering_interrupt_is_terminal_and_rethrown(
@@ -670,7 +683,7 @@ def test_guided_clustering_interrupt_is_terminal_and_rethrown(
     [event] = collector.events
     assert event["attempted"] is True
     assert event["outcome"] == "interrupted"
-    assert event["reason"] == "graph_clustering_interrupted"
+    assert event["reason"] is None
 
 
 def test_singleton_records_not_applicable_without_assignment_fallback(
@@ -699,7 +712,12 @@ def test_singleton_records_not_applicable_without_assignment_fallback(
     [event] = collector.events
     assert event["applicability"] == "not_applicable"
     assert event["outcome"] == "not_applicable"
-    assert event["reason"] == "insufficient_spatial_cells"
+    assert event["reason"] == NotApplicableReason.INSUFFICIENT_UNITS.value
+    assert event["reason_details"] == {
+        "unit": "spatial_cell",
+        "observed": 1,
+        "required": 2,
+    }
 
 
 @contextmanager
@@ -981,7 +999,8 @@ def test_runner_missing_reference_records_not_applicable_before_local_solver():
 
         assert recorded == {
             "problem_key": "standard-sc:A",
-            "reason": "missing_reference_cells",
+            "reason": NotApplicableReason.REFERENCE_UNAVAILABLE,
+            "reason_details": {"role": "reference_cell"},
         }
 
 
@@ -1500,7 +1519,13 @@ def test_all_cell_adapter_records_not_applicable_for_bypassed_cohorts(
         part = spatial[spatial.obs[cell_type_col] == candidate].copy()
         part.obs[sub_cell_type_col] = [f"{candidate}-singleton"]
         part.obs["SVC_cluster"] = pd.Categorical(["0"])
-        return part, part.copy()
+        expr_part = part.copy()
+        expr_part.obsm["SVC_cluster"] = pd.DataFrame(
+            [[1.0]],
+            index=expr_part.obs_names,
+            columns=["0"],
+        )
+        return part, expr_part
 
     monkeypatch.setattr(
         adapters,
@@ -1538,10 +1563,10 @@ def test_all_cell_adapter_records_not_applicable_for_bypassed_cohorts(
     } == {
         "standard-sc:A": (
             "not_applicable",
-            "insufficient_spatial_cells",
+            NotApplicableReason.INSUFFICIENT_UNITS.value,
         ),
         "standard-sc:B": (
             "not_applicable",
-            "missing_reference_cells",
+            NotApplicableReason.REFERENCE_UNAVAILABLE.value,
         ),
     }

@@ -174,6 +174,11 @@ class BaseConf:
     cell_type_col: str
     confidence_col: str
     unknown_key: str
+    assignment_guidance_policy: Optional[str] = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
 
 @dataclass
@@ -241,6 +246,8 @@ class ApplicationScConf(BaseConf):
     annotate_pot_reg: float = 0.06
     annotate_pot_reg_m: float = 0.015
     annotate_pot_reg_type: str = "entropy"
+    tacco_annotate_multi_center: Optional[int] = None
+    tacco_annotate_lamb: Optional[float] = None
 
     # preprocess parameters
     prep_st_min_counts: int = 60

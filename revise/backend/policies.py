@@ -162,7 +162,6 @@ class ModeValidationPolicy(InputValidationPolicy):
                     problem_key=problem_key,
                     outcome="failed",
                     availability="unavailable",
-                    reason="graph_branch_disabled",
                 )
             raise ValueError(
                 "required local-refinement guidance is incompatible with the "

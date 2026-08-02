@@ -14,7 +14,12 @@ import pytest
 from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
+from revise.backend.ops.assignment import AssignmentStateError
+from revise.backend.ops.assignment_guidance import (
+    AssignmentGuidanceCollector,
+    FallbackReason,
+    NotApplicableReason,
+)
 
 
 _MISSING = object()
@@ -143,6 +148,7 @@ def _config(
     return SimpleNamespace(
         cell_type_col="Level1",
         rec_ot_method=solver,
+        assignment_guidance_policy=guidance,
         rec_impute_pot_reg=0.1,
         rec_impute_pot_reg_m=0.0,
         rec_impute_pot_reg_type="kl",
@@ -401,7 +407,7 @@ def test_unlabeled_reference_posterior_is_ambiguous_not_positional(
     captured = _patch_problem(impute_module, monkeypatch, runner)
 
     if guidance == "require":
-        with pytest.raises(ValueError, match="category_axis_mismatch"):
+        with pytest.raises(AssignmentStateError):
             runner.local_impute(reference, "leiden_3", guidance_scope="panel")
     else:
         runner.local_impute(reference, "leiden_3", guidance_scope="panel")
@@ -410,7 +416,13 @@ def test_unlabeled_reference_posterior_is_ambiguous_not_positional(
     event = _event(collector)
     assert event["outcome"] == expected_outcome
     assert event["availability"] == "unavailable"
-    assert event["reason"] == "category_axis_mismatch"
+    assert event["reason"] == (
+        None
+        if guidance == "require"
+        else FallbackReason.ASSIGNMENT_MISALIGNED.value
+    )
+    if guidance == "prefer":
+        assert event["reason_details"]["axis"] == "category"
     assert event["attempted"] is False
 
 
@@ -426,7 +438,7 @@ def test_misaligned_categories_fallback_or_fail_before_solver(
     captured = _patch_problem(impute_module, monkeypatch, runner)
 
     if guidance == "require":
-        with pytest.raises(ValueError, match="category_axis_mismatch"):
+        with pytest.raises(AssignmentStateError):
             runner.local_impute(reference, "leiden_3", guidance_scope="panel")
     else:
         runner.local_impute(reference, "leiden_3", guidance_scope="panel")
@@ -434,7 +446,13 @@ def test_misaligned_categories_fallback_or_fail_before_solver(
     assert bool(captured["solve_calls"]) is (guidance == "prefer")
     event = _event(collector)
     assert event["outcome"] == ("fallback" if guidance == "prefer" else "failed")
-    assert event["reason"] == "category_axis_mismatch"
+    assert event["reason"] == (
+        None
+        if guidance == "require"
+        else FallbackReason.ASSIGNMENT_MISALIGNED.value
+    )
+    if guidance == "prefer":
+        assert event["reason_details"]["axis"] == "category"
 
 
 def test_reference_ablation_supplies_pot_reference_measure(
@@ -614,24 +632,27 @@ def test_reference_only_cell_type_is_not_applicable_and_keeps_event_order(
         "applied",
         "not_applicable",
     ]
-    assert collector.events[1]["reason"] == "empty_spatial_support"
+    assert collector.events[1]["reason"] == (
+        NotApplicableReason.EMPTY_SUPPORT.value
+    )
+    assert collector.events[1]["reason_details"] == {"support": "spatial"}
     assert collector.summary() == "mixed"
 
 
 @pytest.mark.parametrize(
-    ("spatial_values", "reference_values", "categorical", "reason"),
+    ("spatial_values", "reference_values", "categorical", "side"),
     [
         (
             [[0.0, 0.0], [1.0, 1.0]],
             [[1.0, 1.0], [1.0, 1.0]],
             False,
-            "zero_source_mass",
+            "source",
         ),
         (
             [[1.0, 1.0], [1.0, 1.0]],
             [[0.0, 0.0], [0.0, 0.0]],
             False,
-            "zero_target_mass",
+            "target",
         ),
     ],
 )
@@ -641,7 +662,7 @@ def test_zero_observed_marginals_are_not_applicable(
     spatial_values,
     reference_values,
     categorical,
-    reason,
+    side,
 ):
     spatial = AnnData(
         X=sparse.csr_matrix(spatial_values),
@@ -683,7 +704,11 @@ def test_zero_observed_marginals_are_not_applicable(
     assert result.n_obs == 0
     event = _event(collector)
     assert event["outcome"] == "not_applicable"
-    assert event["reason"] == reason
+    assert event["reason"] == NotApplicableReason.INVALID_MASS.value
+    assert event["reason_details"] == {
+        "side": side,
+        "condition": "zero",
+    }
     assert event["availability"] == "not_checked"
 
 
@@ -817,10 +842,10 @@ def test_metadata_only_unused_subcluster_level_preserves_base_result(
 
 
 @pytest.mark.parametrize(
-    ("failure_stage", "expected_outcome", "reason"),
+    ("failure_stage", "expected_outcome"),
     [
-        ("solver", "failed", "solver_failed"),
-        ("assembly", "failed", "result_assembly_failed"),
+        ("solver", "failed"),
+        ("assembly", "failed"),
     ],
 )
 def test_failures_record_terminal_stage_and_reraise(
@@ -828,7 +853,6 @@ def test_failures_record_terminal_stage_and_reraise(
     monkeypatch,
     failure_stage,
     expected_outcome,
-    reason,
 ):
     collector = AssignmentGuidanceCollector()
     runner, reference = _runner(impute_module, collector)
@@ -847,7 +871,7 @@ def test_failures_record_terminal_stage_and_reraise(
     event = _event(collector)
     assert event["attempted"] is True
     assert event["outcome"] == expected_outcome
-    assert event["reason"] == reason
+    assert event["reason"] is None
 
 
 def test_result_assembly_interrupt_records_interrupted_and_reraises(
@@ -869,7 +893,7 @@ def test_result_assembly_interrupt_records_interrupted_and_reraises(
     event = _event(collector)
     assert event["attempted"] is True
     assert event["outcome"] == "interrupted"
-    assert event["reason"] == "result_assembly_interrupted"
+    assert event["reason"] is None
 
 
 def _run_public_cli_route(

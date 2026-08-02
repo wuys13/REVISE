@@ -105,7 +105,8 @@ def get_true_cell_type(SVC_obs, adata_sc, label_key=None):
 
     SVC_obs['cell_id'] = SVC_obs['cell_id'].astype(str)
     aligned = true_cell_type_df.reindex(SVC_obs['cell_id'])
-    SVC_obs['true_cell_type'] = aligned[label_key].fillna('Unknown').to_numpy()
+    true_labels = aligned[label_key].astype(object).fillna('Unknown')
+    SVC_obs['true_cell_type'] = true_labels.to_numpy()
     known = aligned[['x', 'y']].notna().all(axis=1).to_numpy()
     if np.any(known):
         SVC_obs.loc[known, ["x", "y"]] = aligned.loc[known, ["x", "y"]].to_numpy()

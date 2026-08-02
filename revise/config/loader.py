@@ -98,8 +98,10 @@ SC_KEYS = {
     "sr_noise_weight",
     "sr_noise_preserve_total_counts",
     "sr_noise_seed",
+    "tacco_annotate",
 }
 SC_HYPER_KEYS = {"enabled", "strategy", "resolutions", "select_resolution"}
+SC_TACCO_ANNOTATE_KEYS = {"multi_center", "lamb"}
 IMPUTE_KEYS = {
     "merge_subcluster_method",
     "subcluster_resolution",
@@ -268,6 +270,42 @@ def _validate_sc_section(sc_cfg: Dict[str, Any], ctx: str) -> None:
     if hyper is not None:
         hyper_map = _ensure_mapping(hyper, f"{ctx}.hyperresolution")
         _reject_unknown_keys(hyper_map, SC_HYPER_KEYS, f"{ctx}.hyperresolution")
+
+    tacco_annotate = sc_cfg.get("tacco_annotate")
+    if tacco_annotate is not None:
+        tacco_map = _ensure_mapping(tacco_annotate, f"{ctx}.tacco_annotate")
+        _reject_unknown_keys(
+            tacco_map,
+            SC_TACCO_ANNOTATE_KEYS,
+            f"{ctx}.tacco_annotate",
+        )
+        missing = sorted(SC_TACCO_ANNOTATE_KEYS - set(tacco_map))
+        if missing:
+            raise ConfigError(
+                f"Missing required TACCO annotation keys in "
+                f"{ctx}.tacco_annotate: {missing}"
+            )
+        multi_center = tacco_map["multi_center"]
+        if (
+            isinstance(multi_center, bool)
+            or not isinstance(multi_center, int)
+            or multi_center <= 0
+        ):
+            raise ConfigError(
+                f"{ctx}.tacco_annotate.multi_center must be a positive integer; "
+                f"got {multi_center!r}"
+            )
+        lamb = tacco_map["lamb"]
+        if (
+            isinstance(lamb, bool)
+            or not isinstance(lamb, Real)
+            or not math.isfinite(lamb)
+            or lamb <= 0
+        ):
+            raise ConfigError(
+                f"{ctx}.tacco_annotate.lamb must be a finite real number "
+                f"greater than 0; got {lamb!r}"
+            )
 
 
 def _validate_guidance_number(
@@ -565,6 +603,14 @@ def _validate_resolved_config(merged: Dict[str, Any]) -> None:
     sc_cfg = _ensure_mapping(merged.get("sc", {}), "resolved.sc")
     if sc_cfg.get("svc_completeness") is not True:
         raise ConfigError("sc.svc_completeness must be exactly true")
+    runtime = merged["runtime"]
+    if runtime.get("mode") == "application" and runtime.get("task") == "sc_svc":
+        solvers = {str(merged["ot"][phase]["solver"]) for phase in ("ga", "lr")}
+        if "tacco" in solvers and sc_cfg.get("tacco_annotate") is None:
+            raise ConfigError(
+                "sc.tacco_annotate is required when application sc-SVC uses "
+                "TACCO for Global Anchoring or Local Refinement"
+            )
 
 
 def _guidance_route_defaults(merged: Dict[str, Any]) -> Dict[str, Any]:

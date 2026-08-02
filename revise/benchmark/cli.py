@@ -313,7 +313,7 @@ def _aggregate_assignment_guidance(
 
     events: List[Dict[str, object]] = []
     for case_ordinal, item, manifest in leaves:
-        if manifest.get("schema_version") != 1:
+        if manifest.get("schema_version") != 2:
             raise ValueError("unsupported assignment-guidance leaf schema")
         if manifest.get("configured") != configured:
             raise ValueError(
@@ -345,7 +345,7 @@ def _aggregate_assignment_guidance(
     collector = AssignmentGuidanceCollector()
     collector.events = copy.deepcopy(events)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "configured": configured,
         "resolved": resolved,
         "events": events,

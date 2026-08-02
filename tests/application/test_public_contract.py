@@ -7,6 +7,7 @@ Proof limit: does not execute scientific reconstruction or validate real dataset
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -52,6 +53,63 @@ def test_parser_accepts_each_1x_svc_type(svc_type):
 
     assert args.svc_type == svc_type
     assert not hasattr(args, "platform")
+
+
+def test_parser_rejects_removed_sc_mapping_option():
+    from revise.application.cli import parse_args
+
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(_required_args("sc-SVC") + ["--sc-mapping", "mean"])
+
+    assert exc_info.value.code == 2
+
+
+def test_ot_method_help_explains_tacco_default_and_explicit_pot():
+    from revise.application.cli import build_parser
+
+    help_text = build_parser().format_help()
+
+    assert "standard sc-SVC defaults to TACCO" in help_text
+    assert "'pot' explicitly selects a different algorithm" in help_text
+
+
+def test_sc_svc_cli_reports_plural_outputs(monkeypatch, capsys, tmp_path):
+    from revise.application import cli, service
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["revise-reconstruct", *_required_args("sc-SVC")],
+    )
+    monkeypatch.setattr(
+        service,
+        "reconstruct",
+        lambda args: (
+            {
+                "spatial": SimpleNamespace(shape=(3, 2)),
+                "expression": SimpleNamespace(shape=(4, 5)),
+            },
+            {
+                "spatial": tmp_path / "sc_SVC_spatial.h5ad",
+                "expression": tmp_path / "sc_SVC_expr.h5ad",
+            },
+            {"route": "sc_svc:segmentation"},
+        ),
+    )
+
+    cli.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["outputs"] == {
+        "spatial": str(tmp_path / "sc_SVC_spatial.h5ad"),
+        "expression": str(tmp_path / "sc_SVC_expr.h5ad"),
+    }
+    assert payload["shapes"] == {
+        "spatial": [3, 2],
+        "expression": [4, 5],
+    }
+    assert "output" not in payload
+    assert "shape" not in payload
 
 
 def test_parser_rejects_removed_set_option():

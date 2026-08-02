@@ -205,14 +205,19 @@ class SpotSrKernel(BaseKernel):
         pm_on_cell.columns = normalized_columns
 
         svc_cell_ids = SVC_obs["cell_id"].tolist()
-        if set(pm_on_cell.index) != set(svc_cell_ids):
-            missing = sorted(set(svc_cell_ids) - set(pm_on_cell.index))
-            extra = sorted(set(pm_on_cell.index) - set(svc_cell_ids))
-            raise ValueError(f"pm_on_cell cell IDs must match exactly; missing={missing}, extra={extra}")
-        if set(pm_on_cell.columns) != set(type_list):
-            missing = sorted(set(type_list) - set(pm_on_cell.columns))
-            extra = sorted(set(pm_on_cell.columns) - set(type_list))
-            raise ValueError(f"pm_on_cell classes must match exactly; missing={missing}, extra={extra}")
+        missing = sorted(set(svc_cell_ids) - set(pm_on_cell.index))
+        if missing:
+            raise ValueError(
+                "pm_on_cell must contain all SVC cell IDs; "
+                f"missing_count={len(missing)}, missing_preview={missing[:10]}"
+            )
+        missing = sorted(set(type_list) - set(pm_on_cell.columns))
+        if missing:
+            raise ValueError(
+                "pm_on_cell must contain all requested classes; "
+                f"missing={missing}"
+            )
+        pm_on_cell = pm_on_cell.loc[svc_cell_ids, type_list]
         try:
             values = pm_on_cell.to_numpy(dtype=np.float64, copy=True)
         except (TypeError, ValueError) as exc:
@@ -220,5 +225,4 @@ class SpotSrKernel(BaseKernel):
         if not np.isfinite(values).all():
             raise ValueError("pm_on_cell values must be finite")
 
-        numeric = pd.DataFrame(values, index=pm_on_cell.index, columns=pm_on_cell.columns)
-        return numeric.loc[svc_cell_ids, type_list]
+        return pd.DataFrame(values, index=pm_on_cell.index, columns=pm_on_cell.columns)

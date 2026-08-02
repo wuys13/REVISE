@@ -9,6 +9,7 @@ from tqdm import tqdm
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.ops.distance import similarity_to_distance
+from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.backend.runners.sp_svc_assignment_guidance import (
     assignment_categories,
     guidance_mode,
@@ -229,7 +230,14 @@ class SpSVC(ApplicationSVC):
                         route="sp_svc_application",
                         operator="neighbor_ot",
                         problem_key=guidance_problem_key,
-                        reason="insufficient_observations",
+                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                        reason_details={
+                            "unit": "observation",
+                            "observed": int(
+                                svc_recon_adata_cell_type.shape[0]
+                            ),
+                            "required": 51,
+                        },
                     )
                 cell_type_adata_list.append(svc_recon_adata_cell_type)
             else:
@@ -284,7 +292,8 @@ class SpSVC(ApplicationSVC):
                             route="sp_svc_application",
                             operator="neighbor_ot",
                             problem_key=guidance_problem_key,
-                            reason="empty_active_support",
+                            reason=NotApplicableReason.EMPTY_SUPPORT,
+                            reason_details={"support": "active"},
                         )
                     cell_type_adata_list.append(svc_recon_adata_cell_type)
                     continue
@@ -334,7 +343,6 @@ class SpSVC(ApplicationSVC):
                         problem_key=guidance_problem_key,
                         attempted=guidance_attempted,
                         outcome="failed",
-                        reason="solver_failed",
                     )
                     raise
                 try:
@@ -357,7 +365,6 @@ class SpSVC(ApplicationSVC):
                         problem_key=guidance_problem_key,
                         attempted=guidance_attempted,
                         outcome="failed",
-                        reason="expression_update_failed",
                     )
                     raise
                 record_guidance_terminal(

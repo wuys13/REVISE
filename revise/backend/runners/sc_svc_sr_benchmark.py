@@ -5,6 +5,10 @@ import scanpy as sc
 from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.kernels import SpotSrKernel as SpotSr
+from revise.backend.ops.assignment_guidance import (
+    FallbackReason,
+    NotApplicableReason,
+)
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.meta import construct_sc_ref
@@ -93,7 +97,11 @@ class ScSVCSr(BenchmarkSVC):
             record_virtual_cell_unavailable(
                 self.config,
                 problem_key="sr-benchmark:graph-branch",
-                reason="graph_branch_disabled",
+                reason=FallbackReason.OPERATOR_UNAVAILABLE,
+                reason_details={
+                    "operator": "virtual_cell_ot",
+                    "condition": "graph_branch_disabled",
+                },
             )
 
         overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
@@ -201,13 +209,21 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key="sr-benchmark:graph-branch",
-                    reason="graph_branch_disabled",
+                    reason=NotApplicableReason.ROUTE_EXCLUDED,
+                    reason_details={
+                        "route_component": "graph_branch",
+                        "condition": "disabled",
+                    },
                 )
             else:
                 record_virtual_cell_unavailable(
                     self.config,
                     problem_key="sr-benchmark:graph-branch",
-                    reason="graph_branch_disabled",
+                    reason=FallbackReason.OPERATOR_UNAVAILABLE,
+                    reason_details={
+                        "operator": "virtual_cell_ot",
+                        "condition": "graph_branch_disabled",
+                    },
                 )
 
         SVC_X_raw = SVC_X_raw / (np.sum(SVC_X_raw, axis=1, keepdims=True) + 1e-10) * 1e4
@@ -550,7 +566,12 @@ class ScSVCSr(BenchmarkSVC):
             record_virtual_cell_not_applicable(
                 self.config,
                 problem_key="sr-benchmark:all",
-                reason="insufficient_virtual_cells",
+                reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                reason_details={
+                    "unit": "virtual_cell",
+                    "observed": int(n_cells),
+                    "required": 2,
+                },
             )
             return SVC_X.copy()
         if target_mask is not None:
@@ -610,7 +631,8 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key=problem_key,
-                    reason="target_not_selected",
+                    reason=NotApplicableReason.ROUTE_EXCLUDED,
+                    reason_details={"selection": "target"},
                 )
                 continue
             if anchor_local is not None and not np.any(anchor_local):
@@ -619,7 +641,8 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key=problem_key,
-                    reason="anchor_donor_unavailable",
+                    reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
+                    reason_details={"role": "anchor_donor"},
                 )
                 continue
             if idx.size < 50:
@@ -627,7 +650,12 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key=problem_key,
-                    reason="insufficient_virtual_cells",
+                    reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                    reason_details={
+                        "unit": "virtual_cell",
+                        "observed": int(idx.size),
+                        "required": 50,
+                    },
                 )
                 continue
 
@@ -648,7 +676,8 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key=problem_key,
-                    reason="empty_neighbor_support",
+                    reason=NotApplicableReason.EMPTY_SUPPORT,
+                    reason_details={"support": "neighbor"},
                 )
                 continue
 
@@ -700,7 +729,11 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key=problem_key,
-                    reason="empty_marginals",
+                    reason=NotApplicableReason.INVALID_MASS,
+                    reason_details={
+                        "side": "source_and_target",
+                        "condition": "empty",
+                    },
                 )
                 continue
 
@@ -716,7 +749,8 @@ class ScSVCSr(BenchmarkSVC):
                 record_virtual_cell_not_applicable(
                     self.config,
                     problem_key=problem_key,
-                    reason="empty_active_support",
+                    reason=NotApplicableReason.EMPTY_SUPPORT,
+                    reason_details={"support": "active"},
                 )
                 continue
             stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
@@ -773,7 +807,6 @@ class ScSVCSr(BenchmarkSVC):
                     problem_key=problem_key,
                     attempted=attempted,
                     outcome="interrupted",
-                    reason="solver_interrupted",
                 )
                 raise
             except Exception:
@@ -782,7 +815,6 @@ class ScSVCSr(BenchmarkSVC):
                     problem_key=problem_key,
                     attempted=attempted,
                     outcome="failed",
-                    reason="solver_or_update_failure",
                 )
                 raise
             record_virtual_cell_guidance_terminal(

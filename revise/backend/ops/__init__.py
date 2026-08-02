@@ -10,6 +10,8 @@ _OPS_EXPORTS = {
     "project_assignment": ("revise.backend.ops.assignment", "project_assignment"),
     "validate_assignment": ("revise.backend.ops.assignment", "validate_assignment"),
     "AssignmentGuidanceCollector": ("revise.backend.ops.assignment_guidance", "AssignmentGuidanceCollector"),
+    "FallbackReason": ("revise.backend.ops.assignment_guidance", "FallbackReason"),
+    "NotApplicableReason": ("revise.backend.ops.assignment_guidance", "NotApplicableReason"),
     "assignment_compatibility": ("revise.backend.ops.assignment_guidance", "assignment_compatibility"),
     "graph_guidance": ("revise.backend.ops.assignment_guidance", "graph_guidance"),
     "ot_cost_guidance": ("revise.backend.ops.assignment_guidance", "ot_cost_guidance"),

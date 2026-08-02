@@ -15,7 +15,11 @@ from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
 from revise.backend.ops.assignment import AssignmentStateError
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
+from revise.backend.ops.assignment_guidance import (
+    AssignmentGuidanceCollector,
+    FallbackReason,
+    NotApplicableReason,
+)
 
 
 ISOLATED_MODULE_NAMES = (
@@ -257,6 +261,7 @@ def _config(
     return SimpleNamespace(
         plot_flag=False,
         cell_type_col="major_type",
+        assignment_guidance_policy=guidance,
         rec_graph_method="pca",
         rec_graph_alpha=0.0,
         rec_graph_exp_neighbor_num=1,
@@ -440,7 +445,7 @@ def test_application_off_does_not_construct_compatibility_and_keeps_base_cost(
     assert event["availability"] == "not_checked"
     assert event["attempted"] is False
     assert event["outcome"] == "off"
-    assert event["reason"] == "guidance_off"
+    assert event["reason"] is None
 
 
 def test_application_argmax_only_is_one_hot_guidance(
@@ -485,7 +490,8 @@ def test_application_invalid_soft_assignment_prefer_falls_back_to_base_cost(
     assert event["availability"] == "unavailable"
     assert event["attempted"] is False
     assert event["outcome"] == "fallback"
-    assert event["reason"] == "invalid_assignment_values"
+    assert event["reason"] == FallbackReason.ASSIGNMENT_INVALID.value
+    assert event["reason_details"] == {"cause": "values_negative"}
 
 
 def test_application_invalid_soft_assignment_require_fails_before_solver(
@@ -512,14 +518,14 @@ def test_application_invalid_soft_assignment_require_fails_before_solver(
         ),
     )
 
-    with pytest.raises(ValueError, match="category_axis_mismatch"):
+    with pytest.raises(AssignmentStateError):
         runner.local_refinement()
 
     [event] = collector.events
     assert event["availability"] == "unavailable"
     assert event["attempted"] is False
     assert event["outcome"] == "failed"
-    assert event["reason"] == "category_axis_mismatch"
+    assert event["reason"] is None
 
 
 def test_application_insufficient_observations_is_not_applicable(
@@ -540,7 +546,12 @@ def test_application_insufficient_observations_is_not_applicable(
     assert event["availability"] == "not_checked"
     assert event["attempted"] is False
     assert event["outcome"] == "not_applicable"
-    assert event["reason"] == "insufficient_observations"
+    assert event["reason"] == NotApplicableReason.INSUFFICIENT_UNITS.value
+    assert event["reason_details"] == {
+        "unit": "observation",
+        "observed": 2,
+        "required": 51,
+    }
 
 
 def test_application_empty_active_support_is_not_applicable_before_solver(
@@ -576,7 +587,8 @@ def test_application_empty_active_support_is_not_applicable_before_solver(
     assert event["availability"] == "not_checked"
     assert event["attempted"] is False
     assert event["outcome"] == "not_applicable"
-    assert event["reason"] == "empty_active_support"
+    assert event["reason"] == NotApplicableReason.EMPTY_SUPPORT.value
+    assert event["reason_details"] == {"support": "active"}
 
 
 def test_application_post_solver_update_failure_is_terminal_and_reraised(
@@ -602,10 +614,10 @@ def test_application_post_solver_update_failure_is_terminal_and_reraised(
     assert event["availability"] == "available"
     assert event["attempted"] is True
     assert event["outcome"] == "failed"
-    assert event["reason"] == "expression_update_failed"
+    assert event["reason"] is None
 
 
-def test_application_solver_failure_keeps_solver_specific_reason(
+def test_application_solver_failure_uses_exception_not_reason(
     sp_modules,
     monkeypatch,
 ):
@@ -628,7 +640,7 @@ def test_application_solver_failure_keeps_solver_specific_reason(
     [event] = collector.events
     assert event["attempted"] is True
     assert event["outcome"] == "failed"
-    assert event["reason"] == "solver_failed"
+    assert event["reason"] is None
 
 
 def _benchmark_runner(
@@ -746,23 +758,23 @@ def test_benchmark_off_keeps_base_cost_and_does_not_read_assignment(
     assert event["availability"] == "not_checked"
     assert event["attempted"] is False
     assert event["outcome"] == "off"
-    assert event["reason"] == "guidance_off"
+    assert event["reason"] is None
 
 
 @pytest.mark.parametrize(
-    ("mode", "mismatch_side", "reason", "outcome", "solver_called"),
+    ("mode", "mismatch_side", "axis", "outcome", "solver_called"),
     [
         (
             "prefer",
             "replace",
-            "observation_axis_mismatch",
+            "observation",
             "fallback",
             True,
         ),
         (
             "require",
             "donor",
-            "category_axis_mismatch",
+            "category",
             "failed",
             False,
         ),
@@ -773,7 +785,7 @@ def test_benchmark_axis_mismatch_obeys_pre_solver_policy(
     monkeypatch,
     mode,
     mismatch_side,
-    reason,
+    axis,
     outcome,
     solver_called,
 ):
@@ -801,7 +813,7 @@ def test_benchmark_axis_mismatch_obeys_pre_solver_policy(
     )
 
     if mode == "require":
-        with pytest.raises(ValueError, match=reason):
+        with pytest.raises(AssignmentStateError):
             runner.local_refinement()
     else:
         runner.local_refinement()
@@ -814,7 +826,12 @@ def test_benchmark_axis_mismatch_obeys_pre_solver_policy(
     assert event["availability"] == "unavailable"
     assert event["attempted"] is False
     assert event["outcome"] == outcome
-    assert event["reason"] == reason
+    if mode == "prefer":
+        assert event["reason"] == FallbackReason.ASSIGNMENT_MISALIGNED.value
+        assert event["reason_details"]["axis"] == axis
+    else:
+        assert event["reason"] is None
+        assert event["reason_details"] == {}
 
 
 def test_benchmark_post_solver_update_failure_is_terminal_and_reraised(
@@ -842,7 +859,7 @@ def test_benchmark_post_solver_update_failure_is_terminal_and_reraised(
     assert event["availability"] == "available"
     assert event["attempted"] is True
     assert event["outcome"] == "failed"
-    assert event["reason"] == "expression_update_failed"
+    assert event["reason"] is None
 
 
 @pytest.mark.parametrize(
@@ -1076,4 +1093,5 @@ def test_benchmark_missing_donors_is_not_applicable(sp_modules):
     [event] = collector.events
     assert event["applicability"] == "not_applicable"
     assert event["outcome"] == "not_applicable"
-    assert event["reason"] == "missing_donors"
+    assert event["reason"] == NotApplicableReason.REFERENCE_UNAVAILABLE.value
+    assert event["reason_details"] == {"role": "donor"}

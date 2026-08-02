@@ -61,10 +61,17 @@ revise-reconstruct \
 
 This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`. Choose another
 `--svc-type` using the guidance below, then remove `--dry-run` to reconstruct.
-Every successful full reconstruction publishes:
+`sp-SVC` and `sc-SVC-sr` publish:
 
 ```text
 output/sample/SVC.h5ad
+```
+
+Standard `sc-SVC` publishes its two reconstruction carriers separately:
+
+```text
+output/sample/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
+output/sample/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
 ```
 
 The associated `provenance.json` records the selected type, resolved route,
@@ -116,10 +123,13 @@ data/
   `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
   index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
   `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
-  scale as `obsm["spatial"]`. Missing centers fall back to the spot center.
-  Without a `PM_on_cell.csv`, these coordinates are retained while cell types
-  are assigned to the existing rows by a seeded random permutation of each
-  spot's inferred quota.
+  scale as `obsm["spatial"]`. Missing centers fall back to the spot center. A
+  `PM_on_cell.csv` must cover every current virtual-cell ID and requested
+  normalized cell type; extra Patient/case rows and class columns are allowed,
+  and REVISE strictly subsets and reorders the active case matrix before use.
+  Without that file, these coordinates are retained while cell types are
+  assigned to the existing rows by a seeded random permutation of each spot's
+  inferred quota.
 
 </details>
 
@@ -128,16 +138,17 @@ data/
 
 - `--seed`: controls deterministic random choices; default `42`.
 - `--ot-method pot|tacco`: selects one OT implementation for both Global
-  Anchoring and Local Refinement. TACCO requires the optional installation
-  group described below.
+  Anchoring and Local Refinement. Standard `sc-SVC` defaults to TACCO and
+  therefore requires the `tacco` extra; the other application profiles retain
+  their configured solver. If TACCO is unavailable and a different algorithm
+  is acceptable, explicitly pass `--ot-method pot`. REVISE never falls back
+  automatically.
 - `--select-ct`: for `sc-SVC`, reconstruct one broad cell type or use the
   default `all`.
 - `--cell-type-col`: selects the broad reference annotation column for all
   three routes.
 - `--sub-cell-type-col`: selects the refined annotation required only by
   standard `sc-SVC`; `sc-SVC-sr` does not require this column.
-- `--sc-mapping mean|random`: for `sc-SVC`, map each reconstructed spatial row
-  to its cluster mean expression or to a seeded same-cluster reference row.
 
 For advanced algorithm configuration, copy `revise/revise.yaml`, edit the
 relevant profile, and pass it with `--config`.
@@ -157,13 +168,13 @@ cd REVISE
 pip install .
 ```
 
-The base package contains reconstruction, the default OT implementation,
-clustering, and the core scientific stack. Install additional capabilities only
-when needed:
+The base package contains reconstruction, the POT implementation, clustering,
+and the core scientific stack. Install additional capabilities only when
+needed:
 
 | Capability | Installation | Purpose |
 | --- | --- | --- |
-| Additional OT implementation | `pip install "revise-svc[tacco]"` | Adds another selectable OT implementation, such as TACCO |
+| Standard sc-SVC default solver | `pip install "revise-svc[tacco]"` | Installs TACCO 0.5.0, required by the default standard sc-SVC route |
 | Pathway analysis | `pip install "revise-svc[pathway]"` | Dependencies used by pathway analysis notebooks |
 | Cell-cell interaction analysis | `pip install "revise-svc[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
 | Trajectory analysis | `pip install "revise-svc[trajectory]"` | Dependencies used by trajectory analysis notebooks |
@@ -207,15 +218,16 @@ REVISE reconstructs three complementary SVC types:
 
 <p align="center">Overview of the REVISE framework</p>
 
-Every application reconstruction publishes the same stable filename:
+`sp-SVC` and `sc-SVC-sr` publish:
 
 ```text
 <output-root>/<sample-name>/SVC.h5ad
 ```
 
-The run's `provenance.json` records whether that result is an `sp-SVC`,
-`sc-SVC`, or `sc-SVC-sr`, together with the resolved route, configuration,
-inputs, stages, and artifacts.
+`sc-SVC` publishes `sc_SVC_spatial.h5ad` and `sc_SVC_expr.h5ad` under
+`<output-root>/<sample-name>/sc-SVC/<cell-type>/`. The run's
+`provenance.json` records each result role together with the resolved route,
+configuration, inputs, stages, and artifacts.
 
 ## Reproduce
 

@@ -55,6 +55,21 @@ diagnostic request can therefore be written in a custom configuration:
      lr:
        solver: pot
 
+The ``application_sc`` profile defaults both stages to TACCO and reads the
+high-level annotation arguments from the profile itself:
+
+.. code-block:: yaml
+
+   sc:
+     resolutions: [0.6, 0.7, 0.8]
+     tacco_annotate:
+       multi_center: 1
+       lamb: 0.001
+
+These two values are forwarded to the Level1, Level2, and ``SVC_cluster``
+``tacco.tl.annotate`` calls. They are validated and locked against runtime
+algorithm overrides.
+
 Run the normal command with ``--config path/to/custom-revise.yaml``.
 
 TACCO behavior
@@ -64,7 +79,9 @@ TACCO 0.5.0 is an optional dependency. Choosing it performs a dependency and
 version check during preflight. A missing package, incompatible version,
 unsupported conditioning combination, invalid result, or solver exception
 fails the run. REVISE does not fall back to POT and records requested,
-attempted, and completed solver events separately.
+attempted, and completed solver events separately. If TACCO is unavailable and
+a different algorithm is acceptable, application users may explicitly rerun
+with ``--ot-method pot``; this is a solver change, not an automatic fallback.
 
 Reference-mode posterior conditioning is not compatible with TACCO LR. Select
 a supported conditioning mode or POT LR; the configuration/preflight layer
@@ -94,10 +111,11 @@ The optional policy is configured with:
 
 ``off`` runs the base local problem without constructing compatibility.
 ``prefer`` applies guidance when the route-provided Assignment State is valid
-and otherwise records a structured fallback. ``require`` fails when the state
-or route capability is unavailable. Omitting ``guidance`` uses route
-resolution; the resolved value and whether it came from a route default or an
-explicit request are both recorded in
+and otherwise records a structured fallback. Fallback reasons are aggregated
+into one run-level warning rather than emitted once per local invocation.
+``require`` raises when the state or route capability is unavailable. Omitting
+``guidance`` uses route resolution; the resolved value and whether it came from
+a route default or an explicit request are both recorded in
 ``provenance.json.assignment_guidance``.
 
 Cost guidance is the supported cross-route form for POT and TACCO. Reference
@@ -152,14 +170,15 @@ inputs and outputs through dedicated parameters. Common IO values are:
      sc_ref_file: sc_ref.h5ad
 
 The input resolver applies the same route-specific path rules in preflight and
-full execution. The public result remains
-``<output-root>/<sample-name>/SVC.h5ad``; the canonical run directory contains
-``provenance.json`` and internal evidence.
+full execution. sp-SVC and sc-SVC-sr publish
+``<output-root>/<sample-name>/SVC.h5ad``. Standard sc-SVC publishes its pair
+under ``<output-root>/<sample-name>/sc-SVC/<cell-type>/``. The canonical run
+directory contains ``provenance.json`` and internal evidence.
 
 Python API
 ----------
 
-Programmatic callers use the same merge and validation path:
+Programmatic callers use the same configuration-resolution and validation path:
 
 .. code-block:: python
 
@@ -178,6 +197,6 @@ Programmatic callers use the same merge and validation path:
        },
    )
 
-Direct API use returns an ``SVC`` carrier. The single public result file is a
-contract of ``reconstruct.py``/``revise-reconstruct``, not of every
-low-level pipeline call.
+Direct API use returns an ``SVC`` carrier. Route-specific public result
+publication is a contract of ``reconstruct.py``/``revise-reconstruct``, not of
+every low-level pipeline call.

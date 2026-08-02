@@ -109,6 +109,10 @@ Backend Compatibility Runners
 These classes are kept for notebooks, parity checks, and low-level debugging.
 New application and benchmark code should prefer ``REVISEPipeline`` or the
 application or benchmark entrypoints.
+Direct callers must provide a resolved ``assignment_guidance_policy`` with one
+of ``off``, ``prefer``, or ``require`` in the runner configuration. Legacy
+``posterior_conditioning.enabled`` or ``strict`` fields no longer infer this
+policy inside a runner.
 
 .. autosummary::
     :toctree: generated

@@ -6,6 +6,7 @@ from tqdm import tqdm
 from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import SegEvaluateKernel as SegEvaluate
 from revise.backend.ops.distance import similarity_to_distance
+from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.runners.sp_svc_assignment_guidance import (
     assignment_categories,
@@ -63,7 +64,12 @@ class SpSVC(BenchmarkSVC):
                         route="sp_svc_benchmark",
                         operator="replacement_ot",
                         problem_key=guidance_problem_key,
-                        reason="insufficient_observations",
+                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                        reason_details={
+                            "unit": "observation",
+                            "observed": int(svc_replace_adata.shape[0]),
+                            "required": 50,
+                        },
                     )
                 svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                 cell_type_adata_list.append(svc_replace_adata)
@@ -79,7 +85,8 @@ class SpSVC(BenchmarkSVC):
                         route="sp_svc_benchmark",
                         operator="replacement_ot",
                         problem_key=guidance_problem_key,
-                        reason="missing_donors",
+                        reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
+                        reason_details={"role": "donor"},
                     )
                 svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                 cell_type_adata_list.append(svc_replace_adata)
@@ -167,7 +174,8 @@ class SpSVC(BenchmarkSVC):
                             route="sp_svc_benchmark",
                             operator="replacement_ot",
                             problem_key=guidance_problem_key,
-                            reason="empty_active_support",
+                            reason=NotApplicableReason.EMPTY_SUPPORT,
+                            reason_details={"support": "active"},
                         )
                     svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                     cell_type_adata_list.append(svc_replace_adata)
@@ -218,7 +226,6 @@ class SpSVC(BenchmarkSVC):
                         problem_key=guidance_problem_key,
                         attempted=guidance_attempted,
                         outcome="failed",
-                        reason="solver_failed",
                     )
                     raise
                 try:
@@ -261,7 +268,6 @@ class SpSVC(BenchmarkSVC):
                         problem_key=guidance_problem_key,
                         attempted=guidance_attempted,
                         outcome="failed",
-                        reason="expression_update_failed",
                     )
                     raise
                 record_guidance_terminal(

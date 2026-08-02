@@ -184,9 +184,16 @@ profiles:
       spatial_neighbors: 6
     ot:
       ga:
+        solver: tacco
         pot: {reg: 0.1, reg_m: 0.0, reg_type: entropy}
       lr:
+        solver: tacco
         pot: {reg: 0.1, reg_m: 0.0, reg_type: entropy}
+    sc:
+      resolutions: [0.6, 0.7, 0.8]
+      tacco_annotate:
+        multi_center: 1
+        lamb: 0.001
 
   application_sc_hyper:
     runtime:
@@ -195,6 +202,9 @@ profiles:
     graph:
       alpha: 0.2
     sc:
+      tacco_annotate:
+        multi_center: 1
+        lamb: 0.001
       hyperresolution:
         enabled: true
         strategy: ScSvcHyperApplicationStrategy
@@ -344,3 +354,5 @@ locked_params:
     - ot.lr.pot.reg
     - ot.lr.pot.reg_m
     - ot.lr.pot.reg_type
+    - sc.tacco_annotate.multi_center
+    - sc.tacco_annotate.lamb

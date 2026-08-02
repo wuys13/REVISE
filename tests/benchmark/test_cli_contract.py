@@ -33,7 +33,7 @@ def _args(**overrides):
 
 def _guidance_manifest(*outcomes):
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "configured": {
             "guidance": None,
             "compatibility_mode": None,
@@ -165,7 +165,7 @@ def test_report_aliases_derive_from_actual_resolved_route_config(
         "posterior_strict": aliases["posterior_strict"],
     } == expected
     guidance = aliases["assignment_guidance"]
-    assert guidance["schema_version"] == 1
+    assert guidance["schema_version"] == 2
     assert guidance["events"] == []
     assert guidance["summary"] == "not_started"
 
@@ -198,7 +198,7 @@ def test_assignment_guidance_report_aggregates_leaf_events_with_case_identity(
         request_manifest=request,
     )
 
-    assert aggregate["schema_version"] == 1
+    assert aggregate["schema_version"] == 2
     assert aggregate["configured"] == request["configured"]
     assert aggregate["resolved"] == request["resolved"]
     assert aggregate["summary"] == expected_summary
@@ -345,7 +345,7 @@ def test_main_reports_resolved_config_aliases(
     assert report["posterior_mode"] == expected_mode
     assert report["posterior_strict"] is expected_strict
     guidance = report["assignment_guidance"]
-    assert guidance["schema_version"] == 1
+    assert guidance["schema_version"] == 2
     assert guidance["resolved"]["guidance"] == (
         "require" if expected_strict else (
             "off" if expected_mode == "off" else "prefer"
@@ -529,7 +529,7 @@ def test_run_case_passes_none_seed_and_structured_algorithm_overrides():
                 provenance = {
                     "run_dir": "run",
                     "assignment_guidance": {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "summary": "applied",
                     },
                 }
@@ -570,7 +570,7 @@ def test_pre_context_failure_does_not_reuse_stale_succeeded_manifest(tmp_path):
             {
                 "run": {"status": "succeeded"},
                 "assignment_guidance": {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "summary": "applied",
                 },
             }
@@ -622,7 +622,7 @@ def test_concurrent_lock_failure_does_not_reuse_stale_manifest(
             {
                 "run": {"status": "succeeded"},
                 "assignment_guidance": {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "summary": "applied",
                 },
             }
@@ -674,7 +674,7 @@ def test_post_context_failure_keeps_current_invocation_manifest(
                 {
                     "run": {"status": "failed"},
                     "assignment_guidance": {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "summary": "failed",
                     },
                 }

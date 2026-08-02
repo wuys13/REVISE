@@ -25,10 +25,11 @@ Routes and result types
      - spot-level observations
      - ``sc-SVC-sr``
 
-The common result location is ``<output-root>/<sample-name>/SVC.h5ad``. Its
-``provenance.json`` records the public result type separately from the
-internal route. The CLI merges route-internal objects into one public
-result when necessary.
+sp-SVC and sc-SVC-sr publish ``<output-root>/<sample-name>/SVC.h5ad``.
+Standard sc-SVC publishes separate spatial and reference-expression H5AD files
+under ``<output-root>/<sample-name>/sc-SVC/<cell-type>/``. Its
+``provenance.json`` records both logical roles separately from the internal
+route.
 
 Shared lifecycle
 ----------------
@@ -67,11 +68,13 @@ The LR contribution proportions are converted with ``np.round`` and then
 repaired in stable order until each spot has an exact quota equal to its virtual
 cell count. For an application route, the only resolved score-matrix location
 is the case-sensitive ``<data-root>/PM_on_cell.csv``; there is no CLI path override.
-Its row labels must exactly match the virtual-cell IDs; columns must exactly
-match the normalized cell-type labels; values must be
-finite numbers. A score-maximizing assignment then places the quota slots. If
-that file is missing, one seeded random permutation assigns those slots to the
-existing virtual-cell rows inside each spot.
+Its rows must cover every current virtual-cell ID and its columns must cover
+every requested normalized cell-type label. Extra Patient/case rows and extra
+class columns are permitted; REVISE strictly subsets and reorders the matrix to
+the current case before requiring the active values to be finite numbers. A
+score-maximizing assignment then places the quota slots. If that file is
+missing, one seeded random permutation assigns those slots to the existing
+virtual-cell rows inside each spot.
 
 The tested invariant is exact per-spot composition, plus repeatability for the
 same seed. Which virtual-cell row receives a type can change with the seed.

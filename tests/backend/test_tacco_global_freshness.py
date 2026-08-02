@@ -82,7 +82,12 @@ def test_stale_canonical_key_cannot_satisfy_tacco_noop(monkeypatch):
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
     target, reference = _inputs()
     target.obsm["Level1"] = _valid_result(target)
-    _install_tacco(monkeypatch, lambda *args, **kwargs: None)
+
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert return_reference is True
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
     kernel = GlobalAnchoringKernel(_config("tacco"), logging.getLogger("test"))
 
     with pytest.raises(KeyError, match="fresh"):
@@ -99,10 +104,12 @@ def test_tacco_uses_unique_result_key_then_promotes_only_fresh_output(monkeypatc
     )
     seen = []
 
-    def annotate(adata, ref, annotation_key, *, result_key):
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
         seen.append(result_key)
         assert result_key != "Level1"
+        assert return_reference is True
         adata.obsm[result_key] = _valid_result(adata)
+        return adata, ref
 
     _install_tacco(monkeypatch, annotate)
     events = []
@@ -123,12 +130,152 @@ def test_tacco_uses_unique_result_key_then_promotes_only_fresh_output(monkeypatc
     ]
 
 
+def test_tacco_recovers_final_zero_rows_with_processed_read_mass_prior(
+    monkeypatch,
+):
+    GlobalAnchoringKernel = _kernel_class(monkeypatch)
+    target = AnnData(
+        X=np.array(
+            [
+                [2.0, 1.0, 0.0, 0.0],
+                [1.0, 2.0, 0.0, 0.0],
+                [0.0, 0.0, 3.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ]
+        ),
+        obs=pd.DataFrame(
+            index=[
+                "spot1",
+                "spot2",
+                "spot_filtered",
+                "spot_unshared",
+                "spot_zero",
+            ]
+        ),
+        var=pd.DataFrame(
+            index=["g1", "g2", "filtered_shared", "target_only"]
+        ),
+    )
+    reference = AnnData(
+        X=np.array(
+            [
+                [1.0, 0.0, 1.0],
+                [0.0, 9.0, 1.0],
+                [1.0, 0.0, 1.0],
+            ]
+        ),
+        obs=pd.DataFrame(
+            {"Level1": ["A", "B", "A"]},
+            index=["cell1", "cell2", "cell3"],
+        ),
+        var=pd.DataFrame(index=["g1", "g2", "filtered_shared"]),
+    )
+    processed_reference = reference[:, ["g1", "g2"]].copy()
+
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert return_reference is True
+        assert adata.obs_names.tolist() == target.obs_names.tolist()
+        ref.uns["tacco_side_effect"] = True
+        adata.obsm[result_key] = pd.DataFrame(
+            [
+                [0.8, 0.2],
+                [0.1, 0.9],
+                [np.nan, np.nan],
+                [np.nan, np.nan],
+                [np.nan, np.nan],
+            ],
+            index=adata.obs_names,
+            columns=["A", "B"],
+        )
+        return adata, processed_reference
+
+    _install_tacco(monkeypatch, annotate)
+    events = []
+    result = GlobalAnchoringKernel(
+        _config("tacco", lambda *event: events.append(event)),
+        logging.getLogger("test"),
+    ).run(target, reference)
+
+    expected = pd.DataFrame(
+        [
+            [0.8, 0.2],
+            [0.1, 0.9],
+            [2.0 / 11.0, 9.0 / 11.0],
+            [2.0 / 11.0, 9.0 / 11.0],
+            [2.0 / 11.0, 9.0 / 11.0],
+        ],
+        index=target.obs_names,
+        columns=["A", "B"],
+    )
+    pd.testing.assert_frame_equal(result.obsm["Level1"], expected)
+    assert result.obs["Level1"].tolist() == ["A", "B", "B", "B", "B"]
+    assert "tacco_side_effect" not in reference.uns
+    assert events == [
+        ("ga", "tacco", "attempted"),
+        ("ga", "tacco", "completed"),
+    ]
+
+
+def test_tacco_does_not_hide_partial_nonfinite_final_zero_row(monkeypatch):
+    GlobalAnchoringKernel = _kernel_class(monkeypatch)
+    target, reference = _inputs()
+    target = AnnData(
+        X=np.vstack([target.X, np.zeros(target.n_vars)]),
+        obs=pd.DataFrame(index=["spot1", "spot2", "spot_zero"]),
+        var=target.var.copy(),
+    )
+
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert return_reference is True
+        adata.obsm[result_key] = pd.DataFrame(
+            [[0.8, 0.2], [0.1, 0.9], [np.nan, 0.0]],
+            index=adata.obs_names,
+            columns=["A", "B"],
+        )
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
+
+    with pytest.raises(ValueError, match="finite"):
+        GlobalAnchoringKernel(
+            _config("tacco"),
+            logging.getLogger("test"),
+        ).run(target, reference)
+
+
+def test_tacco_rejects_target_with_no_informative_shared_gene_row(monkeypatch):
+    GlobalAnchoringKernel = _kernel_class(monkeypatch)
+    _, reference = _inputs()
+    target = AnnData(
+        X=np.array([[1.0], [2.0]]),
+        obs=pd.DataFrame(index=["spot1", "spot2"]),
+        var=pd.DataFrame(index=["target_only"]),
+    )
+
+    def annotate(*args, **kwargs):
+        raise AssertionError("TACCO must not run without an informative row")
+
+    _install_tacco(monkeypatch, annotate)
+    events = []
+
+    with pytest.raises(ValueError, match="at least one target row"):
+        GlobalAnchoringKernel(
+            _config("tacco", lambda *event: events.append(event)),
+            logging.getLogger("test"),
+        ).run(target, reference)
+
+    assert events == [("ga", "tacco", "attempted")]
+
+
 def test_tacco_wrong_result_key_fails_closed(monkeypatch):
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
     target, reference = _inputs()
 
-    def annotate(adata, ref, annotation_key, *, result_key):
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert return_reference is True
         adata.obsm["some_other_key"] = _valid_result(adata)
+        return adata, ref
 
     _install_tacco(monkeypatch, annotate)
 
@@ -152,10 +299,12 @@ def test_malformed_fresh_tacco_result_fails_before_completed(
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
     target, reference = _inputs()
 
-    def annotate(adata, ref, annotation_key, *, result_key):
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert return_reference is True
         adata.obsm[result_key] = pd.DataFrame(
             values, index=adata.obs_names, columns=["A", "B"]
         )
+        return adata, ref
 
     _install_tacco(monkeypatch, annotate)
     events = []

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import pandas as pd
 from anndata import AnnData
 
 from revise.backend.kernels.base import BaseKernel
+from revise.backend.kernels.global_anchoring import GlobalAnchoringKernel
 from revise.backend.ops.assignment import AssignmentState
 from revise.backend.ops.distance import bhattacharyya_distance
 from revise.backend.ops.local_ot import solve_local_ot
+from revise.config.runner_conf import ApplicationScConf
 
 
 class LocalAnchoringKernel(BaseKernel):
@@ -21,6 +25,18 @@ class LocalAnchoringKernel(BaseKernel):
 
     def run(self, target: AnnData, reference: AnnData, **kwargs) -> AnnData:
         cell_type_col = kwargs.get("cell_type_col", self.config.cell_type_col)
+        if isinstance(self.config, ApplicationScConf) and self.method == "tacco":
+            delegate_config = copy.copy(self.config)
+            delegate_config.annotate_mode = "tacco"
+            return GlobalAnchoringKernel(
+                delegate_config,
+                self.logger,
+                event_phase="lr",
+            ).run(
+                target,
+                reference,
+                cell_type_col=cell_type_col,
+            )
         target = target.copy()
         overlap_genes = list(target.var_names.intersection(reference.var_names))
         if not overlap_genes:

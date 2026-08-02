@@ -15,6 +15,8 @@ from revise.backend.ops.assignment import (
     validate_assignment,
 )
 from revise.backend.ops.assignment_guidance import (
+    FallbackReason,
+    NotApplicableReason,
     assignment_guidance_mode,
     assignment_compatibility,
     ot_cost_guidance,
@@ -213,7 +215,8 @@ def record_virtual_cell_not_applicable(
     config,
     *,
     problem_key: str,
-    reason: str,
+    reason: NotApplicableReason,
+    reason_details: dict[str, Any] | None = None,
 ) -> None:
     callback = _start_guidance_event(
         config,
@@ -226,6 +229,7 @@ def record_virtual_cell_not_applicable(
             problem_key=problem_key,
             outcome="not_applicable",
             reason=reason,
+            reason_details=reason_details or {},
         )
 
 
@@ -233,7 +237,8 @@ def record_virtual_cell_unavailable(
     config,
     *,
     problem_key: str,
-    reason: str,
+    reason: FallbackReason,
+    reason_details: dict[str, Any] | None = None,
 ) -> None:
     """Record an applicable problem whose route capability is unavailable."""
     callback = _start_guidance_event(
@@ -248,21 +253,26 @@ def record_virtual_cell_unavailable(
                 "terminal",
                 problem_key=problem_key,
                 outcome="off",
-                reason="guidance_off",
             )
         return
     outcome = "fallback" if mode == "prefer" else "failed"
     if callback is not None:
-        callback(
-            "terminal",
-            problem_key=problem_key,
-            outcome=outcome,
-            availability="unavailable",
-            reason=reason,
-        )
+        fields = {
+            "outcome": outcome,
+            "availability": "unavailable",
+        }
+        if outcome == "fallback":
+            fields.update(
+                {
+                    "reason": reason,
+                    "reason_details": reason_details or {},
+                }
+            )
+        callback("terminal", problem_key=problem_key, **fields)
     if outcome == "failed":
+        detail = (reason_details or {}).get("condition", reason.value)
         raise ValueError(
-            f"required assignment guidance unavailable: {reason}"
+            f"required assignment guidance unavailable: {detail}"
         )
 
 
@@ -289,24 +299,34 @@ def prepare_virtual_cell_guidance(
                 "terminal",
                 problem_key=problem_key,
                 outcome="off",
-                reason="guidance_off",
             )
         return distance_matrix, None, False
 
-    resolution = resolve_assignment_guidance(mode, state_loader)
-    if resolution.availability != "available":
+    try:
+        resolution = resolve_assignment_guidance(mode, state_loader)
+    except (AssignmentStateError, KeyError):
         if callback is not None:
             callback(
                 "terminal",
                 problem_key=problem_key,
-                outcome=resolution.outcome,
-                availability=resolution.availability,
-                reason=resolution.reason,
+                outcome="failed",
+                availability="unavailable",
             )
-        if resolution.outcome == "failed":
-            raise ValueError(
-                f"assignment guidance unavailable: {resolution.reason}"
-            )
+        raise
+    if resolution.availability != "available":
+        if callback is not None:
+            fields = {
+                "outcome": resolution.outcome,
+                "availability": resolution.availability,
+            }
+            if resolution.outcome == "fallback":
+                fields.update(
+                    {
+                        "reason": resolution.reason,
+                        "reason_details": resolution.reason_details,
+                    }
+                )
+            callback("terminal", problem_key=problem_key, **fields)
         return distance_matrix, None, False
 
     state = resolution.state
@@ -361,12 +381,8 @@ def record_virtual_cell_guidance_terminal(
     problem_key: str,
     attempted: bool,
     outcome: str,
-    reason: str | None = None,
 ) -> None:
     callback = getattr(config, "assignment_guidance_callback", None)
     if not attempted or callback is None:
         return
-    fields: dict[str, Any] = {"outcome": outcome}
-    if reason is not None:
-        fields["reason"] = reason
-    callback("terminal", problem_key=problem_key, **fields)
+    callback("terminal", problem_key=problem_key, outcome=outcome)

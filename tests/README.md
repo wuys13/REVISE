@@ -22,7 +22,7 @@ environment variables documented in their modules and CI jobs.
 | `application/test_cli_contract.py` | `revise/application/service.py` | Canonical publication, rollback, and result manifest | Application edits | Synthetic AnnData only |
 | `application/test_cli_dry_run.py` | `revise/application/cli.py` | Source CLI preflight without reconstruction | Application/config edits | No scientific stages |
 | `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
-| `application/test_service.py` | `revise/application/service.py` | sc-SVC merge and `SVC.h5ad` publication | Result-assembly edits | No kernels or real data |
+| `application/test_service.py` | `revise/application/service.py` | sc-SVC pair publication and rollback | Result-assembly edits | No kernels or real data |
 | `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
 | `backend/test_assignment_guidance_policy.py` | `revise/backend/ops/assignment*.py` | Assignment axes, value semantics, compatibility penalties, policy, and invocation outcomes | Assignment-guidance contract edits | Synthetic states and collector transitions only |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |

@@ -15,6 +15,10 @@ import pytest
 from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
+from revise.backend.ops.assignment_guidance import (
+    FallbackReason,
+    NotApplicableReason,
+)
 from revise.backend.ops.local_ot import solve_local_ot
 from revise.recon.context import PipelineContext
 from revise.svc import SVC
@@ -283,11 +287,12 @@ def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
         "revise/backend/runners/sc_svc_sr_benchmark.py",
         "ScSVCSr",
         "_apply_graph_aggregation",
-        {
-            "np": np,
-            "record_virtual_cell_not_applicable": (
-                lambda *_args, **_kwargs: None
-            ),
+            {
+                "np": np,
+                "NotApplicableReason": NotApplicableReason,
+                "record_virtual_cell_not_applicable": (
+                    lambda *_args, **_kwargs: None
+                ),
         },
     )
     runner = SimpleNamespace(
@@ -345,9 +350,16 @@ def test_sp_benchmark_insufficient_units_short_circuit_before_assignment_validat
 def test_sr_benchmark_required_graph_disabled_fails_before_allocation():
     allocation_reached = {"value": False}
 
-    def fail_required_guidance(_config, *, problem_key, reason):
+    def fail_required_guidance(
+        _config,
+        *,
+        problem_key,
+        reason,
+        reason_details,
+    ):
         assert problem_key == "sr-benchmark:graph-branch"
-        assert reason == "graph_branch_disabled"
+        assert reason is FallbackReason.OPERATOR_UNAVAILABLE
+        assert reason_details["condition"] == "graph_branch_disabled"
         raise ValueError("required assignment guidance unavailable: graph_branch_disabled")
 
     local_refinement = _load_runner_method(
@@ -357,6 +369,7 @@ def test_sr_benchmark_required_graph_disabled_fails_before_allocation():
         {
             "np": np,
             "pd": pd,
+            "FallbackReason": FallbackReason,
             "guidance_mode": lambda _config: "require",
             "record_virtual_cell_unavailable": fail_required_guidance,
         },
@@ -498,7 +511,7 @@ def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
     with pytest.raises(
         ModuleNotFoundError,
         match=r'python -m pip install "tacco==0\.5\.0"',
-    ):
+    ) as caught:
         solve_local_ot(
             [0.5, 0.5],
             [0.5, 0.5],
@@ -507,6 +520,8 @@ def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
             event_callback=lambda *event: events.append(event),
         )
 
+    assert "--ot-method pot" in str(caught.value)
+    assert "does not fall back automatically" in str(caught.value)
     assert events == [("lr", "tacco", "attempted")]
 
 
@@ -534,6 +549,7 @@ def test_missing_tacco_transitive_dependency_is_not_reported_as_missing_tacco(
         )
 
     assert "No module named 'tacco'" not in str(caught.value)
+    assert "--ot-method pot" in str(caught.value)
 
 
 def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypatch):
@@ -546,7 +562,7 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
     with pytest.raises(
         RuntimeError,
         match=r'requires tacco==0\.5\.0.*0\.5\.1.*python -m pip install',
-    ):
+    ) as caught:
         solve_local_ot(
             [0.5, 0.5],
             [0.5, 0.5],
@@ -555,6 +571,7 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
             event_callback=lambda *event: events.append(event),
         )
 
+    assert "--ot-method pot" in str(caught.value)
     assert events == [("lr", "tacco", "attempted")]
 
 

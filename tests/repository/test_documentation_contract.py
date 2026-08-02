@@ -120,6 +120,7 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
 
 def test_installation_describes_base_and_optional_capability_layers():
     installation = _read(ROOT / "docs/source/installation.rst")
+    normalized = " ".join(installation.split())
     metadata = tomllib.loads(_read(ROOT / "pyproject.toml"))
     optional = metadata["project"]["optional-dependencies"]
 
@@ -136,32 +137,48 @@ def test_installation_describes_base_and_optional_capability_layers():
         assert f'python -m pip install ".[{extra}]"' in installation
     assert "releases can lag the repository" in installation
     assert "After a matching package version is published" in installation
+    assert (
+        "base package contains reconstruction, benchmarking, the POT implementation"
+        in normalized
+    )
+    assert "Standard sc-SVC default solver" in installation
+    assert "required by the default standard sc-SVC route" in normalized
+    assert "--ot-method pot" in installation
+    assert "never selects POT as an automatic fallback" in normalized
 
 
-def test_public_docs_use_the_single_svc_result_contract():
+def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     text = _joined()
     service = _read(ROOT / "revise/application/service.py")
     case = _read(ROOT / "docs/source/case.rst")
+    configuration = _read(ROOT / "docs/source/configuration.rst")
+    api_diagram = _read(ROOT / "docs/source/api/classes_revise.svg")
+    test_guide = _read(ROOT / "tests/README.md")
     canonical_case, compatibility_case = case.split(
         "Paper notebook compatibility", maxsplit=1
     )
 
     for filename in ("hST-SVC.h5ad", "iST-SVC.h5ad", "sST-SVC.h5ad"):
         assert filename not in text
-    for compatibility_filename in (
-        "sp_SVC.h5ad",
-        "sc_SVC_expr.h5ad",
-        "sc_SVC_spatial.h5ad",
-    ):
-        assert compatibility_filename not in canonical_case
-        assert compatibility_filename in compatibility_case
+    assert "sp_SVC.h5ad" not in canonical_case
+    assert "sp_SVC.h5ad" in compatibility_case
+    for sc_filename in ("sc_SVC_expr.h5ad", "sc_SVC_spatial.h5ad"):
+        assert sc_filename in canonical_case
+        assert sc_filename in service
+        assert sc_filename in compatibility_case
     assert "<output-root>/<sample-name>/SVC.h5ad" in text
     assert 'output_dir / "SVC.h5ad"' in service
+    assert 'output_dir / "sc_SVC_expr.h5ad"' in service
+    assert 'output_dir / "sc_SVC_spatial.h5ad"' in service
     assert "result.type" in text
     assert "sp-SVC" in text
     assert "sc-SVC" in text
     assert "sc-SVC-sr" in text
     assert "provenance.json" in text
+    assert "H5AD result(s) + manifest" in api_diagram
+    assert "SVC.h5ad + manifest type" not in api_diagram
+    assert "single public result file" not in configuration
+    assert "optional legacy merge" not in test_guide
 
 
 def test_public_docs_route_to_package_owned_application_utilities():
@@ -173,6 +190,14 @@ def test_public_docs_route_to_package_owned_application_utilities():
 
 def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     text = _joined()
+    readme = _read(ROOT / "README.md")
+    installation = _read(ROOT / "docs/source/installation.rst")
+    quickstart = _read(ROOT / "docs/source/quickstart.rst")
+    configuration = _read(ROOT / "docs/source/configuration.rst")
+    normalized_docs = tuple(
+        " ".join(document.split())
+        for document in (readme, installation, quickstart, configuration)
+    )
     service = _read(ROOT / "revise/application/service.py")
     runtime = _read(ROOT / "revise/backend/ops/tacco_runtime.py")
 
@@ -186,6 +211,18 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert '"ga": {"solver": args.ot_method}' in service
     assert '"lr": {"solver": args.ot_method}' in service
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
+    for document in normalized_docs:
+        assert "--ot-method pot" in document
+    (
+        normalized_readme,
+        normalized_installation,
+        normalized_quickstart,
+        normalized_config,
+    ) = normalized_docs
+    assert "never falls back automatically" in normalized_readme
+    assert "never selects POT as an automatic fallback" in normalized_installation
+    assert "never switches algorithms automatically" in normalized_quickstart
+    assert "not an automatic fallback" in normalized_config
 
 
 def test_benchmark_metric_documentation_states_the_implemented_boundaries():
@@ -258,6 +295,10 @@ def test_assignment_guidance_docs_match_three_layer_runtime_contract():
     assert "one Assignment State carrier" in architecture
     assert "bilateral assignment source/level/value semantics/lineage" in architecture
     assert "not_started" in architecture
+    assert "schema version 2" in architecture
+    assert "required only for ``fallback`` and ``not_applicable``" in architecture
+    assert "typed stage/run error" in architecture
+    assert "one run-level warning" in configuration
     assert "publication rollback" in architecture
     assert "not that posterior compatibility improves" in limitations
 
@@ -386,7 +427,7 @@ def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
     assert "n_cells = 200_000" in quota_scale
 
 
-def test_application_pm_on_cell_contract_names_the_only_resolved_location():
+def test_application_pm_on_cell_contract_names_location_and_subset_semantics():
     concepts = _read(ROOT / "docs/source/concepts.rst")
     normalized = " ".join(concepts.split())
     runner_contract = runpy.run_path(ROOT / "revise/config/runner_conf.py")
@@ -405,8 +446,11 @@ def test_application_pm_on_cell_contract_names_the_only_resolved_location():
     assert "<data-root>/PM_on_cell.csv" in concepts
     assert "case-sensitive" in concepts
     assert "no CLI path override" in concepts
-    assert "row labels must exactly match the virtual-cell IDs" in normalized
-    assert "columns must exactly match the normalized cell-type labels" in normalized
+    assert "rows must cover every current virtual-cell ID" in normalized
+    assert "columns must cover every requested normalized cell-type label" in normalized
+    assert "Extra Patient/case rows and extra class columns are permitted" in normalized
+    assert "strictly subsets and reorders the matrix to the current case" in normalized
+    assert "active values to be finite numbers" in normalized
 
 
 def test_public_data_and_repository_claims_are_precise():

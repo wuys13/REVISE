@@ -21,6 +21,7 @@ from revise.backend.ops.assignment import (
     validate_assignment,
 )
 from revise.backend.ops.assignment_guidance import (
+    NotApplicableReason,
     assignment_guidance_mode,
     assignment_compatibility,
     ot_cost_guidance,
@@ -337,7 +338,8 @@ class ScSVCImpute(BenchmarkSVC):
             self,
             *,
             problem_key,
-            reason,
+            reason: NotApplicableReason,
+            reason_details=None,
     ):
         callback = self._start_impute_guidance_event(
             problem_key=problem_key,
@@ -349,6 +351,7 @@ class ScSVCImpute(BenchmarkSVC):
                 problem_key=problem_key,
                 outcome="not_applicable",
                 reason=reason,
+                reason_details=reason_details or {},
             )
 
     def _prepare_impute_assignment_guidance(
@@ -373,7 +376,6 @@ class ScSVCImpute(BenchmarkSVC):
                     "terminal",
                     problem_key=problem_key,
                     outcome="off",
-                    reason="guidance_off",
                 )
             return ot_cost, None, False
 
@@ -415,20 +417,31 @@ class ScSVCImpute(BenchmarkSVC):
             )
             return left
 
-        resolution = resolve_assignment_guidance(mode, load_state)
-        if resolution.availability != "available":
+        try:
+            resolution = resolve_assignment_guidance(mode, load_state)
+        except (AssignmentStateError, KeyError):
             if callback is not None:
                 callback(
                     "terminal",
                     problem_key=problem_key,
-                    outcome=resolution.outcome,
-                    availability=resolution.availability,
-                    reason=resolution.reason,
+                    outcome="failed",
+                    availability="unavailable",
                 )
-            if resolution.outcome == "failed":
-                raise ValueError(
-                    f"assignment guidance unavailable: {resolution.reason}"
-                )
+            raise
+        if resolution.availability != "available":
+            if callback is not None:
+                fields = {
+                    "outcome": resolution.outcome,
+                    "availability": resolution.availability,
+                }
+                if resolution.outcome == "fallback":
+                    fields.update(
+                        {
+                            "reason": resolution.reason,
+                            "reason_details": resolution.reason_details,
+                        }
+                    )
+                callback("terminal", problem_key=problem_key, **fields)
             return ot_cost, None, False
 
         affinity = assignment_compatibility(
@@ -475,7 +488,6 @@ class ScSVCImpute(BenchmarkSVC):
             problem_key,
             attempted,
             outcome,
-            reason=None,
     ):
         callback = getattr(
             self.config,
@@ -484,10 +496,7 @@ class ScSVCImpute(BenchmarkSVC):
         )
         if not attempted or callback is None:
             return
-        fields = {"outcome": outcome}
-        if reason is not None:
-            fields["reason"] = reason
-        callback("terminal", problem_key=problem_key, **fields)
+        callback("terminal", problem_key=problem_key, outcome=outcome)
 
     def local_impute(
             self,
@@ -544,20 +553,22 @@ class ScSVCImpute(BenchmarkSVC):
             if ct_adata_sc.n_obs == 0:
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="empty_reference_support",
+                    reason=NotApplicableReason.EMPTY_SUPPORT,
+                    reason_details={"support": "reference"},
                 )
                 continue
             if ct_adata_sp.n_obs == 0:
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="empty_spatial_support",
+                    reason=NotApplicableReason.EMPTY_SUPPORT,
+                    reason_details={"support": "spatial"},
                 )
                 continue
             overlap_genes = ct_adata_sc.var_names.intersection(ct_adata_sp.var_names)
             if len(overlap_genes) == 0:
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="overlap_genes_empty",
+                    reason=NotApplicableReason.NO_SHARED_FEATURES,
                 )
                 continue
             ct_adata_sc_overlap = ct_adata_sc[:, overlap_genes].copy()
@@ -570,7 +581,11 @@ class ScSVCImpute(BenchmarkSVC):
             ):
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="zero_target_mass",
+                    reason=NotApplicableReason.INVALID_MASS,
+                    reason_details={
+                        "side": "target",
+                        "condition": "zero",
+                    },
                 )
                 continue
             dums /= ncats.to_numpy()
@@ -592,25 +607,41 @@ class ScSVCImpute(BenchmarkSVC):
             if not np.all(np.isfinite(source_mass)):
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="invalid_source_mass",
+                    reason=NotApplicableReason.INVALID_MASS,
+                    reason_details={
+                        "side": "source",
+                        "condition": "nonfinite",
+                    },
                 )
                 continue
             if not np.all(np.isfinite(target_mass)):
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="invalid_target_mass",
+                    reason=NotApplicableReason.INVALID_MASS,
+                    reason_details={
+                        "side": "target",
+                        "condition": "nonfinite",
+                    },
                 )
                 continue
             if np.any(source_mass <= 0):
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="zero_source_mass",
+                    reason=NotApplicableReason.INVALID_MASS,
+                    reason_details={
+                        "side": "source",
+                        "condition": "zero",
+                    },
                 )
                 continue
             if np.any(target_mass <= 0):
                 self._record_impute_not_applicable(
                     problem_key=problem_key,
-                    reason="zero_target_mass",
+                    reason=NotApplicableReason.INVALID_MASS,
+                    reason_details={
+                        "side": "target",
+                        "condition": "zero",
+                    },
                 )
                 continue
             type_prior = pd.Series(
@@ -672,7 +703,6 @@ class ScSVCImpute(BenchmarkSVC):
                     problem_key=problem_key,
                     attempted=guidance_attempted,
                     outcome="failed",
-                    reason="solver_failed",
                 )
                 raise
 
@@ -708,7 +738,6 @@ class ScSVCImpute(BenchmarkSVC):
                     problem_key=problem_key,
                     attempted=guidance_attempted,
                     outcome="interrupted",
-                    reason="result_assembly_interrupted",
                 )
                 raise
             except Exception:
@@ -716,7 +745,6 @@ class ScSVCImpute(BenchmarkSVC):
                     problem_key=problem_key,
                     attempted=guidance_attempted,
                     outcome="failed",
-                    reason="result_assembly_failed",
                 )
                 raise
             adata_sp_cts.append(adata_sp_impute)

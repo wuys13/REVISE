@@ -268,7 +268,7 @@ def test_installed_wheel_benchmark_module_and_report_aliases(installed_cli):
     assert payload["aliases"]["posterior_mode"] == "cost"
     assert payload["aliases"]["posterior_strict"] is False
     guidance = payload["aliases"]["assignment_guidance"]
-    assert guidance["schema_version"] == 1
+    assert guidance["schema_version"] == 2
     assert guidance["resolved"]["guidance"] == "prefer"
     assert guidance["resolved"]["compatibility_mode"] == "cost"
     assert guidance["events"] == []
@@ -385,7 +385,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         assert "result_hash" not in manifest
         assert manifest["stages"][3]["status"] == "succeeded"
         guidance = manifest["assignment_guidance"]
-        assert guidance["schema_version"] == 1
+        assert guidance["schema_version"] == 2
         assert guidance["configured"]["source"] == "route_default"
         assert guidance["resolved"]["guidance"] == "prefer"
         assert guidance["resolved"]["compatibility_mode"] == "cost"

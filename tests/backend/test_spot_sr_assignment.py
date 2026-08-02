@@ -166,14 +166,9 @@ def test_run_reads_cell_contributions_from_the_configured_column():
     ("pm", "message"),
     [
         (pd.DataFrame([[1.0, 0.0]], index=["c1"], columns=["A", "B"]), "cell IDs"),
-        (
-            pd.DataFrame([[1.0, 0.0], [0.0, 1.0], [0.2, 0.8]], index=["c1", "c2", "c3"], columns=["A", "B"]),
-            "cell IDs",
-        ),
         (pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=["c1", "c1"], columns=["A", "B"]), "duplicate row"),
         (pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=[1, "1"], columns=["A", "B"]), "string conversion"),
         (pd.DataFrame([[1.0], [0.0]], index=["c1", "c2"], columns=["A"]), "classes"),
-        (pd.DataFrame([[1.0, 0.0, 2.0], [0.0, 1.0, 2.0]], index=["c1", "c2"], columns=["A", "B", "C"]), "classes"),
         (pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=["c1", "c2"], columns=["A", "A"]), "duplicate column"),
         (
             pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=["c1", "c2"], columns=["A/B", "A_B"]),
@@ -190,6 +185,34 @@ def test_pm_contract_rejects_misalignment_collisions_and_nonfinite_values(pm, me
         _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
 
     assert "cell_type" not in svc_obs
+
+
+def test_pm_contract_subsets_patient_level_rows_to_current_case_cells():
+    svc_obs = _svc({"spot-a": ["c1", "c2"]})
+    pm = pd.DataFrame(
+        [[1.0, 0.0], [0.0, 1.0], [0.2, 0.8]],
+        index=["c1", "c2", "unrelated-case-cell"],
+        columns=["A", "B"],
+    )
+    kernel = _kernel(pm=pm)
+
+    kernel.assign_cell_types(svc_obs, _quota())
+
+    assert kernel.pm_on_cell.index.tolist() == ["c1", "c2"]
+
+
+def test_pm_contract_subsets_global_classes_to_reference_classes():
+    svc_obs = _svc({"spot-a": ["c1", "c2"]})
+    pm = pd.DataFrame(
+        [[1.0, 0.0, 0.3], [0.0, 1.0, 0.7]],
+        index=["c1", "c2"],
+        columns=["A", "B", "unrelated-reference-class"],
+    )
+    kernel = _kernel(pm=pm)
+
+    kernel.assign_cell_types(svc_obs, _quota())
+
+    assert kernel.pm_on_cell.columns.tolist() == ["A", "B"]
 
 
 @pytest.mark.parametrize(
@@ -317,7 +340,7 @@ def test_true_cell_type_keeps_randomly_allocated_cells_as_unknown(adapters):
         obs=pd.DataFrame(
             {
                 "cell_id": ["known"],
-                "clusters": ["T"],
+                "clusters": pd.Categorical(["T"]),
                 "x": [3.0],
                 "y": [4.0],
             }

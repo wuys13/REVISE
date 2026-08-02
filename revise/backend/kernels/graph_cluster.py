@@ -10,9 +10,11 @@ from tqdm import tqdm
 from revise.backend.kernels.base import BaseKernel
 from revise.backend.ops.assignment import (
     AssignmentState,
+    AssignmentStateError,
     align_assignment_observations,
 )
 from revise.backend.ops.assignment_guidance import (
+    NotApplicableReason,
     assignment_guidance_mode,
     assignment_compatibility,
     graph_guidance,
@@ -106,7 +108,12 @@ class GraphClusterKernel(BaseKernel):
         if adata.n_obs < 2:
             self.record_not_applicable(
                 problem_key=problem_key,
-                reason="insufficient_spatial_cells",
+                reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                reason_details={
+                    "unit": "spatial_cell",
+                    "observed": int(adata.n_obs),
+                    "required": 2,
+                },
             )
             raise ValueError("Graph clustering requires at least two spatial cells")
 
@@ -216,34 +223,45 @@ class GraphClusterKernel(BaseKernel):
                     "terminal",
                     problem_key=problem_key,
                     outcome="off",
-                    reason="guidance_off",
                 )
         else:
-            resolution_result = resolve_assignment_guidance(
-                mode,
-                lambda: (
-                    None
-                    if guidance_state is None
-                    else align_assignment_observations(
-                        guidance_state,
-                        adata.obs_names,
-                    )
-                ),
-            )
-            if resolution_result.availability != "available":
+            try:
+                resolution_result = resolve_assignment_guidance(
+                    mode,
+                    lambda: (
+                        None
+                        if guidance_state is None
+                        else align_assignment_observations(
+                            guidance_state,
+                            adata.obs_names,
+                        )
+                    ),
+                )
+            except (AssignmentStateError, KeyError):
                 if callback is not None:
                     callback(
                         "terminal",
                         problem_key=problem_key,
-                        outcome=resolution_result.outcome,
-                        availability=resolution_result.availability,
-                        reason=resolution_result.reason,
+                        outcome="failed",
+                        availability="unavailable",
                     )
-                if resolution_result.outcome == "failed":
-                    raise ValueError(
-                        "assignment guidance unavailable: "
-                        f"{resolution_result.reason}"
-                    )
+                raise
+            if resolution_result.availability != "available":
+                if callback is not None:
+                    fields = {
+                        "outcome": resolution_result.outcome,
+                        "availability": resolution_result.availability,
+                    }
+                    if resolution_result.outcome == "fallback":
+                        fields.update(
+                            {
+                                "reason": resolution_result.reason,
+                                "reason_details": (
+                                    resolution_result.reason_details
+                                ),
+                            }
+                        )
+                    callback("terminal", problem_key=problem_key, **fields)
             else:
                 resolved_state = resolution_result.state
                 if callback is not None:
@@ -266,7 +284,6 @@ class GraphClusterKernel(BaseKernel):
                         "terminal",
                         problem_key=problem_key,
                         outcome="interrupted",
-                        reason="graph_guidance_interrupted",
                     )
                 raise
             except Exception:
@@ -275,7 +292,6 @@ class GraphClusterKernel(BaseKernel):
                         "terminal",
                         problem_key=problem_key,
                         outcome="failed",
-                        reason="graph_guidance_failed",
                     )
                 raise
             adata.obsp["assignment_guided_connectivities"] = guided_graph
@@ -294,7 +310,6 @@ class GraphClusterKernel(BaseKernel):
                         "terminal",
                         problem_key=problem_key,
                         outcome="interrupted",
-                        reason="graph_clustering_interrupted",
                     )
                 raise
             except Exception:
@@ -303,7 +318,6 @@ class GraphClusterKernel(BaseKernel):
                         "terminal",
                         problem_key=problem_key,
                         outcome="failed",
-                        reason="graph_clustering_failed",
                     )
                 raise
             if callback is not None:
@@ -370,7 +384,13 @@ class GraphClusterKernel(BaseKernel):
             )
         return callback
 
-    def record_not_applicable(self, *, problem_key, reason):
+    def record_not_applicable(
+        self,
+        *,
+        problem_key,
+        reason: NotApplicableReason,
+        reason_details=None,
+    ):
         callback = self._start_guidance_event(
             problem_key=problem_key,
             applicability="not_applicable",
@@ -381,6 +401,7 @@ class GraphClusterKernel(BaseKernel):
                 problem_key=problem_key,
                 outcome="not_applicable",
                 reason=reason,
+                reason_details=reason_details or {},
             )
 
     def _guided_graph(

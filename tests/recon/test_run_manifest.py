@@ -11,6 +11,7 @@ import pytest
 from anndata import AnnData
 
 from revise.backend.ops.assignment import AssignmentState, one_hot_assignment
+from revise.backend.ops.assignment_guidance import FallbackReason
 from revise.config.loader import ResolvedConfig
 from revise.framework import REVISEPipeline
 from revise.recon.context import PipelineContext
@@ -143,7 +144,7 @@ def test_assignment_guidance_callback_writes_canonical_request_and_events(tmp_pa
     manifest = json.loads((tmp_path / "provenance.json").read_text())
     assert manifest["run"]["status"] == "running"
     evidence = manifest["assignment_guidance"]
-    assert evidence["schema_version"] == 1
+    assert evidence["schema_version"] == 2
     assert evidence["configured"] == {
         "guidance": None,
         "compatibility_mode": None,
@@ -176,6 +177,57 @@ def test_assignment_guidance_callback_writes_canonical_request_and_events(tmp_pa
     completed = json.loads((tmp_path / "provenance.json").read_text())
     assert completed["run"]["status"] == "succeeded"
     assert completed["assignment_guidance"]["events"][0]["outcome"] == "applied"
+
+
+def test_successful_run_emits_one_aggregated_fallback_warning(
+    tmp_path,
+    caplog,
+):
+    ctx = _guidance_context(tmp_path)
+    for ordinal, reason in enumerate(
+        (
+            FallbackReason.ASSIGNMENT_MISSING,
+            FallbackReason.ASSIGNMENT_MISSING,
+            FallbackReason.ASSIGNMENT_INVALID,
+        ),
+        start=1,
+    ):
+        problem_key = f"fallback-{ordinal}"
+        ctx.assignment_guidance_callback(
+            "start",
+            problem_key=problem_key,
+            route=ctx.route_key,
+            operator="local_ot",
+            phase="local_refinement",
+            mode="prefer",
+            applicability="applicable",
+            numerics={},
+            solver="pot",
+        )
+        ctx.assignment_guidance_callback(
+            "terminal",
+            problem_key=problem_key,
+            outcome="fallback",
+            availability="unavailable",
+            reason=reason,
+        )
+    ctx.skip_pending_stages("test_complete")
+
+    with caplog.at_level(
+        logging.WARNING,
+        logger="test-assignment-guidance-manifest",
+    ):
+        ctx.mark_run_succeeded()
+
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if "[assignment-guidance]" in record.getMessage()
+    ]
+    assert warnings == [
+        "[assignment-guidance] base-path fallback used for 3 invocation(s): "
+        "assignment_invalid=1, assignment_missing=2"
+    ]
 
 
 @pytest.mark.parametrize(

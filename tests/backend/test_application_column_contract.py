@@ -275,6 +275,7 @@ def _sp_argmax_runner(module):
         rec_pot_reg=0.1,
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="kl",
+        assignment_guidance_policy="prefer",
         posterior_conditioning_enabled=True,
         posterior_conditioning_mode="cost",
         posterior_conditioning_key="major_type",
@@ -563,6 +564,7 @@ def test_sr_benchmark_custom_broad_column_drives_mandatory_allocation(
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
         rec_graph_agg_enabled=False,
+        assignment_guidance_policy="off",
         posterior_conditioning_enabled=False,
         posterior_conditioning_mode="off",
         posterior_conditioning_strict=False,
@@ -621,6 +623,7 @@ def test_sr_benchmark_reference_uses_configured_broad_column_without_clusters(
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
         rec_graph_agg_enabled=False,
+        assignment_guidance_policy="off",
         posterior_conditioning_enabled=False,
         posterior_conditioning_mode="off",
         posterior_conditioning_strict=False,
@@ -683,6 +686,7 @@ def test_sr_mode_off_preserves_quota_row_and_expression_allocation(
         svc_completeness=True,
         sr_assignment_seed=17,
         cell_type_col="major_type",
+        assignment_guidance_policy="off",
         posterior_conditioning_enabled=False,
         posterior_conditioning_mode="off",
         posterior_conditioning_strict=True,

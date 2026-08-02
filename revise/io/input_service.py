@@ -195,11 +195,23 @@ class REVISEInputService:
             )
             patient_key = self.io_config.get("patient_key")
             sample_name = self.io_config.get("sample_name")
-            if patient_key and patient_key in adata.obs and sample_name is not None:
-                if not adata.obs[patient_key].astype(str).eq(str(sample_name)).any():
+            requires_patient_match = not (
+                mode == "benchmark"
+                and str(runtime.get("confounding")) == "batch_effect"
+            )
+            if (
+                requires_patient_match
+                and patient_key
+                and patient_key in adata.obs
+                and sample_name is not None
+            ):
+                patient_sample = str(sample_name)
+                if mode == "benchmark":
+                    patient_sample = patient_sample.split("/", 1)[0]
+                if not adata.obs[patient_key].astype(str).eq(patient_sample).any():
                     raise ValueError(
                         f"Invalid input: {context}; field=obs[{patient_key!r}]; "
-                        f"expected=at least one row for sample {sample_name!r}"
+                        f"expected=at least one row for sample {patient_sample!r}"
                     )
         elif role == "gt" and task == "sc_svc_sr":
             label_key = self._resolve_sr_ground_truth_label_key(

@@ -3,7 +3,10 @@ import scanpy as sc
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphClusterKernel as GraphCluster
 from revise.backend.kernels import LocalAnchoringKernel as LocalAnchoring
-from revise.backend.ops.assignment_guidance import assignment_guidance_mode
+from revise.backend.ops.assignment_guidance import (
+    NotApplicableReason,
+    assignment_guidance_mode,
+)
 from revise.analysis.bio import get_degs
 from revise.analysis.bio import conclusions_write
 from revise.analysis.bio import plot_volcano
@@ -43,7 +46,8 @@ class ScSVC(ApplicationSVC):
         if ct_adata_sc.n_obs == 0:
             self.graph_cluster.record_not_applicable(
                 problem_key=problem_key,
-                reason="missing_reference_cells",
+                reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
+                reason_details={"role": "reference_cell"},
             )
             raise ValueError(
                 f"Selected cell type {select_ct!r} has no reference cells"
@@ -51,7 +55,12 @@ class ScSVC(ApplicationSVC):
         if ct_adata_sp.n_obs < 2:
             self.graph_cluster.record_not_applicable(
                 problem_key=problem_key,
-                reason="insufficient_spatial_cells",
+                reason=NotApplicableReason.INSUFFICIENT_UNITS,
+                reason_details={
+                    "unit": "spatial_cell",
+                    "observed": int(ct_adata_sp.n_obs),
+                    "required": 2,
+                },
             )
             raise ValueError(
                 "Graph clustering requires at least two spatial cells"

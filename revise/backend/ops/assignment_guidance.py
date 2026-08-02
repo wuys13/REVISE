@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import copy
-import re
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Callable
 
 import numpy as np
@@ -18,11 +18,30 @@ from revise.backend.ops.posterior_conditioning import (
     condition_cost_matrix,
     neighbor_posterior_affinity,
     posterior_affinity,
-    posterior_conditioning_mode,
-    posterior_conditioning_strict,
 )
 
-_REASON_CODE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+class FallbackReason(str, Enum):
+    ASSIGNMENT_MISSING = "assignment_missing"
+    ASSIGNMENT_MISALIGNED = "assignment_misaligned"
+    ASSIGNMENT_INVALID = "assignment_invalid"
+    ASSIGNMENT_PROJECTION_UNAVAILABLE = "assignment_projection_unavailable"
+    OPERATOR_UNAVAILABLE = "operator_unavailable"
+
+
+class NotApplicableReason(str, Enum):
+    INSUFFICIENT_UNITS = "insufficient_units"
+    REFERENCE_UNAVAILABLE = "reference_unavailable"
+    EMPTY_SUPPORT = "empty_support"
+    INVALID_MASS = "invalid_mass"
+    NO_SHARED_FEATURES = "no_shared_features"
+    ROUTE_EXCLUDED = "route_excluded"
+
+
+_FALLBACK_REASONS = frozenset(reason.value for reason in FallbackReason)
+_NOT_APPLICABLE_REASONS = frozenset(
+    reason.value for reason in NotApplicableReason
+)
 
 
 @dataclass(frozen=True)
@@ -30,22 +49,23 @@ class GuidanceResolution:
     state: AssignmentState | None
     availability: str
     outcome: str
-    reason: str | None
+    reason: FallbackReason | None
+    reason_details: dict[str, Any]
 
 
 def assignment_guidance_mode(config) -> str:
-    """Read the canonical policy, with one legacy fallback for direct runners."""
+    """Read the canonical policy projected from the resolved route config."""
     canonical = getattr(config, "assignment_guidance_policy", None)
-    if canonical is not None:
-        mode = str(canonical)
-        if mode not in {"off", "prefer", "require"}:
-            raise ValueError(
-                "assignment guidance policy must be off, prefer, or require"
-            )
-        return mode
-    if posterior_conditioning_mode(config) == "off":
-        return "off"
-    return "require" if posterior_conditioning_strict(config) else "prefer"
+    if canonical is None:
+        raise ValueError(
+            "runner config is missing resolved assignment_guidance_policy"
+        )
+    mode = str(canonical)
+    if mode not in {"off", "prefer", "require"}:
+        raise ValueError(
+            "assignment guidance policy must be off, prefer, or require"
+        )
+    return mode
 
 
 def resolve_assignment_guidance(
@@ -53,7 +73,7 @@ def resolve_assignment_guidance(
     state_loader: Callable[[], AssignmentState | None],
 ) -> GuidanceResolution:
     if mode == "off":
-        return GuidanceResolution(None, "not_checked", "off", "guidance_off")
+        return GuidanceResolution(None, "not_checked", "off", None, {})
     if mode not in {"prefer", "require"}:
         raise ValueError("assignment guidance mode must be off, prefer, or require")
     try:
@@ -62,24 +82,38 @@ def resolve_assignment_guidance(
             raise AssignmentStateError("assignment_state_unavailable")
         state = validate_assignment(state)
     except (AssignmentStateError, KeyError) as exc:
+        if mode == "require":
+            raise
         detail_reason = str(getattr(exc, "reason", "invalid_assignment_values"))
         if detail_reason.startswith("observation_"):
-            reason = "observation_axis_mismatch"
+            reason = FallbackReason.ASSIGNMENT_MISALIGNED
+            reason_details = {
+                "axis": "observation",
+                "cause": detail_reason,
+            }
         elif detail_reason.startswith("category_"):
-            reason = "category_axis_mismatch"
+            reason = FallbackReason.ASSIGNMENT_MISALIGNED
+            reason_details = {
+                "axis": "category",
+                "cause": detail_reason,
+            }
         elif isinstance(exc, KeyError) or detail_reason == "assignment_state_unavailable":
-            reason = "assignment_missing"
+            reason = FallbackReason.ASSIGNMENT_MISSING
+            reason_details = {}
         elif detail_reason.startswith("projection_"):
-            reason = "projection_unavailable"
+            reason = FallbackReason.ASSIGNMENT_PROJECTION_UNAVAILABLE
+            reason_details = {"cause": detail_reason}
         else:
-            reason = "invalid_assignment_values"
+            reason = FallbackReason.ASSIGNMENT_INVALID
+            reason_details = {"cause": detail_reason}
         return GuidanceResolution(
             None,
             "unavailable",
-            "fallback" if mode == "prefer" else "failed",
+            "fallback",
             reason,
+            reason_details,
         )
-    return GuidanceResolution(state, "available", "not_started", None)
+    return GuidanceResolution(state, "available", "not_started", None, {})
 
 
 class AssignmentGuidanceCollector:
@@ -145,6 +179,7 @@ class AssignmentGuidanceCollector:
                 "numerics": copy.deepcopy(fields.pop("numerics", {})),
                 "solver": fields.pop("solver", None),
                 "reason": None,
+                "reason_details": {},
                 "left_assignment": self._assignment_evidence(
                     fields.pop("left_assignment", None)
                 ),
@@ -209,19 +244,33 @@ class AssignmentGuidanceCollector:
                         f"invalid assignment availability: {availability}"
                     )
                 candidate["availability"] = availability
-            reason = fields.get("reason", candidate["reason"])
-            if outcome != "applied" and not self._valid_reason_code(reason):
+            reason = self._reason_value(
+                fields.get("reason", candidate["reason"])
+            )
+            reason_details = fields.get(
+                "reason_details",
+                candidate["reason_details"],
+            )
+            if not isinstance(reason_details, dict):
                 raise ValueError(
-                    f"{outcome} assignment guidance requires a stable reason code"
+                    "assignment guidance reason_details must be a mapping"
                 )
-            if reason is not None and not self._valid_reason_code(reason):
-                raise ValueError("assignment guidance reason must be a stable code")
+            self._validate_reason_contract(
+                outcome,
+                reason,
+                reason_details,
+            )
             candidate["outcome"] = outcome
         else:
             raise ValueError(f"unknown assignment guidance action: {action}")
-        for key in ("reason", "numerics", "solver"):
+        for key in ("numerics", "solver"):
             if key in fields:
                 candidate[key] = copy.deepcopy(fields.pop(key))
+        if action == "terminal":
+            fields.pop("reason", None)
+            fields.pop("reason_details", None)
+            candidate["reason"] = reason
+            candidate["reason_details"] = copy.deepcopy(reason_details)
         for key in ("left_assignment", "right_assignment"):
             if key in fields:
                 candidate[key] = self._assignment_evidence(fields.pop(key))
@@ -240,8 +289,38 @@ class AssignmentGuidanceCollector:
         return assignment_state_evidence(state)
 
     @staticmethod
-    def _valid_reason_code(reason: Any) -> bool:
-        return isinstance(reason, str) and bool(_REASON_CODE.fullmatch(reason))
+    def _reason_value(reason: Any) -> str | None:
+        if reason is None:
+            return None
+        if isinstance(reason, (FallbackReason, NotApplicableReason)):
+            return reason.value
+        if isinstance(reason, str):
+            return reason
+        raise ValueError("assignment guidance reason must be a stable code")
+
+    @staticmethod
+    def _validate_reason_contract(
+        outcome: str,
+        reason: str | None,
+        reason_details: dict[str, Any],
+    ) -> None:
+        if outcome == "fallback":
+            if reason not in _FALLBACK_REASONS:
+                raise ValueError(
+                    "fallback assignment guidance requires a FallbackReason"
+                )
+            return
+        if outcome == "not_applicable":
+            if reason not in _NOT_APPLICABLE_REASONS:
+                raise ValueError(
+                    "not_applicable assignment guidance requires a "
+                    "NotApplicableReason"
+                )
+            return
+        if reason is not None or reason_details:
+            raise ValueError(
+                f"{outcome} assignment guidance must not record a reason"
+            )
 
     @staticmethod
     def _validate_transition(event: dict[str, Any], *, action: str) -> None:
@@ -326,26 +405,23 @@ class AssignmentGuidanceCollector:
 
     def manifest(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "configured": copy.deepcopy(self.configured),
             "resolved": copy.deepcopy(self.resolved),
             "events": copy.deepcopy(self.events),
             "summary": self.summary(),
         }
 
-    def terminate_open(self, *, outcome: str, reason: str) -> None:
+    def terminate_open(self, *, outcome: str) -> None:
         if outcome not in {"failed", "interrupted"}:
             raise ValueError(
                 "run termination can only close guidance as failed or interrupted"
             )
-        if not self._valid_reason_code(reason):
-            raise ValueError("assignment guidance reason must be a stable code")
         proposed = copy.deepcopy(self.events)
         for event in proposed:
             if event["outcome"] == "not_started":
                 self._validate_event_vocabulary(event)
                 event["outcome"] = outcome
-                event["reason"] = reason
                 self._validate_event_vocabulary(event)
         self.events = proposed
 
@@ -379,8 +455,16 @@ class AssignmentGuidanceCollector:
         }:
             raise ValueError("assignment guidance event has invalid outcome")
         reason = event.get("reason")
-        if reason is not None and not cls._valid_reason_code(reason):
-            raise ValueError("assignment guidance event has invalid reason code")
+        reason_details = event.get("reason_details")
+        if not isinstance(reason_details, dict):
+            raise ValueError(
+                "assignment guidance event has invalid reason_details"
+            )
+        cls._validate_reason_contract(
+            str(event["outcome"]),
+            cls._reason_value(reason),
+            reason_details,
+        )
 
     def snapshot(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self.events)
