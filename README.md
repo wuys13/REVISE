@@ -45,8 +45,7 @@ pip install revise-svc
 ```
 
 Provide one spatial-transcriptomics H5AD and one matched single-cell reference.
-The installed command is `revise-reconstruct`. First validate the resolved
-inputs without running reconstruction:
+The installed command is `revise-reconstruct`:
 
 ```bash
 revise-reconstruct \
@@ -55,12 +54,11 @@ revise-reconstruct \
   --data-root data \
   --st-file st.h5ad \
   --sc-ref-file sc_ref.h5ad \
-  --output-root output \
-  --dry-run
+  --output-root output
 ```
 
 This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`. Choose another
-`--svc-type` using the guidance below, then remove `--dry-run` to reconstruct.
+`--svc-type` using the guidance below.
 `sp-SVC` and `sc-SVC-sr` publish:
 
 ```text
