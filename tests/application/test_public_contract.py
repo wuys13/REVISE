@@ -7,6 +7,8 @@ Proof limit: does not execute scientific reconstruction or validate real dataset
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -73,7 +75,7 @@ def test_ot_method_help_explains_tacco_default_and_explicit_pot():
     assert "'pot' explicitly selects a different algorithm" in help_text
 
 
-def test_sc_svc_cli_reports_plural_outputs(monkeypatch, capsys, tmp_path):
+def test_sc_svc_cli_reports_plural_outputs(monkeypatch, tmp_path):
     from revise.application import cli, service
 
     monkeypatch.setattr(
@@ -97,9 +99,11 @@ def test_sc_svc_cli_reports_plural_outputs(monkeypatch, capsys, tmp_path):
         ),
     )
 
-    cli.main()
+    stdout = StringIO()
+    with redirect_stdout(stdout):
+        cli.main()
 
-    payload = json.loads(capsys.readouterr().out)
+    payload = json.loads(stdout.getvalue())
     assert payload["outputs"] == {
         "spatial": str(tmp_path / "sc_SVC_spatial.h5ad"),
         "expression": str(tmp_path / "sc_SVC_expr.h5ad"),
