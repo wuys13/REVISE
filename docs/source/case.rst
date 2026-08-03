@@ -42,6 +42,10 @@ selects a donor row from the same cluster with the effective seed and records
 the donor IDs and hash. Both modes publish only
 ``output/sample/iST-SVC/SVC.h5ad``. This default route requires TACCO; pass
 ``--ot-method pot`` only when deliberately selecting a different algorithm.
+When no ``--select-ct`` is supplied, iST performs GA only and returns
+``needs_review`` with ``selection_assessment.json`` and ``GA_posterior.csv``;
+the CSV starts with ``spot_id`` followed by the GA cell-type columns. Re-run
+with one or more concrete ``--select-ct`` values to publish the SVC.
 
 sST-SVC
 -------

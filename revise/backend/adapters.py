@@ -303,7 +303,7 @@ _IST_SELECTION_EXCLUDE_KEYWORDS = ("tumor", "epi")
 
 def _ist_selection_gate_enabled(ctx) -> bool:
     return (
-        ctx.runtime.get("task") == "sc_svc"
+        (getattr(ctx, "runtime", {}) or {}).get("task") == "sc_svc"
         and bool(ctx.merged_config.get("sc", {}).get("selection_review_gate", False))
     )
 
@@ -312,15 +312,37 @@ def _normalize_selected_cell_types(value: Any) -> List[str]:
     values = value if isinstance(value, (list, tuple)) else [value]
     selected: List[str] = []
     for item in values:
+        if item is None:
+            continue
         label = str(item).strip()
+        if label.casefold() in {"all", "*", "__all__", "all_cell_types"}:
+            raise ValueError("iST-SVC --select-ct must name concrete cell types")
         if label and label not in selected:
             selected.append(label)
     return selected
 
 
+def _export_ga_posterior(ctx) -> tuple[pd.DataFrame, Path]:
+    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
+    posterior = ctx.runner.st_adata.obsm[cell_type_col]
+    if not isinstance(posterior, pd.DataFrame):
+        raise ValueError(f"GA posterior for {cell_type_col!r} must be a pandas DataFrame")
+    existing_path = ctx.artifacts.get("ga_posterior_path")
+    if existing_path is not None:
+        return posterior, Path(existing_path)
+    posterior_path = Path(ctx.run_dir) / "GA_posterior.csv"
+    posterior_export = posterior.copy(deep=True)
+    posterior_export.insert(0, "spot_id", posterior_export.index)
+    posterior_export.to_csv(posterior_path, index=False)
+    ctx.record_artifact(completed_artifact("ga_posterior", posterior_path))
+    ctx.artifacts["ga_posterior_path"] = str(posterior_path)
+    return posterior, posterior_path
+
+
 def _assess_ist_selection(ctx) -> Dict[str, Any]:
     cell_type_col = ctx.columns.get("cell_type_col", "Level1")
     labels = ctx.runner.st_adata.obs[cell_type_col].astype(str)
+    posterior, posterior_path = _export_ga_posterior(ctx)
     counts = labels.value_counts()
     excluded_cell_types = [
         str(label)
@@ -357,6 +379,11 @@ def _assess_ist_selection(ctx) -> Dict[str, Any]:
         "excluded_cell_types": excluded_cell_types,
         "default_candidates": default_candidates,
         "warnings": warnings,
+        "ga_posterior": {
+            "path": str(posterior_path),
+            "spot_id_column": "spot_id",
+            "cell_type_columns": [str(column) for column in posterior.columns],
+        },
     }
     path = Path(ctx.run_dir) / "selection_assessment.json"
     write_json(path, assessment)
@@ -643,6 +670,7 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
     def global_anchoring(self, ctx) -> None:
         super().global_anchoring(ctx)
         if _ist_selection_gate_enabled(ctx):
+            _export_ga_posterior(ctx)
             if ctx.merged_config.get("sc", {}).get("select_ct") is None:
                 _assess_ist_selection(ctx)
             else:

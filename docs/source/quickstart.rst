@@ -74,6 +74,9 @@ reference annotation on every route. ``--sub-cell-type-col`` selects the
 refined annotation required only by iST-SVC. sST-SVC uses the broad
 assignment for composition and expression allocation. iST-SVC accepts only
 ``--ist-mapping mean|random`` for result assembly and defaults to ``mean``.
+With ``select_ct: null``, the first iST run stops after GA and writes
+``selection_assessment.json`` plus ``GA_posterior.csv`` (whose first column is
+``spot_id``); repeat ``--select-ct`` for the concrete types to continue.
 Its application profile defaults to TACCO; install it with
 ``python -m pip install ".[tacco]"`` from source or ``python -m pip install
 "revise-svc[tacco]"`` from a published package. If TACCO is unavailable and a

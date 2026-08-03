@@ -94,7 +94,9 @@ not reader-atomic or crash-atomic. The caller must guarantee one writer per
 stable public target; violating that precondition is undefined.
 
 For the 2.0 iST-SVC route, ``select_ct: null`` runs validation and GA, then
-writes ``selection_assessment.json`` and returns ``needs_review``. The report
+writes ``selection_assessment.json`` and ``GA_posterior.csv`` and returns
+``needs_review``. The CSV uses ``spot_id`` as its first column and keeps the GA
+cell-type columns in their original order. The report
 excludes labels containing ``tumor`` or ``epi`` (case-insensitive), warns for
 any label with more than 20,000 GA spots, and never silently selects a largest
 class. Human confirmation is supplied by repeating ``--select-ct`` for each

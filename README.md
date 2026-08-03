@@ -142,6 +142,9 @@ data/
   three routes.
 - `--sub-cell-type-col`: selects the refined annotation required only by
   `iST-SVC`; `sST-SVC` does not require this column.
+- `--select-ct`: repeat for the concrete iST cell types to reconstruct. If it
+  is omitted, iST stops after GA and writes `selection_assessment.json` and
+  `GA_posterior.csv` (first column `spot_id`) for review.
 
 For advanced algorithm configuration, copy `revise/revise.yaml`, edit the
 relevant profile, and pass it with `--config`.
