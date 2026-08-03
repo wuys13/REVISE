@@ -46,17 +46,22 @@ def ensure_all_cells_in_spot(
     """
 
     if key in st_adata.uns and st_adata.uns[key] is not None:
-        st_adata.uns[key] = _validate_all_cells_in_spot(
+        mapping = _validate_all_cells_in_spot(
             st_adata.uns[key],
             spot_names=st_adata.obs_names.astype(str),
             key=key,
         )
-        _write_estimated_cell_count(st_adata, st_adata.uns[key])
+        if real_adata is not None:
+            _validate_mapping_ground_truth_coverage(mapping, real_adata)
+        _validate_optional_cell_locations(st_adata, mapping)
+        st_adata.uns[key] = mapping
+        _write_estimated_cell_count(st_adata, mapping)
         return st_adata
 
     if real_adata is not None and _has_spatial_coordinates(real_adata):
         mapping, radius = _build_mapping_from_nearest_ground_truth_cells(st_adata, real_adata)
         st_adata.uns[key] = mapping
+        _validate_optional_cell_locations(st_adata, mapping)
         _write_estimated_cell_count(st_adata, mapping)
         if logger is not None:
             logger.warning(
@@ -77,6 +82,7 @@ def ensure_all_cells_in_spot(
         max_cells_per_spot=max_cells_per_spot,
     )
     st_adata.uns[key] = mapping
+    _validate_optional_cell_locations(st_adata, mapping)
     _write_estimated_cell_count(st_adata, mapping)
     if logger is not None:
         counts = st_adata.obs[ESTIMATED_CELL_COUNT_COL]
@@ -91,6 +97,37 @@ def ensure_all_cells_in_spot(
             int(counts.max()),
         )
     return st_adata
+
+
+def _validate_mapping_ground_truth_coverage(
+    mapping: Mapping[str, List[str]],
+    real_adata: AnnData,
+) -> None:
+    if "cell_id" in real_adata.obs:
+        ground_truth_ids = set(real_adata.obs["cell_id"].astype(str))
+    else:
+        ground_truth_ids = set(real_adata.obs_names.astype(str))
+    mapped_ids = {
+        cell_id
+        for cells in mapping.values()
+        for cell_id in cells
+    }
+    unknown = sorted(mapped_ids - ground_truth_ids)
+    if unknown:
+        raise ValueError(
+            "Invalid benchmark SR mapping: field=uns['all_cells_in_spot']; "
+            "expected=cell ids from ground truth; "
+            f"actual_unknown={unknown[:5]}"
+        )
+
+
+def _validate_optional_cell_locations(
+    st_adata: AnnData,
+    mapping: Mapping[str, List[str]],
+) -> None:
+    raw_locations = st_adata.uns.get(CELL_LOCATIONS_KEY)
+    if raw_locations is not None:
+        validate_cell_locations(raw_locations, all_cells_in_spot=mapping)
 
 
 def _validate_all_cells_in_spot(

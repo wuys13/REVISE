@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
+import pandas as pd
 from anndata import AnnData, read_h5ad
 
 from revise.io.input_bundle import REVISEDataBundle
@@ -111,6 +112,18 @@ class REVISEInputService:
                     "backed": backed,
                     "shape": [int(adata.n_obs), int(adata.n_vars)],
                 }
+                if role == "st" and str(runtime.get("task")) == "sc_svc_sr":
+                    raw_mapping = adata.uns.get("all_cells_in_spot")
+                    if raw_mapping is not None:
+                        mapping_source = "embedded"
+                    elif str(runtime.get("mode")) == "benchmark":
+                        mapping_source = "generated_from_ground_truth_coordinates"
+                    else:
+                        mapping_source = "generated_from_transcript_counts"
+                    input_report["sr_mapping"] = {
+                        "source": mapping_source,
+                        "validation": "pre_allocation",
+                    }
                 if role == "gt" and str(runtime.get("task")) == "sc_svc_sr":
                     input_report["ground_truth_label_source"] = (
                         self._resolve_sr_ground_truth_label_key(
@@ -188,7 +201,7 @@ class REVISEInputService:
                 required_obs.append(
                     str(columns.get("sub_cell_type_col", "Level2"))
                 )
-            self._require_obs(
+            self._require_reference_labels(
                 adata,
                 list(dict.fromkeys(required_obs)),
                 context=context,
@@ -220,7 +233,12 @@ class REVISEInputService:
             )
             self._require_obs(
                 adata,
-                ["cell_id", "x", "y", label_key],
+                ["cell_id", "x", "y"],
+                context=context,
+            )
+            self._require_reference_labels(
+                adata,
+                [label_key],
                 context=context,
             )
             cell_ids = adata.obs["cell_id"]
@@ -277,6 +295,32 @@ class REVISEInputService:
             )
 
     @staticmethod
+    def _require_reference_labels(
+        adata: AnnData,
+        required,
+        *,
+        context: str,
+    ) -> None:
+        REVISEInputService._require_obs(adata, required, context=context)
+        for name in required:
+            original = adata.obs[name].astype(str)
+            normalized = original.str.replace("/", "_", regex=False)
+            label_pairs = pd.DataFrame(
+                {"original": original, "normalized": normalized}
+            ).drop_duplicates()
+            collisions = label_pairs.groupby(
+                "normalized",
+                sort=False,
+            )["original"].nunique()
+            if (collisions > 1).any():
+                names = collisions[collisions > 1].index.tolist()
+                raise ValueError(
+                    f"Invalid input: {context}; field=obs[{name!r}]; "
+                    "expected=labels must not collide after '/' normalization; "
+                    f"actual_collisions={names[:5]}"
+                )
+
+    @staticmethod
     def _validate_spatial(adata: AnnData, *, context: str) -> None:
         if "spatial" not in adata.obsm:
             raise KeyError(
@@ -302,21 +346,9 @@ class REVISEInputService:
     def _validate_cross_role_contracts(opened, *, runtime, paths) -> None:
         mode = str(runtime.get("mode"))
         task = str(runtime.get("task"))
-        if mode == "application" and task == "sc_svc_sr":
-            REVISEInputService._validate_application_sr_input(
-                opened["st"],
-                st_path=paths["st"],
-            )
-            return
         if mode != "benchmark":
             return
         if task == "sc_svc_sr":
-            REVISEInputService._validate_sr_mapping(
-                opened["st"],
-                opened["gt"],
-                st_path=paths["st"],
-                gt_path=paths["gt"],
-            )
             return
         if task not in {"sp_svc", "sc_svc_impute"}:
             return
@@ -328,55 +360,6 @@ class REVISEInputService:
                 f"path={paths['gt']}; field=obs_names_overlap; expected=>=1; "
                 f"actual=0; st_path={paths['st']}"
             )
-
-    @staticmethod
-    def _validate_sr_mapping(st, gt, *, st_path: str, gt_path: str) -> None:
-        raw_mapping = st.uns.get("all_cells_in_spot")
-        if raw_mapping is None:
-            return
-        from revise.utils.spot_sr_input import _validate_all_cells_in_spot
-
-        mapping = _validate_all_cells_in_spot(
-            raw_mapping,
-            spot_names=st.obs_names.astype(str),
-            key="all_cells_in_spot",
-        )
-        mapped_ids = [cell_id for cells in mapping.values() for cell_id in cells]
-        gt_ids = set(gt.obs["cell_id"].astype(str))
-        unknown = sorted(set(mapped_ids) - gt_ids)
-        if unknown:
-            raise ValueError(
-                "Invalid benchmark SR mapping: role=st; "
-                f"path={st_path}; field=uns['all_cells_in_spot']; "
-                f"expected=cell ids from GT {gt_path}; actual_unknown={unknown[:5]}"
-            )
-
-    @staticmethod
-    def _validate_application_sr_input(st, *, st_path: str) -> None:
-        from revise.utils.spot_sr_input import (
-            ALL_CELLS_IN_SPOT_KEY,
-            CELL_LOCATIONS_KEY,
-            _validate_all_cells_in_spot,
-            validate_cell_locations,
-        )
-
-        raw_mapping = st.uns.get(ALL_CELLS_IN_SPOT_KEY)
-        raw_locations = st.uns.get(CELL_LOCATIONS_KEY)
-        if raw_mapping is None:
-            if raw_locations is not None:
-                raise ValueError(
-                    "Invalid application SR input: role=st; "
-                    f"path={st_path}; field=uns['{CELL_LOCATIONS_KEY}']; "
-                    f"expected=uns['{ALL_CELLS_IN_SPOT_KEY}'] to be present"
-                )
-            return
-        mapping = _validate_all_cells_in_spot(
-            raw_mapping,
-            spot_names=st.obs_names.astype(str),
-            key=ALL_CELLS_IN_SPOT_KEY,
-        )
-        if raw_locations is not None:
-            validate_cell_locations(raw_locations, all_cells_in_spot=mapping)
 
     def _read_role(
         self,

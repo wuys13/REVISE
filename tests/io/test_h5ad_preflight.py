@@ -258,6 +258,8 @@ def test_valid_preflight_reports_resolved_roles_and_proof_boundary(tmp_path):
     ]
     assert [item["role"] for item in report["inputs"]] == ["st", "sc_ref"]
     assert all(item["backed"] is True for item in report["inputs"])
+    assert all(item["format"] == "h5ad" for item in report["inputs"])
+    assert all(item["shape"] == [2, 2] for item in report["inputs"])
     assert report["gene_overlap"] == 2
     assert report["proof_boundary"] == (
         "metadata_and_required_arrays_only; expression_values_not_fully_scanned"
@@ -505,7 +507,7 @@ def test_sr_ground_truth_rejects_invalid_cell_identity_or_coordinates(
         )
 
 
-def test_sr_existing_mapping_must_use_unique_ground_truth_cell_ids(tmp_path):
+def test_sr_pre_allocation_requires_unique_virtual_cell_ids(tmp_path):
     runtime, io, specs, paths = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
     st = read_h5ad(paths["st"])
     st.uns["all_cells_in_spot"] = {
@@ -514,18 +516,25 @@ def test_sr_existing_mapping_must_use_unique_ground_truth_cell_ids(tmp_path):
     }
     st.write_h5ad(paths["st"])
 
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    st_report = next(item for item in report["inputs"] if item["role"] == "st")
+    assert st_report["sr_mapping"] == {
+        "source": "embedded",
+        "validation": "pre_allocation",
+    }
     with pytest.raises(
         ValueError,
         match=r"all_cells_in_spot.*unique cell ids",
     ):
-        REVISEInputService(io).preflight(
-            specs,
-            runtime=runtime,
-            columns=COLUMNS,
-        )
+        ensure_all_cells_in_spot(st, real_adata=read_h5ad(paths["gt"]))
 
 
-def test_sr_existing_mapping_rejects_unknown_ground_truth_cell_ids(tmp_path):
+def test_sr_pre_allocation_rejects_mapping_ids_absent_from_ground_truth(tmp_path):
     runtime, io, specs, paths = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
     st = read_h5ad(paths["st"])
     st.uns["all_cells_in_spot"] = {
@@ -534,12 +543,15 @@ def test_sr_existing_mapping_rejects_unknown_ground_truth_cell_ids(tmp_path):
     }
     st.write_h5ad(paths["st"])
 
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    assert report["status"] == "ready"
     with pytest.raises(ValueError, match=r"actual_unknown.*unknown-1"):
-        REVISEInputService(io).preflight(
-            specs,
-            runtime=runtime,
-            columns=COLUMNS,
-        )
+        ensure_all_cells_in_spot(st, real_adata=read_h5ad(paths["gt"]))
 
 
 def test_sr_fallback_mapping_uses_ground_truth_cell_id_column():
@@ -552,6 +564,27 @@ def test_sr_fallback_mapping_uses_ground_truth_cell_id_column():
 
     mapped = [cell for cells in st.uns["all_cells_in_spot"].values() for cell in cells]
     assert mapped == ["cell-1", "cell-2"]
+
+
+@pytest.mark.parametrize(
+    ("mapping", "message"),
+    [
+        ({"st-1": ["cell-1"]}, "missing mappings.*active spots"),
+        (
+            {"st-1": ["cell-1"], "st-2": []},
+            "empty cell lists.*active spots",
+        ),
+    ],
+)
+def test_sr_pre_allocation_requires_mapping_for_each_nonempty_active_spot(
+    mapping,
+    message,
+):
+    st = _adata("st")
+    st.uns["all_cells_in_spot"] = mapping
+
+    with pytest.raises((KeyError, ValueError), match=message):
+        ensure_all_cells_in_spot(st)
 
 
 def test_preflight_missing_file_has_role_and_path_context(tmp_path):
@@ -626,6 +659,18 @@ def test_preflight_rejects_missing_reference_label(tmp_path):
     adata.write_h5ad(tmp_path / "sc.h5ad")
 
     with pytest.raises(KeyError, match=r"role=sc_ref.*Level1"):
+        _preflight(tmp_path)
+
+
+def test_preflight_rejects_reference_labels_that_collide_after_normalization(
+    tmp_path,
+):
+    _write_application_inputs(tmp_path)
+    adata = _adata("sc_ref")
+    adata.obs["Level1"] = ["A/B", "A_B"]
+    adata.write_h5ad(tmp_path / "sc.h5ad")
+
+    with pytest.raises(ValueError, match=r"role=sc_ref.*Level1.*collide"):
         _preflight(tmp_path)
 
 
@@ -746,7 +791,7 @@ def test_sr_preflight_rejects_missing_configured_broad_column(tmp_path, mode):
         )
 
 
-def test_application_sr_preflight_rejects_mismatched_cell_locations(tmp_path):
+def test_application_sr_pre_allocation_rejects_mismatched_cell_locations(tmp_path):
     _write_application_inputs(tmp_path)
     st = read_h5ad(tmp_path / "sample_st.h5ad")
     st.uns["all_cells_in_spot"] = {
@@ -760,34 +805,46 @@ def test_application_sr_preflight_rejects_mismatched_cell_locations(tmp_path):
     st.write_h5ad(tmp_path / "sample_st.h5ad")
     _, io, specs = _application_specs(tmp_path)
 
-    with pytest.raises(ValueError, match="spot_name disagrees"):
-        REVISEInputService(io).preflight(
-            specs,
-            runtime={"mode": "application", "task": "sc_svc_sr"},
-            columns=COLUMNS,
-        )
-
-
-def test_application_sr_preflight_rejects_duplicate_mapping_cell_ids(tmp_path):
-    _write_application_inputs(tmp_path)
-    st = read_h5ad(tmp_path / "sample_st.h5ad")
-    st.uns["all_cells_in_spot"] = {
-        str(st.obs_names[0]): ["cell-1"],
-        str(st.obs_names[1]): ["cell-1"],
-    }
-    st.uns["revise_cell_locations"] = pd.DataFrame(
-        {"spot_name": [str(st.obs_names[1])], "x": [0.1], "y": [0.2]},
-        index=pd.Index(["cell-1"], name="cell_id"),
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime={"mode": "application", "task": "sc_svc_sr"},
+        columns=COLUMNS,
     )
-    st.write_h5ad(tmp_path / "sample_st.h5ad")
-    _, io, specs = _application_specs(tmp_path)
 
-    with pytest.raises(ValueError, match="unique cell ids"):
-        REVISEInputService(io).preflight(
-            specs,
-            runtime={"mode": "application", "task": "sc_svc_sr"},
-            columns=COLUMNS,
-        )
+    assert report["status"] == "ready"
+    with pytest.raises(ValueError, match="spot_name disagrees"):
+        ensure_all_cells_in_spot(st)
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_source"),
+    [
+        ("application", "generated_from_transcript_counts"),
+        ("benchmark", "generated_from_ground_truth_coordinates"),
+    ],
+)
+def test_sr_preflight_records_documented_mapping_generation_path(
+    tmp_path,
+    mode,
+    expected_source,
+):
+    if mode == "application":
+        _write_application_inputs(tmp_path)
+        _, io, specs = _application_specs(tmp_path)
+    else:
+        _, io, specs, _ = _write_benchmark_inputs(tmp_path, "sc_svc_sr")
+
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime={"mode": mode, "task": "sc_svc_sr"},
+        columns=COLUMNS,
+    )
+
+    st_report = next(item for item in report["inputs"] if item["role"] == "st")
+    assert st_report["sr_mapping"] == {
+        "source": expected_source,
+        "validation": "pre_allocation",
+    }
 
 
 def test_preflight_rejects_zero_gene_overlap(tmp_path):
