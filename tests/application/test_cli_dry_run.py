@@ -41,7 +41,7 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
             sys.executable,
             "reconstruct.py",
             "--svc-type",
-            "sp-SVC",
+            "hST-SVC",
             "--sample-name",
             "sample",
             "--st-file",
@@ -63,7 +63,7 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["status"] == "ready"
-    assert payload["svc_type"] == "sp-SVC"
+    assert payload["svc_type"] == "hST-SVC"
     assert payload["pipeline"]["route"] == "sp_svc:bin2cell"
     assert "platform" not in payload
     assert Path(payload["preflight"]).is_file()

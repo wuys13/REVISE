@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -52,7 +51,7 @@ def test_canonical_application_cli_rejects_benchmark_only_spot_size(monkeypatch)
         [
             "revise-reconstruct",
             "--svc-type",
-            "sc-SVC-sr",
+            "sST-SVC",
             "--sample-name",
             "sample",
             "--st-file",
@@ -76,7 +75,7 @@ def test_canonical_application_cli_exposes_only_local_refinement_strength():
     args = cli.parse_args(
         [
             "--svc-type",
-            "sp-SVC",
+            "hST-SVC",
             "--sample-name",
             "sample",
             "--st-file",
@@ -170,7 +169,8 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         return None
 
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        svc_type="hST-SVC",
+        ist_mapping=None,
         config="revise/revise.yaml",
         seed=17,
         data_root=str(tmp_path),
@@ -182,7 +182,6 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         spot_size=50,
         ot_method="pot",
         local_refinement_strength=0.4,
-        select_ct="all",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
     )
@@ -201,13 +200,13 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
 @pytest.mark.parametrize(
     ("svc_type", "profile", "svc_kind", "output_key", "expected_type"),
     [
-        ("sp-SVC", "application_sp", "sp", "sp_svc", "sp-SVC"),
+        ("hST-SVC", "application_sp", "sp", "sp_svc", "hST-SVC"),
         (
-            "sc-SVC-sr",
+            "sST-SVC",
             "application_sc_sr",
             "sc",
             "sc_svc_dec",
-            "sc-SVC-sr",
+            "sST-SVC",
         ),
     ],
 )
@@ -227,7 +226,6 @@ def test_public_result_links_to_manifest_and_registers_artifact(
         var=pd.DataFrame(index=["g1", "g2"]),
     )
     records = []
-    run_dir = tmp_path / "run"
     ctx = PublicationContext(
         svc=SVC(
             expr=output,
@@ -235,7 +233,7 @@ def test_public_result_links_to_manifest_and_registers_artifact(
             svc_kind=svc_kind,
             artifacts={"outputs": {output_key: output}},
         ),
-        run_dir=run_dir,
+        run_dir=tmp_path / "run",
         merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
         provenance={},
         record_artifact=records.append,
@@ -248,7 +246,7 @@ def test_public_result_links_to_manifest_and_registers_artifact(
         ot_method="pot",
     )
 
-    _, path = service._build_public_result(
+    result, path = service._build_public_result(
         args,
         profile,
         output_key,
@@ -256,12 +254,20 @@ def test_public_result_links_to_manifest_and_registers_artifact(
     )
 
     published = read_h5ad(path)
-    provenance = published.uns["revise_reconstruction"]
-    expected_run_dir = Path(os.path.relpath(run_dir, start=path.parent)).as_posix()
-    assert provenance["run_dir"] == expected_run_dir
-    assert provenance["run_manifest"] == f"{expected_run_dir}/provenance.json"
-    assert "ot_events" not in provenance
-    assert path.name == "SVC.h5ad"
+    assert result.uns["revise_reconstruction"] == {
+        "schema_version": 2,
+        "svc_type": expected_type,
+        "ist_mapping": None,
+        "effective_seed": None,
+        "expression_source": None,
+        "donor_column": None,
+        "donor_sha256": None,
+    }
+    assert published.uns["revise_reconstruction"] == {
+        "schema_version": 2,
+        "svc_type": expected_type,
+    }
+    assert path == tmp_path / "out" / "sample" / expected_type / "SVC.h5ad"
     assert ctx.provenance["result"] == {
         "filename": "SVC.h5ad",
         "type": expected_type,
@@ -281,7 +287,7 @@ def test_public_result_write_failure_preserves_previous_result(
         obs=pd.DataFrame(index=["cell-1"]),
         var=pd.DataFrame(index=["g1"]),
     )
-    output_path = tmp_path / "out" / "sample" / "SVC.h5ad"
+    output_path = tmp_path / "out" / "sample" / "hST-SVC" / "SVC.h5ad"
     output_path.parent.mkdir(parents=True)
     output_path.write_bytes(b"previous-valid-result")
     ctx = PublicationContext(
@@ -297,7 +303,7 @@ def test_public_result_write_failure_preserves_previous_result(
         record_artifact=lambda artifact: None,
     )
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        svc_type="hST-SVC",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -325,7 +331,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
         obs=pd.DataFrame(index=["cell-1"]),
         var=pd.DataFrame(index=["g1"]),
     )
-    output_path = tmp_path / "out" / "sample" / "SVC.h5ad"
+    output_path = tmp_path / "out" / "sample" / "hST-SVC" / "SVC.h5ad"
     output_path.parent.mkdir(parents=True)
     output_path.write_bytes(b"previous-valid-result")
     ctx = PublicationContext(
@@ -347,7 +353,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
 
     ctx.record_artifact = fail_record_artifact
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        svc_type="hST-SVC",
         output_root=str(tmp_path / "out"),
         sample_name="sample",
         seed=17,
@@ -385,7 +391,7 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
         record_artifact=lambda artifact: None,
     )
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        svc_type="hST-SVC",
         output_root=str(output_root),
         sample_name="sample",
         seed=17,
@@ -394,7 +400,7 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
 
     with pytest.raises(
         ValueError,
-        match="SVC type 'sp-SVC' requires internal kind 'sp'",
+        match="SVC type 'hST-SVC' requires internal kind 'sp'",
     ):
         service._build_public_result(args, "application_sp", "sp_svc", ctx)
 

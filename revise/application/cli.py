@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--patient-key", default="Patient")
-    parser.add_argument("--select-ct", default=None)
+    parser.add_argument("--ist-mapping", choices=("mean", "random"), default=None)
     parser.add_argument("--cell-type-col", default=None)
     parser.add_argument("--sub-cell-type-col", default=None)
     parser.add_argument(
@@ -96,11 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.svc_type == "sc-SVC":
-        select_ct = args.select_ct.strip() if isinstance(args.select_ct, str) else ""
-        if select_ct.lower() in {"", "all", "*", "__all__", "all_cell_types"}:
-            parser.error("--select-ct must name one concrete cell type")
-        args.select_ct = select_ct
+    if args.svc_type == "iST-SVC":
+        args.ist_mapping = args.ist_mapping or "mean"
+    elif args.ist_mapping is not None:
+        parser.error("--ist-mapping is only valid with --svc-type iST-SVC")
     return args
 
 
@@ -123,20 +122,13 @@ def main() -> None:
     else:
         with redirect_stdout(sys.stderr):
             result, output_path, pipeline_summary = reconstruct(args)
-        if args.svc_type == "sc-SVC":
-            payload = {
-                "svc_type": args.svc_type,
-                "outputs": {key: str(path) for key, path in output_path.items()},
-                "shapes": {key: list(adata.shape) for key, adata in result.items()},
-                "pipeline": pipeline_summary,
-            }
-        else:
-            payload = {
-                "svc_type": args.svc_type,
-                "output": str(output_path),
-                "shape": list(result.shape),
-                "pipeline": pipeline_summary,
-            }
+        payload = {
+            "status": "succeeded",
+            "svc_type": args.svc_type,
+            "output": str(output_path),
+            "shape": list(result.shape),
+            "pipeline": pipeline_summary,
+        }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import os
 import tempfile
@@ -24,21 +25,21 @@ class ApplicationRoute(NamedTuple):
 
 
 APPLICATION_ROUTES = {
-    "sp-SVC": ApplicationRoute(
+    "hST-SVC": ApplicationRoute(
         route_id="sp_svc",
         profile="application_sp",
         confounding="bin2cell",
         output_key="sp_svc",
         svc_kind="sp",
     ),
-    "sc-SVC": ApplicationRoute(
+    "iST-SVC": ApplicationRoute(
         route_id="sc_svc",
         profile="application_sc",
         confounding="segmentation",
         output_key=None,
         svc_kind="sc",
     ),
-    "sc-SVC-sr": ApplicationRoute(
+    "sST-SVC": ApplicationRoute(
         route_id="sc_svc_sr",
         profile="application_sc_sr",
         confounding="spot_size",
@@ -86,9 +87,18 @@ def _build_algorithm_overrides(args: argparse.Namespace) -> dict:
         columns["sub_cell_type_col"] = args.sub_cell_type_col
     if columns:
         overrides["columns"] = columns
-    if args.svc_type == "sc-SVC":
-        overrides["sc"] = {"select_ct": args.select_ct}
     return overrides
+
+
+def _validate_ist_mapping(args: argparse.Namespace) -> None:
+    mapping = getattr(args, "ist_mapping", None)
+    if args.svc_type == "iST-SVC":
+        if mapping is None:
+            args.ist_mapping = "mean"
+        elif mapping not in {"mean", "random"}:
+            raise ValueError(f"Unsupported iST mapping {mapping!r}")
+    elif mapping is not None:
+        raise ValueError("ist_mapping is only valid for iST-SVC")
 
 
 def _run_pipeline(
@@ -97,6 +107,7 @@ def _run_pipeline(
     dry_run: bool = False,
     finalize_callback=None,
 ):
+    _validate_ist_mapping(args)
     route = APPLICATION_ROUTES[args.svc_type]
     pipeline_class = REVISEPipeline
     if pipeline_class is None:
@@ -129,54 +140,256 @@ def _run_pipeline(
     return route.profile, route.output_key, svc
 
 
-def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]:
-    from revise.utils import completed_artifact
-
-    route = APPLICATION_ROUTES[args.svc_type]
-    svc = ctx.svc
+def _effective_seed(args, ctx) -> int:
     seed = args.seed
     if seed is None:
         runtime = getattr(ctx, "runtime", None)
         if runtime is None:
             runtime = getattr(ctx, "merged_config", {}).get("runtime", {})
         seed = runtime.get("seed", 42)
-    seed = int(seed)
-    if svc.svc_kind != route.svc_kind:
-        raise ValueError(
-            f"SVC type {args.svc_type!r} requires internal kind {route.svc_kind!r}; "
-            f"strategy returned {svc.svc_kind!r}"
+    return int(seed)
+
+
+def _is_finite(matrix) -> bool:
+    import numpy as np
+    from scipy import sparse
+
+    values = matrix.data if sparse.issparse(matrix) else np.asarray(matrix)
+    return bool(np.isfinite(values).all())
+
+
+def _copy_mapping(mapping) -> dict:
+    return {key: value.copy() for key, value in mapping.items()}
+
+
+def _merge_contract_metadata(existing, contract: dict) -> dict:
+    if existing is None:
+        merged = {}
+    elif not isinstance(existing, dict):
+        raise ValueError("revise_reconstruction namespace must be a mapping")
+    else:
+        merged = copy.deepcopy(existing)
+    for key, value in contract.items():
+        if key in merged and merged[key] != value:
+            raise ValueError(
+                f"revise_reconstruction contract key {key!r} conflicts with "
+                f"existing value {merged[key]!r}"
+            )
+        merged[key] = value
+    return merged
+
+
+def _donor_hash(donor_ids: list[str]) -> str:
+    payload = json.dumps(
+        donor_ids,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _ist_contract(mapping: str, seed: int, donor_ids: list[str] | None) -> dict:
+    random_mapping = mapping == "random"
+    return {
+        "schema_version": 2,
+        "svc_type": "iST-SVC",
+        "ist_mapping": mapping,
+        "effective_seed": seed if random_mapping else None,
+        "expression_source": "expression_carrier.X_as_is",
+        "donor_column": "revise_ist_donor_id" if random_mapping else None,
+        "donor_sha256": _donor_hash(donor_ids) if donor_ids is not None else None,
+    }
+
+
+def _direct_contract(svc_type: str) -> dict:
+    return {
+        "schema_version": 2,
+        "svc_type": svc_type,
+        "ist_mapping": None,
+        "effective_seed": None,
+        "expression_source": None,
+        "donor_column": None,
+        "donor_sha256": None,
+    }
+
+
+def _validate_ist_carriers(spatial, expression, *, random_mapping: bool):
+    spatial_labels = _cluster_labels(spatial, "SVC_cluster", "spatial SVC")
+    expression_labels = _cluster_labels(expression, "SVC_cluster", "expression SVC")
+    spatial_keys = _cluster_keys(spatial_labels)
+    expression_keys = _cluster_keys(expression_labels)
+    if set(spatial_keys) != set(expression_keys):
+        raise ValueError("spatial and expression SVC cluster sets must match exactly")
+    if not expression.var_names.is_unique:
+        raise ValueError("expression SVC var_names must be unique")
+    if random_mapping:
+        if not expression.obs_names.is_unique:
+            raise ValueError("expression SVC obs_names must be unique for random mapping")
+        if any(not str(name) for name in expression.obs_names):
+            raise ValueError("expression SVC obs_names must be non-empty for random mapping")
+    if not _is_finite(expression.X):
+        raise ValueError("expression SVC X must contain only finite values")
+    return spatial_keys, expression_keys
+
+
+def _mean_expression(expression, spatial_keys, expression_keys):
+    import numpy as np
+
+    means = {}
+    for cluster in set(spatial_keys):
+        indices = [
+            index for index, value in enumerate(expression_keys) if value == cluster
+        ]
+        block = expression.X[indices]
+        mean = block.mean(axis=0)
+        means[cluster] = np.asarray(mean).reshape(-1)
+    return np.vstack([means[cluster] for cluster in spatial_keys])
+
+
+def _random_expression(expression, spatial_keys, expression_keys, seed: int):
+    import numpy as np
+
+    donors_by_cluster = {}
+    for index, (name, cluster) in enumerate(
+        zip(expression.obs_names, expression_keys, strict=True)
+    ):
+        donors_by_cluster.setdefault(cluster, []).append((str(name), index))
+    for donors in donors_by_cluster.values():
+        donors.sort(key=lambda item: item[0])
+
+    rng = np.random.default_rng(seed)
+    donor_ids = []
+    donor_indices = []
+    for cluster in spatial_keys:
+        donors = donors_by_cluster[cluster]
+        donor_name, donor_index = donors[int(rng.integers(len(donors)))]
+        donor_ids.append(donor_name)
+        donor_indices.append(donor_index)
+    return expression.X[donor_indices].copy(), donor_ids
+
+
+def _build_ist_result(args, ctx, seed: int):
+    from anndata import AnnData
+
+    outputs = dict(ctx.svc.artifacts.get("outputs", {}))
+    required = {"sc_svc_spatial", "sc_svc_expr"}
+    missing = sorted(required - outputs.keys())
+    if missing:
+        raise RuntimeError(
+            f"iST-SVC pipeline did not return required outputs {missing}; "
+            f"available={sorted(outputs)}"
         )
 
-    if args.svc_type == "sc-SVC":
-        raise ValueError("standard sc-SVC must use the paired public-result publisher")
+    spatial = outputs["sc_svc_spatial"]
+    expression = outputs["sc_svc_expr"]
+    random_mapping = args.ist_mapping == "random"
+    spatial_keys, expression_keys = _validate_ist_carriers(
+        spatial,
+        expression,
+        random_mapping=random_mapping,
+    )
+    donor_ids = None
+    if random_mapping:
+        output_x, donor_ids = _random_expression(
+            expression,
+            spatial_keys,
+            expression_keys,
+            seed,
+        )
+    else:
+        output_x = _mean_expression(expression, spatial_keys, expression_keys)
 
-    outputs = dict(svc.artifacts.get("outputs", {}))
+    obs = spatial.obs.copy(deep=True)
+    if donor_ids is not None:
+        obs["revise_ist_donor_id"] = donor_ids
+    existing = spatial.uns.get("revise_reconstruction")
+    reconstruction = _merge_contract_metadata(
+        existing,
+        _ist_contract(args.ist_mapping, seed, donor_ids),
+    )
+    result = AnnData(
+        X=output_x,
+        obs=obs,
+        var=expression.var.copy(deep=True),
+        uns={"revise_reconstruction": reconstruction},
+        obsm=_copy_mapping(spatial.obsm),
+        varm=_copy_mapping(expression.varm),
+        obsp=_copy_mapping(spatial.obsp),
+        varp=_copy_mapping(expression.varp),
+    )
+    if not _is_finite(result.X):
+        raise ValueError("iST-SVC output X must contain only finite values")
+    return result
+
+
+def _build_result(args, output_key, ctx, seed: int):
+    if args.svc_type == "iST-SVC":
+        return _build_ist_result(args, ctx, seed)
+
+    outputs = dict(ctx.svc.artifacts.get("outputs", {}))
     if output_key not in outputs:
         raise RuntimeError(
             f"{args.svc_type} pipeline did not return required output {output_key!r}; "
             f"available={sorted(outputs)}"
         )
-    else:
-        result = outputs[output_key].copy()
-        result.uns["revise_reconstruction"] = {
-            "svc_type": args.svc_type,
-            "seed": seed,
-        }
+    result = outputs[output_key].copy()
+    result.uns["revise_reconstruction"] = _merge_contract_metadata(
+        result.uns.get("revise_reconstruction"),
+        _direct_contract(args.svc_type),
+    )
+    if not _is_finite(result.X):
+        raise ValueError(f"{args.svc_type} output X must contain only finite values")
+    return result
 
-    output_dir = Path(args.output_root) / args.sample_name
+
+def _validate_written_result(path: Path, source) -> None:
+    from anndata import read_h5ad
+
+    written = read_h5ad(path, backed="r")
+    try:
+        if written.shape != source.shape:
+            raise ValueError(
+                f"Published H5AD shape {written.shape} does not match source "
+                f"{source.shape}"
+            )
+        if not written.obs_names.equals(source.obs_names):
+            raise ValueError("Published H5AD observation names do not match the source")
+        if not written.var_names.equals(source.var_names):
+            raise ValueError("Published H5AD variable names do not match the source")
+    finally:
+        written.file.close()
+
+
+def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]:
+    from revise.utils import completed_artifact
+
+    del profile
+    _validate_ist_mapping(args)
+    route = APPLICATION_ROUTES[args.svc_type]
+    if ctx.svc.svc_kind != route.svc_kind:
+        raise ValueError(
+            f"SVC type {args.svc_type!r} requires internal kind {route.svc_kind!r}; "
+            f"strategy returned {ctx.svc.svc_kind!r}"
+        )
+
+    seed = _effective_seed(args, ctx)
+    result = _build_result(args, output_key, ctx, seed)
+    output_dir = Path(args.output_root) / args.sample_name / args.svc_type
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "SVC.h5ad"
-    relative_run_dir = Path(os.path.relpath(ctx.run_dir, start=output_dir)).as_posix()
-    provenance = result.uns.setdefault("revise_reconstruction", {})
-    provenance.update(
-        {
-            "profile": profile,
-            "run_dir": relative_run_dir,
-            "run_manifest": (Path(relative_run_dir) / "provenance.json").as_posix(),
-            "ot_method_override": args.ot_method,
-            "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
+
+    metadata = result.uns["revise_reconstruction"]
+    result_record = {"filename": output_path.name, "type": args.svc_type}
+    assembly_record = None
+    if args.svc_type == "iST-SVC":
+        random_mapping = args.ist_mapping == "random"
+        assembly_record = {
+            "ist_mapping": args.ist_mapping,
+            "effective_seed": seed if random_mapping else None,
+            "donor_column": metadata["donor_column"],
+            "donor_sha256": metadata["donor_sha256"],
+            "donor_count": result.n_obs if random_mapping else None,
         }
-    )
 
     temporary_path = None
     backup_path = None
@@ -188,23 +401,18 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             delete=False,
         ) as handle:
             temporary_path = Path(handle.name)
-        result.write_h5ad(temporary_path)
-        _validate_written_sc_result(
-            temporary_path,
-            result,
-            require_spatial=False,
-            require_cluster=False,
-        )
+        result.copy().write_h5ad(temporary_path)
+        _validate_written_result(temporary_path, result)
         artifact = completed_artifact("public_result", temporary_path)
         artifact["path"] = str(output_path)
-        result_record = {
-            "filename": output_path.name,
-            "type": args.svc_type,
-        }
         had_previous_result = "result" in ctx.provenance
         previous_result = copy.deepcopy(ctx.provenance.get("result"))
         had_previous_svc_result = "result" in ctx.svc.provenance
         previous_svc_result = copy.deepcopy(ctx.svc.provenance.get("result"))
+        had_previous_assembly = "assembly" in ctx.provenance
+        previous_assembly = copy.deepcopy(ctx.provenance.get("assembly"))
+        had_previous_svc_assembly = "assembly" in ctx.svc.provenance
+        previous_svc_assembly = copy.deepcopy(ctx.svc.provenance.get("assembly"))
 
         if output_path.exists():
             with tempfile.NamedTemporaryFile(
@@ -224,16 +432,25 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             if backup_path is None:
                 output_path.unlink(missing_ok=True)
             elif backup_path.exists():
+                output_path.unlink(missing_ok=True)
                 os.replace(backup_path, output_path)
 
-            if not had_previous_result:
-                ctx.provenance.pop("result", None)
-            else:
+            if had_previous_result:
                 ctx.provenance["result"] = previous_result
-            if not had_previous_svc_result:
-                ctx.svc.provenance.pop("result", None)
             else:
+                ctx.provenance.pop("result", None)
+            if had_previous_svc_result:
                 ctx.svc.provenance["result"] = previous_svc_result
+            else:
+                ctx.svc.provenance.pop("result", None)
+            if had_previous_assembly:
+                ctx.provenance["assembly"] = previous_assembly
+            else:
+                ctx.provenance.pop("assembly", None)
+            if had_previous_svc_assembly:
+                ctx.svc.provenance["assembly"] = previous_svc_assembly
+            else:
+                ctx.svc.provenance.pop("assembly", None)
 
             for index in range(len(ctx.artifact_records) - 1, -1, -1):
                 if ctx.artifact_records[index] == artifact:
@@ -245,7 +462,11 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             if backup_path is not None:
                 os.replace(output_path, backup_path)
             os.replace(temporary_path, output_path)
-            ctx.provenance["result"] = result_record
+            ctx.provenance["result"] = copy.deepcopy(result_record)
+            ctx.svc.provenance["result"] = copy.deepcopy(result_record)
+            if assembly_record is not None:
+                ctx.provenance["assembly"] = copy.deepcopy(assembly_record)
+                ctx.svc.provenance["assembly"] = copy.deepcopy(assembly_record)
             ctx.record_artifact(artifact)
         except BaseException:
             ctx.rollback_pending_publication()
@@ -256,256 +477,18 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
     return result, output_path
 
 
-def _safe_output_component(value: object, *, field: str) -> str:
-    component = str(value).strip().replace("/", "_").replace("\\", "_")
-    if component in {"", ".", ".."} or "\x00" in component:
-        raise ValueError(f"{field} cannot be used as an output directory: {value!r}")
-    return component
-
-
-def _validate_sc_pair_source(spatial, expression) -> None:
-    spatial_labels = _cluster_labels(spatial, "SVC_cluster", "spatial SVC")
-    expression_labels = _cluster_labels(expression, "SVC_cluster", "expression SVC")
-    spatial_clusters = set(_cluster_keys(spatial_labels))
-    expression_clusters = set(_cluster_keys(expression_labels))
-    extra_expression_clusters = expression_clusters - spatial_clusters
-    if extra_expression_clusters:
-        raise ValueError(
-            "expression SVC contains clusters absent from spatial SVC: "
-            f"{sorted(map(repr, extra_expression_clusters))}"
-        )
-    if "spatial" not in spatial.obsm:
-        raise KeyError("spatial SVC is missing required obsm['spatial'] coordinates")
-
-
-def _validate_written_sc_result(
-    path: Path,
-    source,
-    *,
-    require_spatial: bool,
-    require_cluster: bool = True,
-) -> None:
-    from anndata import read_h5ad
-
-    written = read_h5ad(path, backed="r")
-    try:
-        if written.shape != source.shape:
-            raise ValueError(
-                "Published H5AD shape "
-                f"{written.shape} does not match source {source.shape}"
-            )
-        if not written.obs_names.equals(source.obs_names):
-            raise ValueError("Published H5AD observation names do not match the source")
-        if not written.var_names.equals(source.var_names):
-            raise ValueError("Published H5AD variable names do not match the source")
-        if require_cluster and (
-            "SVC_cluster" not in written.obs
-            or written.obs["SVC_cluster"].isna().any()
-        ):
-            raise ValueError("Published H5AD must contain non-null SVC_cluster labels")
-        if require_spatial and "spatial" not in written.obsm:
-            raise ValueError("Published spatial H5AD is missing obsm['spatial']")
-    finally:
-        written.file.close()
-
-
-def _build_sc_public_results(args, profile, ctx):
-    """Publish the notebook-compatible sc-SVC pair as one rollback unit."""
-    from revise.utils import completed_artifact
-
-    route = APPLICATION_ROUTES[args.svc_type]
-    if route.svc_kind != "sc" or ctx.svc.svc_kind != "sc":
-        raise ValueError("sc-SVC publication requires an internal sc SVC result")
-
-    outputs = dict(ctx.svc.artifacts.get("outputs", {}))
-    required = {"sc_svc_spatial", "sc_svc_expr"}
-    missing = sorted(required - outputs.keys())
-    if missing:
-        raise RuntimeError(
-            f"sc-SVC pipeline did not return required outputs {missing}; "
-            f"available={sorted(outputs)}"
-        )
-
-    spatial = outputs["sc_svc_spatial"]
-    expression = outputs["sc_svc_expr"]
-    _validate_sc_pair_source(spatial, expression)
-
-    selected_cell_type = ctx.svc.provenance.get(
-        "selected_cell_type",
-        getattr(args, "select_ct", None),
-    )
-    if selected_cell_type in (None, ""):
-        raise RuntimeError("sc-SVC result is missing its selected cell type")
-    output_dir = (
-        Path(args.output_root)
-        / args.sample_name
-        / "sc-SVC"
-        / _safe_output_component(selected_cell_type, field="selected cell type")
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    published = {
-        "spatial": (spatial, output_dir / "sc_SVC_spatial.h5ad", True),
-        "expression": (expression, output_dir / "sc_SVC_expr.h5ad", False),
-    }
-
-    relative_run_dir = Path(os.path.relpath(ctx.run_dir, start=output_dir)).as_posix()
-    pair_filenames = {
-        role: path.name
-        for role, (_adata, path, _require_spatial) in published.items()
-        if role in {"spatial", "expression"}
-    }
-    tacco_parameters = copy.deepcopy(
-        (ctx.merged_config.get("sc", {}) or {}).get("tacco_annotate")
-    )
-    for role, (adata, path, _require_spatial) in published.items():
-        provenance = adata.uns.setdefault("revise_reconstruction", {})
-        provenance.update(
-            {
-                "svc_type": args.svc_type,
-                "output_contract": "sc_svc_notebook_pair_v1",
-                "output_role": role,
-                "paired_outputs": json.dumps(pair_filenames, sort_keys=True),
-                "selected_cell_type": str(selected_cell_type),
-                "profile": profile,
-                "run_dir": relative_run_dir,
-                "run_manifest": (Path(relative_run_dir) / "provenance.json").as_posix(),
-                "ot_method_override": getattr(args, "ot_method", None),
-                "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
-                "tacco_annotate": json.dumps(
-                    tacco_parameters,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
-            }
-        )
-
-    temporary_paths = {}
-    artifacts = {}
-    backups = {}
-    had_existing = {}
-    previous_results = copy.deepcopy(ctx.provenance.get("results"))
-    had_previous_results = "results" in ctx.provenance
-    previous_svc_results = copy.deepcopy(ctx.svc.provenance.get("results"))
-    had_previous_svc_results = "results" in ctx.svc.provenance
-
-    try:
-        for role, (adata, path, require_spatial) in published.items():
-            with tempfile.NamedTemporaryFile(
-                dir=output_dir,
-                prefix=f".{path.stem}.",
-                suffix=".h5ad",
-                delete=False,
-            ) as handle:
-                temporary_path = Path(handle.name)
-            temporary_paths[role] = temporary_path
-            adata.write_h5ad(temporary_path)
-            _validate_written_sc_result(
-                temporary_path,
-                adata,
-                require_spatial=require_spatial,
-            )
-            artifact = completed_artifact("public_result", temporary_path)
-            artifact.update(path=str(path), logical_role=role)
-            artifacts[role] = artifact
-
-        for role, (_adata, path, _require_spatial) in published.items():
-            had_existing[role] = path.exists()
-            if path.exists():
-                with tempfile.NamedTemporaryFile(
-                    dir=output_dir,
-                    prefix=f".{path.stem}.previous.",
-                    suffix=path.suffix,
-                    delete=False,
-                ) as handle:
-                    backup = Path(handle.name)
-                backup.unlink()
-                backups[role] = backup
-            else:
-                backups[role] = None
-        result_records = {
-            role: {
-                "filename": path.name,
-                "path": str(path),
-                "type": args.svc_type,
-                "logical_role": role,
-                "shape": list(adata.shape),
-            }
-            for role, (adata, path, _require_spatial) in published.items()
-        }
-
-        def commit():
-            for backup in backups.values():
-                if backup is not None:
-                    backup.unlink(missing_ok=True)
-
-        def rollback():
-            for role, (_adata, path, _require_spatial) in published.items():
-                backup = backups.get(role)
-                if backup is not None and backup.exists():
-                    path.unlink(missing_ok=True)
-                    os.replace(backup, path)
-                elif not had_existing.get(role, False):
-                    path.unlink(missing_ok=True)
-            if had_previous_results:
-                ctx.provenance["results"] = previous_results
-            else:
-                ctx.provenance.pop("results", None)
-            if had_previous_svc_results:
-                ctx.svc.provenance["results"] = previous_svc_results
-            else:
-                ctx.svc.provenance.pop("results", None)
-
-            artifact_records = getattr(ctx, "artifact_records", None)
-            if artifact_records is not None:
-                for artifact in artifacts.values():
-                    for index in range(len(artifact_records) - 1, -1, -1):
-                        if artifact_records[index] == artifact:
-                            del artifact_records[index]
-                            break
-
-        ctx.set_pending_publication(commit=commit, rollback=rollback)
-        try:
-            for role, (_adata, path, _require_spatial) in published.items():
-                backup = backups[role]
-                if backup is not None:
-                    os.replace(path, backup)
-                os.replace(temporary_paths[role], path)
-            ctx.provenance["results"] = copy.deepcopy(result_records)
-            ctx.svc.provenance["results"] = copy.deepcopy(result_records)
-            for role in published:
-                ctx.record_artifact(artifacts[role])
-        except BaseException:
-            ctx.rollback_pending_publication()
-            raise
-    finally:
-        for temporary_path in temporary_paths.values():
-            temporary_path.unlink(missing_ok=True)
-
-    return (
-        {role: adata for role, (adata, _path, _require_spatial) in published.items()},
-        {role: path for role, (_adata, path, _require_spatial) in published.items()},
-    )
-
-
 def reconstruct(args: argparse.Namespace):
+    _validate_ist_mapping(args)
     route = APPLICATION_ROUTES[args.svc_type]
     published = {}
 
     def publish(ctx):
-        if args.svc_type == "sc-SVC":
-            published["result"], published["path"] = _build_sc_public_results(
-                args,
-                route.profile,
-                ctx,
-            )
-        else:
-            published["result"], published["path"] = _build_public_result(
-                args,
-                route.profile,
-                route.output_key,
-                ctx,
-            )
+        published["result"], published["path"] = _build_public_result(
+            args,
+            route.profile,
+            route.output_key,
+            ctx,
+        )
 
     profile, _, svc = _run_pipeline(args, finalize_callback=publish)
     summary = svc.summary()

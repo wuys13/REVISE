@@ -1,6 +1,6 @@
 """Application public vocabulary and entrypoint contract.
 
-Covers: the 1.x reconstruction selector, route mapping, and shared root/package CLI.
+Covers: the 2.0 reconstruction selector, route mapping, and shared root/package CLI.
 Proof limit: does not execute scientific reconstruction or validate real datasets.
 """
 
@@ -39,7 +39,7 @@ def _required_args(svc_type: str) -> list[str]:
     return args
 
 
-def test_parser_exposes_only_the_three_1x_svc_types():
+def test_parser_exposes_only_the_three_2x_svc_types():
     from revise.application.cli import build_parser
 
     parser = build_parser()
@@ -47,26 +47,67 @@ def test_parser_exposes_only_the_three_1x_svc_types():
 
     assert "--platform" not in actions
     assert "--set" not in actions
-    assert actions["--svc-type"].choices == ("sp-SVC", "sc-SVC", "sc-SVC-sr")
+    assert actions["--svc-type"].choices == ("hST-SVC", "iST-SVC", "sST-SVC")
+    assert actions["--ist-mapping"].choices == ("mean", "random")
+    assert "--select-ct" not in actions
 
 
-@pytest.mark.parametrize("svc_type", ("sp-SVC", "sc-SVC", "sc-SVC-sr"))
-def test_parser_accepts_each_1x_svc_type(svc_type):
+@pytest.mark.parametrize("svc_type", ("hST-SVC", "iST-SVC", "sST-SVC"))
+def test_parser_accepts_each_2x_svc_type(svc_type):
     from revise.application.cli import parse_args
 
     args = parse_args(_required_args(svc_type))
 
     assert args.svc_type == svc_type
     assert not hasattr(args, "platform")
+    assert args.ist_mapping == ("mean" if svc_type == "iST-SVC" else None)
 
 
 def test_parser_rejects_removed_sc_mapping_option():
     from revise.application.cli import parse_args
 
     with pytest.raises(SystemExit) as exc_info:
-        parse_args(_required_args("sc-SVC") + ["--sc-mapping", "mean"])
+        parse_args(_required_args("iST-SVC") + ["--sc-mapping", "mean"])
 
     assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize("svc_type", ("sp-SVC", "sc-SVC", "sc-SVC-sr"))
+def test_parser_rejects_each_legacy_svc_type(svc_type):
+    from revise.application.cli import parse_args
+
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(_required_args(svc_type))
+
+    assert exc_info.value.code == 2
+
+
+def test_parser_rejects_removed_select_ct_option():
+    from revise.application.cli import parse_args
+
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(_required_args("iST-SVC") + ["--select-ct", "T"])
+
+    assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize("svc_type", ("hST-SVC", "sST-SVC"))
+def test_ist_mapping_is_rejected_outside_ist(svc_type):
+    from revise.application.cli import parse_args
+
+    with pytest.raises(SystemExit) as exc_info:
+        parse_args(_required_args(svc_type) + ["--ist-mapping", "random"])
+
+    assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize("mapping", ("mean", "random"))
+def test_ist_mapping_accepts_both_public_modes(mapping):
+    from revise.application.cli import parse_args
+
+    args = parse_args(_required_args("iST-SVC") + ["--ist-mapping", mapping])
+
+    assert args.ist_mapping == mapping
 
 
 def test_ot_method_help_explains_tacco_default_and_explicit_pot():
@@ -78,27 +119,34 @@ def test_ot_method_help_explains_tacco_default_and_explicit_pot():
     assert "'pot' explicitly selects a different algorithm" in help_text
 
 
-def test_sc_svc_cli_reports_plural_outputs(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("svc_type", "route"),
+    (
+        ("hST-SVC", "sp_svc:bin2cell"),
+        ("iST-SVC", "sc_svc:segmentation"),
+        ("sST-SVC", "sc_svc_sr:spot_size"),
+    ),
+)
+def test_cli_reports_the_unified_single_output(
+    monkeypatch,
+    tmp_path,
+    svc_type,
+    route,
+):
     from revise.application import cli, service
 
     monkeypatch.setattr(
         sys,
         "argv",
-        ["revise-reconstruct", *_required_args("sc-SVC")],
+        ["revise-reconstruct", *_required_args(svc_type)],
     )
     monkeypatch.setattr(
         service,
         "reconstruct",
         lambda args: (
-            {
-                "spatial": SimpleNamespace(shape=(3, 2)),
-                "expression": SimpleNamespace(shape=(4, 5)),
-            },
-            {
-                "spatial": tmp_path / "sc_SVC_spatial.h5ad",
-                "expression": tmp_path / "sc_SVC_expr.h5ad",
-            },
-            {"route": "sc_svc:segmentation"},
+            SimpleNamespace(shape=(3, 5)),
+            tmp_path / "SVC.h5ad",
+            {"route": route},
         ),
     )
 
@@ -107,16 +155,13 @@ def test_sc_svc_cli_reports_plural_outputs(monkeypatch, tmp_path):
         cli.main()
 
     payload = json.loads(stdout.getvalue())
-    assert payload["outputs"] == {
-        "spatial": str(tmp_path / "sc_SVC_spatial.h5ad"),
-        "expression": str(tmp_path / "sc_SVC_expr.h5ad"),
+    assert payload == {
+        "status": "succeeded",
+        "svc_type": svc_type,
+        "output": str(tmp_path / "SVC.h5ad"),
+        "shape": [3, 5],
+        "pipeline": {"route": route},
     }
-    assert payload["shapes"] == {
-        "spatial": [3, 2],
-        "expression": [4, 5],
-    }
-    assert "output" not in payload
-    assert "shape" not in payload
 
 
 def test_parser_rejects_removed_set_option():
@@ -132,7 +177,7 @@ def test_omitted_cli_config_values_leave_the_yaml_in_control():
     from revise.application.cli import parse_args
     from revise.application.service import _build_algorithm_overrides
 
-    args = parse_args(_required_args("sp-SVC"))
+    args = parse_args(_required_args("hST-SVC"))
 
     assert args.seed is None
     assert args.cell_type_col is None
@@ -140,30 +185,30 @@ def test_omitted_cli_config_values_leave_the_yaml_in_control():
     assert _build_algorithm_overrides(args) == {}
 
 
-def test_application_routes_use_internal_ids_without_2x_vocabulary():
+def test_application_routes_map_2x_vocabulary_to_unchanged_internal_ids():
     from revise.application.service import APPLICATION_ROUTES
 
-    assert set(APPLICATION_ROUTES) == {"sp-SVC", "sc-SVC", "sc-SVC-sr"}
+    assert set(APPLICATION_ROUTES) == {"hST-SVC", "iST-SVC", "sST-SVC"}
     assert {
         svc_type: route.route_id for svc_type, route in APPLICATION_ROUTES.items()
     } == {
-        "sp-SVC": "sp_svc",
-        "sc-SVC": "sc_svc",
-        "sc-SVC-sr": "sc_svc_sr",
+        "hST-SVC": "sp_svc",
+        "iST-SVC": "sc_svc",
+        "sST-SVC": "sc_svc_sr",
     }
     serialized = repr(APPLICATION_ROUTES)
-    assert "hST" not in serialized
-    assert "iST" not in serialized
-    assert "sST" not in serialized
+    assert "application_sp" in serialized
+    assert "application_sc" in serialized
+    assert "application_sc_sr" in serialized
 
 
 @pytest.mark.parametrize(
     ("svc_type", "profile", "route_id", "confounding", "output_key"),
     (
-        ("sp-SVC", "application_sp", "sp_svc", "bin2cell", "sp_svc"),
-        ("sc-SVC", "application_sc", "sc_svc", "segmentation", None),
+        ("hST-SVC", "application_sp", "sp_svc", "bin2cell", "sp_svc"),
+        ("iST-SVC", "application_sc", "sc_svc", "segmentation", None),
         (
-            "sc-SVC-sr",
+            "sST-SVC",
             "application_sc_sr",
             "sc_svc_sr",
             "spot_size",
@@ -206,7 +251,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
         sc_ref_file="sc.h5ad",
         patient_key="Patient",
         ot_method="pot",
-        select_ct="T",
+        ist_mapping="mean" if svc_type == "iST-SVC" else None,
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
     )
@@ -229,17 +274,15 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
             "cell_type_col": "Level1",
             "sub_cell_type_col": "Level2",
         },
-        **({"sc": {"select_ct": "T"}} if svc_type == "sc-SVC" else {}),
     }
 
 
-def test_sc_svc_sr_forwards_configured_cell_type_columns_without_sc_only_selection():
+def test_sst_forwards_configured_cell_type_columns():
     from revise.application.service import _build_algorithm_overrides
 
     args = SimpleNamespace(
-        svc_type="sc-SVC-sr",
+        svc_type="sST-SVC",
         ot_method=None,
-        select_ct="T",
         cell_type_col="major_type",
         sub_cell_type_col="minor_type",
     )
@@ -254,13 +297,12 @@ def test_sc_svc_sr_forwards_configured_cell_type_columns_without_sc_only_selecti
     }
 
 
-def test_sp_svc_forwards_configured_annotation_columns():
+def test_hst_forwards_configured_annotation_columns():
     from revise.application.service import _build_algorithm_overrides
 
     args = SimpleNamespace(
-        svc_type="sp-SVC",
+        svc_type="hST-SVC",
         ot_method=None,
-        select_ct="all",
         cell_type_col="major_type",
         sub_cell_type_col="minor_type",
     )
@@ -283,7 +325,7 @@ def test_root_application_wrapper_delegates_to_package_cli():
     assert not hasattr(reconstruct, "APPLICATION_ROUTES")
 
 
-def test_root_application_help_uses_1x_vocabulary():
+def test_root_application_help_uses_2x_vocabulary():
     result = subprocess.run(
         [sys.executable, "reconstruct.py", "--help"],
         cwd=ROOT,
@@ -293,5 +335,7 @@ def test_root_application_help_uses_1x_vocabulary():
     )
 
     assert result.returncode == 0, result.stderr
-    assert "--svc-type {sp-SVC,sc-SVC,sc-SVC-sr}" in result.stdout
+    assert "--svc-type {hST-SVC,iST-SVC,sST-SVC}" in result.stdout
+    assert "--ist-mapping {mean,random}" in result.stdout
+    assert "--select-ct" not in result.stdout
     assert "--platform" not in result.stdout
