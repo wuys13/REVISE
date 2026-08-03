@@ -127,6 +127,15 @@ def add_one(value):
 assert add_one(1) == 2
 assert add_one.signatures
 assert annotated.obsm["Level1"].shape == (4, 2)
+assert annotated.obsm["Level1"].index.equals(annotated.obs_names)
+assert annotated.obsm["Level1"].columns.tolist() == ["A", "B"]
+np.testing.assert_allclose(
+    annotated.obsm["Level1"].sum(axis=1).to_numpy(),
+    np.ones(annotated.n_obs),
+    rtol=0,
+    atol=1e-6,
+)
+assert annotated.obs["Level1"].tolist() == annotated.obsm["Level1"].idxmax(axis=1).tolist()
 assert annotated_level2.obsm["Level2"].shape == (4, 4)
 assert annotated_reference.obsm["SVC_cluster"].shape == (6, 2)
 assert coupling.shape == (2, 2)

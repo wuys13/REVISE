@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import fields
 import logging
 from pathlib import Path
 import sys
@@ -21,6 +22,230 @@ from revise.svc import SVC
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _global_assignment(labels, posterior):
+    from revise.backend.ops import assignment
+
+    return assignment.GlobalAssignment(labels=labels, posterior=posterior)
+
+
+def _validate_global_assignment(
+    labels,
+    posterior,
+    *,
+    expected_observations=("spot-1", "spot-2"),
+    expected_categories=("A", "B"),
+):
+    from revise.backend.ops import assignment
+
+    return assignment.validate_global_assignment(
+        _global_assignment(labels, posterior),
+        expected_observations=expected_observations,
+        expected_categories=expected_categories,
+    )
+
+
+def _ordered_global_assignment():
+    posterior = pd.DataFrame(
+        [[0.75, 0.25], [0.2, 0.8]],
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = pd.Series(["A", "B"], index=posterior.index)
+    return labels, posterior
+
+
+def test_global_assignment_carrier_contains_only_labels_and_posterior():
+    from revise.backend.ops import assignment
+
+    assert [field.name for field in fields(assignment.GlobalAssignment)] == [
+        "labels",
+        "posterior",
+    ]
+
+
+def test_global_assignment_is_a_mutable_identity_carrier():
+    labels, posterior = _ordered_global_assignment()
+    carrier = _global_assignment(labels, posterior)
+    equivalent = _global_assignment(labels.copy(), posterior.copy())
+    replacement = labels.copy()
+
+    carrier.labels = replacement
+
+    assert carrier.labels is replacement
+    assert carrier != equivalent
+
+
+def test_global_assignment_accepts_ordered_posterior_without_changing_values():
+    labels, posterior = _ordered_global_assignment()
+
+    validated = _validate_global_assignment(labels, posterior)
+
+    pd.testing.assert_series_equal(validated.labels, labels)
+    pd.testing.assert_frame_equal(validated.posterior, posterior)
+
+
+@pytest.mark.parametrize(
+    ("axis", "actual", "message"),
+    [
+        ("observation", ["spot-1"], "observation.*missing"),
+        ("observation", ["spot-1", "spot-2", "spot-3"], "observation.*extra"),
+        ("observation", ["spot-2", "spot-1"], "observation.*order"),
+        ("category", ["A"], "category.*missing"),
+        ("category", ["A", "B", "C"], "category.*extra"),
+        ("category", ["B", "A"], "category.*order"),
+    ],
+)
+def test_global_assignment_rejects_nonexact_axes(axis, actual, message):
+    from revise.backend.ops import assignment
+
+    labels, posterior = _ordered_global_assignment()
+    if axis == "observation":
+        posterior = pd.DataFrame(
+            np.tile([[0.75, 0.25]], (len(actual), 1)),
+            index=actual,
+            columns=posterior.columns,
+        )
+        labels = pd.Series(["A"] * len(actual), index=actual)
+    else:
+        posterior = pd.DataFrame(
+            np.full((2, len(actual)), 1.0 / len(actual)),
+            index=posterior.index,
+            columns=actual,
+        )
+        labels = posterior.idxmax(axis=1)
+
+    with pytest.raises(assignment.GlobalAssignmentContractError, match=message):
+        _validate_global_assignment(labels, posterior)
+
+
+@pytest.mark.parametrize(
+    ("axis", "actual", "message"),
+    [
+        ("observation", ["spot-1", "spot-1"], "observation.*duplicate"),
+        ("observation", ["spot/1", "spot_1"], "observation.*collid"),
+        ("category", ["A", "A"], "category.*duplicate"),
+        ("category", ["A/B", "A_B"], "category.*collid"),
+        ("observation", ["spot-1", None], "observation.*null"),
+        ("category", ["A", ""], "category.*empty"),
+    ],
+)
+def test_global_assignment_rejects_ambiguous_or_invalid_axes(
+    axis,
+    actual,
+    message,
+):
+    from revise.backend.ops import assignment
+
+    labels, posterior = _ordered_global_assignment()
+    if axis == "observation":
+        posterior.index = actual
+        labels.index = actual
+        expected_observations = actual
+        expected_categories = posterior.columns
+    else:
+        posterior.columns = actual
+        labels = pd.Series([actual[0], actual[0]], index=posterior.index)
+        expected_observations = posterior.index
+        expected_categories = actual
+
+    with pytest.raises(assignment.GlobalAssignmentContractError, match=message):
+        _validate_global_assignment(
+            labels,
+            posterior,
+            expected_observations=expected_observations,
+            expected_categories=expected_categories,
+        )
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ([[1.1, -0.1], [0.2, 0.8]], "non-negative"),
+        ([[np.nan, 0.0], [0.2, 0.8]], "finite"),
+        ([[np.inf, 0.0], [0.2, 0.8]], "finite"),
+        ([[0.6, 0.400002], [0.2, 0.8]], "row-normalized"),
+    ],
+)
+def test_global_assignment_rejects_invalid_posterior_values(values, message):
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        values,
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = posterior.idxmax(axis=1)
+
+    with pytest.raises(assignment.GlobalAssignmentContractError, match=message):
+        _validate_global_assignment(labels, posterior)
+
+
+def test_global_assignment_accepts_in_tolerance_row_mass_without_normalizing():
+    posterior = pd.DataFrame(
+        [[0.6, 0.4000005], [0.2, 0.8]],
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = posterior.idxmax(axis=1)
+
+    validated = _validate_global_assignment(labels, posterior)
+
+    pd.testing.assert_frame_equal(validated.posterior, posterior)
+    assert validated.posterior.iloc[0].sum() == pytest.approx(1.0000005)
+
+
+@pytest.mark.parametrize(
+    ("values", "labels"),
+    [
+        ([[0.8, 0.2], [0.1, 0.9]], ["B", "B"]),
+        ([[0.5, 0.5], [0.2, 0.8]], ["B", "B"]),
+    ],
+)
+def test_global_assignment_rejects_labels_that_differ_from_pandas_idxmax(
+    values,
+    labels,
+):
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        values,
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    hard_labels = pd.Series(labels, index=posterior.index)
+
+    with pytest.raises(
+        assignment.GlobalAssignmentContractError,
+        match="labels.*argmax",
+    ):
+        _validate_global_assignment(hard_labels, posterior)
+
+
+def test_global_assignment_rejects_hard_labels_without_posterior():
+    from revise.backend.ops import assignment
+
+    labels = pd.Series(["A", "B"], index=["spot-1", "spot-2"])
+
+    with pytest.raises(
+        assignment.GlobalAssignmentContractError,
+        match="posterior.*DataFrame",
+    ):
+        _validate_global_assignment(labels, None)
+
+
+def test_global_assignment_validator_does_not_mutate_inputs_or_share_outputs():
+    labels, posterior = _ordered_global_assignment()
+    original_labels = labels.copy(deep=True)
+    original_posterior = posterior.copy(deep=True)
+
+    validated = _validate_global_assignment(labels, posterior)
+    validated.labels.iloc[0] = "changed"
+    validated.posterior.iloc[0, 0] = 999.0
+
+    pd.testing.assert_series_equal(labels, original_labels)
+    pd.testing.assert_frame_equal(posterior, original_posterior)
 
 
 def _load_functions(relative_path, names, namespace):
