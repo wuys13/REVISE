@@ -170,7 +170,7 @@ def test_public_docs_use_the_2x_selector_and_single_file_contract():
     assert "Path(args.output_root) / args.sample_name / args.svc_type" in service
     assert "``result`` contains exactly ``filename`` and ``type``" in configuration
     assert "Only iST-SVC adds the top-level ``assembly`` record" in configuration
-    assert "--select-ct" not in text
+    assert "--select-ct" in text
     assert "--sc-mapping" not in text
     assert "provenance.json" in text
     assert "one route-qualified SVC.h5ad + manifest" in api_diagram

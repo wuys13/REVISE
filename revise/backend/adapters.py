@@ -22,7 +22,7 @@ from revise.config.runner_conf import (
 )
 from revise.io import REVISEInputService
 from revise.svc import SVC
-from revise.utils import benchmark_case_leaf
+from revise.utils import benchmark_case_leaf, completed_artifact, write_json
 from revise.utils.spot_sr_input import ensure_all_cells_in_spot
 
 
@@ -298,6 +298,111 @@ def _require_concrete_cell_type(value: Any) -> str:
     return select_ct
 
 
+_IST_SELECTION_EXCLUDE_KEYWORDS = ("tumor", "epi")
+
+
+def _ist_selection_gate_enabled(ctx) -> bool:
+    return (
+        ctx.runtime.get("task") == "sc_svc"
+        and bool(ctx.merged_config.get("sc", {}).get("selection_review_gate", False))
+    )
+
+
+def _normalize_selected_cell_types(value: Any) -> List[str]:
+    values = value if isinstance(value, (list, tuple)) else [value]
+    selected: List[str] = []
+    for item in values:
+        label = str(item).strip()
+        if label and label not in selected:
+            selected.append(label)
+    return selected
+
+
+def _assess_ist_selection(ctx) -> Dict[str, Any]:
+    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
+    labels = ctx.runner.st_adata.obs[cell_type_col].astype(str)
+    counts = labels.value_counts()
+    excluded_cell_types = [
+        str(label)
+        for label in counts.index
+        if any(keyword in str(label).casefold() for keyword in _IST_SELECTION_EXCLUDE_KEYWORDS)
+    ]
+    default_candidates = [
+        str(label) for label in counts.index if str(label) not in excluded_cell_types
+    ]
+    warnings: List[Dict[str, Any]] = [
+        {
+            "code": "over_20000",
+            "cell_type": str(label),
+            "count": int(count),
+        }
+        for label, count in counts.items()
+        if int(count) > 20_000
+    ]
+    if not default_candidates:
+        warnings.append(
+            {
+                "code": "no_default_candidates",
+                "message": "No cell types remain after default tumor/epi exclusion",
+            }
+        )
+    assessment = {
+        "status": "needs_review",
+        "cell_type_col": cell_type_col,
+        "input_identities": [
+            dict(identity) for identity in getattr(ctx, "input_identities", [])
+        ],
+        "counts": {str(label): int(count) for label, count in counts.items()},
+        "excluded_keywords": list(_IST_SELECTION_EXCLUDE_KEYWORDS),
+        "excluded_cell_types": excluded_cell_types,
+        "default_candidates": default_candidates,
+        "warnings": warnings,
+    }
+    path = Path(ctx.run_dir) / "selection_assessment.json"
+    write_json(path, assessment)
+    ctx.record_artifact(completed_artifact("selection_assessment", path))
+    ctx.artifacts["selection_review_required"] = True
+    ctx.artifacts["selection_assessment"] = assessment
+    ctx.artifacts["selection_assessment_path"] = str(path)
+    return assessment
+
+
+def _validate_ist_selected_cell_types(ctx, selected: List[str]) -> None:
+    if not selected:
+        raise ValueError("--select-ct requires at least one non-empty cell type")
+    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
+    ga_labels = set(ctx.runner.st_adata.obs[cell_type_col].astype(str))
+    reference_labels = set(ctx.runner.sc_ref_adata.obs[cell_type_col].astype(str))
+    missing_ga = [label for label in selected if label not in ga_labels]
+    missing_reference = [label for label in selected if label not in reference_labels]
+    if missing_ga or missing_reference:
+        details = []
+        if missing_ga:
+            details.append(f"missing from GA labels: {missing_ga}")
+        if missing_reference:
+            details.append(f"missing from filtered sc reference: {missing_reference}")
+        raise ValueError("Selected cell types are not available simultaneously; " + "; ".join(details))
+    counts = ctx.runner.st_adata.obs[cell_type_col].astype(str).value_counts()
+    too_small = [label for label in selected if int(counts.get(label, 0)) < 2]
+    if too_small:
+        raise ValueError(
+            "Selected cell types have fewer than two spatial cells: "
+            f"{too_small}"
+        )
+
+
+def _prefix_svc_cluster_labels(adata, cell_type: str, cluster_col: str = "SVC_cluster"):
+    if cluster_col not in adata.obs:
+        return adata
+    adata = adata.copy()
+    prefix = str(cell_type).replace("/", "_").replace(" ", "_")
+    adata.obs[cluster_col] = prefix + "_" + adata.obs[cluster_col].astype(str)
+    adata.obs[cluster_col] = adata.obs[cluster_col].astype("category")
+    return adata
+
+
+
+
 def _build_svc(
     ctx,
     outputs: Dict[str, Any],
@@ -535,6 +640,22 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
 class ScSvcApplicationStrategy(RunnerBackedStrategy):
     strategy_id = "ScSvcApplicationStrategy"
 
+    def global_anchoring(self, ctx) -> None:
+        super().global_anchoring(ctx)
+        if _ist_selection_gate_enabled(ctx):
+            if ctx.merged_config.get("sc", {}).get("select_ct") is None:
+                _assess_ist_selection(ctx)
+            else:
+                cell_type_col = ctx.columns.get("cell_type_col", "Level1")
+                counts = ctx.runner.st_adata.obs[cell_type_col].astype(str).value_counts()
+                for label, count in counts.items():
+                    if int(count) > 20_000:
+                        ctx.logger.warning(
+                            "[iST selection] cell type %s has %s GA spots (>20000)",
+                            label,
+                            int(count),
+                        )
+
     def prepare_context(self, ctx) -> None:
         from revise.backend.runners.sc_svc_application import ScSVC as ScAppRunner
 
@@ -593,6 +714,8 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         if missing:
             raise KeyError(f"Missing required columns in sc reference: {missing}")
         adata_sc.obs = adata_sc.obs.loc[:, required_cols].copy()
+        for column in required_cols:
+            adata_sc.obs[column] = adata_sc.obs[column].astype(str)
         sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
         _replace_slash_labels(adata_sc, required_cols)
 
@@ -610,22 +733,37 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         sc_cfg = ctx.merged_config.get("sc", {})
         sub_cell_type_col = ctx.columns.get("sub_cell_type_col", "Level2")
 
-        select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
-
+        selected_cell_types = None
         resolutions = list(sc_cfg.get("resolutions", [0.6, 0.7, 0.8]))
         select_res = sc_cfg.get("select_resolution")
-        sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
-            select_ct,
-            sub_cell_type_col,
-            resolutions,
-            select_res=select_res,
-        )
-        ctx.record_local_refinement(True)
+        if _ist_selection_gate_enabled(ctx):
+            selected_cell_types = _normalize_selected_cell_types(sc_cfg.get("select_ct"))
+            _validate_ist_selected_cell_types(ctx, selected_cell_types)
+            spatial_parts = []
+            expr_parts = []
+            for candidate in selected_cell_types:
+                sc_svc_spatial_part, sc_svc_expr_part = ctx.runner.local_refinement(
+                    candidate, sub_cell_type_col, resolutions, select_res=select_res
+                )
+                ctx.record_local_refinement(True)
+                spatial_parts.append(_prefix_svc_cluster_labels(sc_svc_spatial_part, candidate))
+                expr_parts.append(_prefix_svc_cluster_labels(sc_svc_expr_part, candidate))
+            sc_svc_spatial = sc.concat(spatial_parts, join="outer", merge="same", uns_merge="unique", index_unique=None)
+            sc_svc_expr = sc.concat(expr_parts, join="outer", merge="same", uns_merge="unique", index_unique=None)
+            select_ct = list(selected_cell_types)
+        else:
+            select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
+            sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
+                select_ct, sub_cell_type_col, resolutions, select_res=select_res
+            )
+            ctx.record_local_refinement(True)
         ctx.artifacts["outputs"] = {
             "sc_svc_spatial": sc_svc_spatial,
             "sc_svc_expr": sc_svc_expr,
         }
         ctx.artifacts["selected_cell_type"] = select_ct
+        if selected_cell_types is not None:
+            ctx.artifacts["selected_cell_types"] = selected_cell_types
 
     def finalize_svc(self, ctx) -> SVC:
         outputs = dict(ctx.artifacts.get("outputs", {}))
@@ -637,6 +775,7 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             spatial=outputs.get("sc_svc_spatial"),
             extra_provenance={
                 "selected_cell_type": ctx.artifacts.get("selected_cell_type"),
+                "selected_cell_types": ctx.artifacts.get("selected_cell_types"),
             },
         )
 

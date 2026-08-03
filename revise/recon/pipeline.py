@@ -39,6 +39,23 @@ class UnifiedReconstructionPipeline:
             return ctx.svc
 
         self._run_stage(ctx, "global_anchoring", self.global_anchoring)
+        if ctx.artifacts.get("selection_review_required"):
+            assessment_path = ctx.artifacts.get("selection_assessment_path")
+            ctx.skip_pending_stages("selection_review_required")
+            ctx.svc = SVC(
+                expr=None,
+                spatial=None,
+                svc_kind=str(ctx.runtime.get("svc_kind", "sc")),
+                provenance={
+                    "selection_review_required": True,
+                    "selection_assessment": assessment_path,
+                },
+                artifacts={"selection_assessment": assessment_path},
+            )
+            ctx.provenance["selection_review_required"] = True
+            ctx.provenance["selection_assessment"] = assessment_path
+            ctx.mark_run_succeeded()
+            return ctx.svc
         self._run_stage(ctx, "local_refinement", self.local_refinement)
         self._run_stage(ctx, "finalize", self.finalize_svc)
 

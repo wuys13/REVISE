@@ -77,6 +77,7 @@ RECONSTRUCT_KEYS = {"alpha"}
 BENCHMARK_KEYS = {"evaluate"}
 SC_KEYS = {
     "select_ct",
+    "selection_review_gate",
     "resolutions",
     "select_resolution",
     "hyperresolution",

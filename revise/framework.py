@@ -371,7 +371,12 @@ class REVISEPipeline:
             ),
         }
         current_provenance = getattr(ctx, "provenance", {})
-        for result_key in ("result", "assembly"):
+        for result_key in (
+            "result",
+            "assembly",
+            "selection_review_required",
+            "selection_assessment",
+        ):
             result_value = copy.deepcopy(current_provenance.get(result_key))
             if result_value is not None:
                 provenance[result_key] = result_value

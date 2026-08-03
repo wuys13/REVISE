@@ -94,6 +94,18 @@ def _build_algorithm_overrides(args: argparse.Namespace) -> dict:
         columns["sub_cell_type_col"] = args.sub_cell_type_col
     if columns:
         overrides["columns"] = columns
+    if args.svc_type == "iST-SVC":
+        select_ct = getattr(args, "select_ct", None)
+        sc_overrides = {"selection_review_gate": True}
+        if select_ct is not None:
+            selected = []
+            values = select_ct if isinstance(select_ct, (list, tuple)) else [select_ct]
+            for value in values:
+                label = str(value).strip()
+                if label and label not in selected:
+                    selected.append(label)
+            sc_overrides["select_ct"] = selected
+        overrides["sc"] = sc_overrides
     return overrides
 
 
@@ -510,4 +522,10 @@ def reconstruct(args: argparse.Namespace):
     profile, _, svc = _run_pipeline(args, finalize_callback=publish)
     summary = svc.summary()
     summary.update(profile=profile, route=svc.provenance.get("route_key"))
+    if svc.provenance.get("selection_review_required"):
+        summary.update(
+            status="needs_review",
+            selection_assessment=svc.provenance.get("selection_assessment"),
+        )
+        return None, None, summary
     return published["result"], published["path"], summary

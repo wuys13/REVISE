@@ -83,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--patient-key", default="Patient")
     parser.add_argument("--ist-mapping", choices=("mean", "random"), default=None)
+    parser.add_argument(
+        "--select-ct",
+        action="append",
+        default=None,
+        help="iST-SVC cell type to reconstruct; repeat for multiple types",
+    )
     parser.add_argument("--cell-type-col", default=None)
     parser.add_argument("--sub-cell-type-col", default=None)
     parser.add_argument(
@@ -98,8 +104,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.svc_type == "iST-SVC":
         args.ist_mapping = args.ist_mapping or "mean"
-    elif args.ist_mapping is not None:
-        parser.error("--ist-mapping is only valid with --svc-type iST-SVC")
+    else:
+        if args.ist_mapping is not None:
+            parser.error("--ist-mapping is only valid with --svc-type iST-SVC")
+        if args.select_ct is not None:
+            parser.error("--select-ct is only valid with --svc-type iST-SVC")
     return args
 
 
@@ -122,13 +131,21 @@ def main() -> None:
     else:
         with redirect_stdout(sys.stderr):
             result, output_path, pipeline_summary = reconstruct(args)
-        payload = {
-            "status": "succeeded",
-            "svc_type": args.svc_type,
-            "output": str(output_path),
-            "shape": list(result.shape),
-            "pipeline": pipeline_summary,
-        }
+        if output_path is None:
+            payload = {
+                "status": "needs_review",
+                "svc_type": args.svc_type,
+                "selection_assessment": pipeline_summary.get("selection_assessment"),
+                "pipeline": pipeline_summary,
+            }
+        else:
+            payload = {
+                "status": "succeeded",
+                "svc_type": args.svc_type,
+                "output": str(output_path),
+                "shape": list(result.shape),
+                "pipeline": pipeline_summary,
+            }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 

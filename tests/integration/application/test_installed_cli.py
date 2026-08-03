@@ -201,12 +201,11 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
     assert "--svc-type {hST-SVC,iST-SVC,sST-SVC}" in help_result.stdout
     assert "--ist-mapping {mean,random}" in help_result.stdout
     assert "--set" not in help_result.stdout
-    assert "--select-ct" not in help_result.stdout
+    assert "--select-ct" in help_result.stdout
     assert "--sc-mapping" not in help_result.stdout
 
     for removed_option in (
         ["--set", "graph.method=pca"],
-        ["--select-ct", "T"],
         ["--sc-mapping", "mean"],
     ):
         removed = _run(

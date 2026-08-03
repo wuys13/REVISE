@@ -49,7 +49,7 @@ def test_parser_exposes_only_the_three_2x_svc_types():
     assert "--set" not in actions
     assert actions["--svc-type"].choices == ("hST-SVC", "iST-SVC", "sST-SVC")
     assert actions["--ist-mapping"].choices == ("mean", "random")
-    assert "--select-ct" not in actions
+    assert isinstance(actions["--select-ct"], argparse._AppendAction)
 
 
 @pytest.mark.parametrize("svc_type", ("hST-SVC", "iST-SVC", "sST-SVC"))
@@ -82,11 +82,23 @@ def test_parser_rejects_each_legacy_svc_type(svc_type):
     assert exc_info.value.code == 2
 
 
-def test_parser_rejects_removed_select_ct_option():
+def test_parser_collects_repeated_iST_cell_types():
+    from revise.application.cli import parse_args
+
+    args = parse_args(
+        _required_args("iST-SVC")
+        + ["--select-ct", "T", "--select-ct", "B", "--select-ct", "T"]
+    )
+
+    assert args.select_ct == ["T", "B", "T"]
+
+
+@pytest.mark.parametrize("svc_type", ("hST-SVC", "sST-SVC"))
+def test_parser_rejects_iST_cell_type_selection_outside_iST(svc_type):
     from revise.application.cli import parse_args
 
     with pytest.raises(SystemExit) as exc_info:
-        parse_args(_required_args("iST-SVC") + ["--select-ct", "T"])
+        parse_args(_required_args(svc_type) + ["--select-ct", "T"])
 
     assert exc_info.value.code == 2
 
@@ -252,6 +264,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
         patient_key="Patient",
         ot_method="pot",
         ist_mapping="mean" if svc_type == "iST-SVC" else None,
+        select_ct=None,
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
     )
@@ -268,13 +281,16 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
         expected_runtime["seed"] = seed
     assert captured["runtime_overrides"] == expected_runtime
     assert captured["io_overrides"]["save_outputs"] is False
-    assert captured["algorithm_overrides"] == {
+    expected_overrides = {
         "ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}},
         "columns": {
             "cell_type_col": "Level1",
             "sub_cell_type_col": "Level2",
         },
     }
+    if svc_type == "iST-SVC":
+        expected_overrides["sc"] = {"selection_review_gate": True}
+    assert captured["algorithm_overrides"] == expected_overrides
 
 
 def test_sst_forwards_configured_cell_type_columns():
@@ -293,6 +309,26 @@ def test_sst_forwards_configured_cell_type_columns():
         "columns": {
             "cell_type_col": "major_type",
             "sub_cell_type_col": "minor_type",
+        }
+    }
+
+
+def test_ist_cell_type_override_deduplicates_in_first_seen_order():
+    from revise.application.service import _build_algorithm_overrides
+
+    args = SimpleNamespace(
+        svc_type="iST-SVC",
+        ot_method=None,
+        local_refinement_strength=None,
+        cell_type_col=None,
+        sub_cell_type_col=None,
+        select_ct=["T", "B", "T"],
+    )
+
+    assert _build_algorithm_overrides(args) == {
+        "sc": {
+            "selection_review_gate": True,
+            "select_ct": ["T", "B"],
         }
     }
 
@@ -337,5 +373,5 @@ def test_root_application_help_uses_2x_vocabulary():
     assert result.returncode == 0, result.stderr
     assert "--svc-type {hST-SVC,iST-SVC,sST-SVC}" in result.stdout
     assert "--ist-mapping {mean,random}" in result.stdout
-    assert "--select-ct" not in result.stdout
+    assert "--select-ct" in result.stdout
     assert "--platform" not in result.stdout

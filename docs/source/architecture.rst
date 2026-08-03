@@ -93,6 +93,15 @@ before replacement, and provides best-effort caught-exception rollback. It is
 not reader-atomic or crash-atomic. The caller must guarantee one writer per
 stable public target; violating that precondition is undefined.
 
+For the 2.0 iST-SVC route, ``select_ct: null`` runs validation and GA, then
+writes ``selection_assessment.json`` and returns ``needs_review``. The report
+excludes labels containing ``tumor`` or ``epi`` (case-insensitive), warns for
+any label with more than 20,000 GA spots, and never silently selects a largest
+class. Human confirmation is supplied by repeating ``--select-ct`` for each
+requested cell type; only then does iST refinement and ``SVC.h5ad`` publication
+run. The assessment records the resolved input identities for the current
+reference; this version does not rank multiple references automatically.
+
 Inapplicable reconstruction metadata values that are ``None`` are omitted by
 H5AD serialization; it does not invent sentinel values. Applicable keys remain
 exact.
