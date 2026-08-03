@@ -1,6 +1,4 @@
 from revise.config.loader import (
-    AssignmentGuidanceRequestEvidence,
-    AssignmentGuidanceRequestRecord,
     ConfigError,
     ResolvedConfig,
     infer_default_profile,
@@ -9,8 +7,6 @@ from revise.config.loader import (
 )
 
 __all__ = [
-    "AssignmentGuidanceRequestEvidence",
-    "AssignmentGuidanceRequestRecord",
     "ConfigError",
     "ResolvedConfig",
     "infer_default_profile",

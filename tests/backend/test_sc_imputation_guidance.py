@@ -128,10 +128,7 @@ def impute_module():
         yield module
 
 
-def _config(*, guidance="require", compatibility_mode="cost"):
-    def reject_guidance(*_args, **_kwargs):
-        pytest.fail("retired imputation guidance must not call the collector")
-
+def _config():
     return SimpleNamespace(
         cell_type_col="Level1",
         rec_ot_method="pot",
@@ -141,11 +138,6 @@ def _config(*, guidance="require", compatibility_mode="cost"):
         rec_merge_subcluster_method="mean",
         rec_impute_prune_flag=False,
         ot_event_callback=None,
-        assignment_guidance_policy=guidance,
-        assignment_guidance_callback=reject_guidance,
-        posterior_conditioning_enabled=True,
-        posterior_conditioning_mode=compatibility_mode,
-        posterior_conditioning_cost_strength=100.0,
     )
 
 
@@ -176,11 +168,11 @@ def _inputs():
     return spatial, reference
 
 
-def _runner(module, spatial, reference, *, guidance="require", mode="cost"):
+def _runner(module, spatial, reference):
     runner = module.ScSVCImpute.__new__(module.ScSVCImpute)
     runner.st_adata = spatial
     runner.sc_ref_adata = reference
-    runner.config = _config(guidance=guidance, compatibility_mode=mode)
+    runner.config = _config()
     runner.logger = logging.getLogger("test-sc-imputation-base")
     runner.svc = {}
     return runner
@@ -207,7 +199,6 @@ def _patch_problem(
                 "source_mass": np.asarray(source_mass).copy(),
                 "target_mass": np.asarray(target_mass).copy(),
                 "cost": np.asarray(cost).copy(),
-                "reference_measure": kwargs.get("reference_measure"),
             }
         )
         if solver_error is not None:
@@ -239,45 +230,19 @@ def _patch_problem(
     return captured
 
 
-@pytest.mark.parametrize(
-    ("guidance", "mode"),
-    [("off", "cost"), ("prefer", "reference"), ("require", "cost")],
-)
-def test_retired_imputation_guidance_does_not_read_or_change_base_problem(
+def test_imputation_solves_the_base_problem(
     impute_module,
     monkeypatch,
-    guidance,
-    mode,
 ):
     spatial, reference = _inputs()
-    runner = _runner(
-        impute_module,
-        spatial,
-        reference,
-        guidance=guidance,
-        mode=mode,
-    )
+    runner = _runner(impute_module, spatial, reference)
     captured = _patch_problem(impute_module, monkeypatch, runner)
 
     result = runner.local_impute(reference, "leiden_3")
 
     assert len(captured["solve_calls"]) == 1
     np.testing.assert_allclose(captured["solve_calls"][0]["cost"], 0.0)
-    assert captured["solve_calls"][0]["reference_measure"] is None
     np.testing.assert_allclose(result.X.toarray(), spatial.X.toarray())
-
-
-def test_imputation_runner_has_no_assignment_guidance_seams(impute_module):
-    retired = {
-        "_guidance_mode",
-        "_assignment_state_from_adata",
-        "_start_impute_guidance_event",
-        "_prepare_impute_assignment_guidance",
-        "_record_impute_guidance_terminal",
-    }
-
-    assert retired.isdisjoint(vars(impute_module))
-    assert retired.isdisjoint(vars(impute_module.ScSVCImpute))
 
 
 @pytest.mark.parametrize(
@@ -350,7 +315,7 @@ def test_disjoint_categorical_subclusters_preserve_base_output(
     assert result.n_obs == 4
 
 
-def test_reference_only_cell_type_is_skipped_without_guidance(
+def test_reference_only_cell_type_is_skipped(
     impute_module,
     monkeypatch,
 ):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,6 @@ from scipy import sparse
 from scipy.spatial import cKDTree
 
 from revise.backend.contracts import LocalRefinementStrategy
-from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.config.runner_conf import (
     ApplicationScConf,
     ApplicationScSrConf,
@@ -71,23 +70,10 @@ def _ot_runner_kwargs(cfg: Dict[str, Any], *, impute: bool = False) -> Dict[str,
     return kwargs
 
 
-def _attach_posterior_conditioning_conf(conf, cfg: Dict[str, Any]) -> None:
-    resolved = cfg["local_refinement"]
-    guidance = str(resolved["guidance"])
-    compatibility = resolved["compatibility"]
-    conf.assignment_guidance_policy = guidance
-    conf.posterior_conditioning_enabled = guidance != "off"
-    conf.posterior_conditioning_mode = str(compatibility["mode"] or "off")
-    conf.posterior_conditioning_key = str(conf.cell_type_col)
-    conf.posterior_conditioning_beta = float(compatibility["beta"] or 1.0)
-    conf.posterior_conditioning_min_affinity = float(
-        compatibility["min_affinity"] or 0.05
-    )
-    strength = compatibility["strength"]
-    conf.posterior_conditioning_cost_strength = float(
-        0.2 if strength is None else strength
-    )
-    conf.posterior_conditioning_strict = guidance == "require"
+def _attach_local_refinement_strength(conf, cfg: Dict[str, Any]) -> None:
+    refinement = cfg.get("local_refinement")
+    if refinement is not None:
+        conf.local_refinement_strength = float(refinement["strength"])
 
 
 def _resolve_runtime_seed(ctx) -> int:
@@ -478,20 +464,22 @@ def _install_safe_topology_patch() -> None:
 class RunnerBackedStrategy(LocalRefinementStrategy):
     strategy_id: str = "RunnerBackedStrategy"
 
-    @staticmethod
-    def _attach_assignment_guidance_callback(ctx) -> None:
-        ctx.runner_config.assignment_guidance_callback = (
-            ctx.assignment_guidance_callback
-        )
-        ctx.runner_config.assignment_guidance_route = ctx.route_key
-
     def global_anchoring(self, ctx) -> None:
         # Use backend kernel registry so all algorithm implementations are
         # centrally managed under revise.backend.kernels.
         from revise.backend.kernels import build_kernel
 
-        ctx.runner_config.ot_event_callback = ctx.record_ot_event
-        self._attach_assignment_guidance_callback(ctx)
+        def record_ot_event(phase, solver, status):
+            ctx.record_ot_event(phase, solver, status)
+            if (
+                phase == "lr"
+                and status == "completed"
+                and ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}
+                and ctx.local_refinement_record["strength"] != 0
+            ):
+                ctx.record_local_refinement(True)
+
+        ctx.runner_config.ot_event_callback = record_ot_event
         kernel = build_kernel("global_anchoring", config=ctx.runner_config, logger=ctx.logger)
         ctx.runner.st_adata = kernel.run(
             ctx.runner.st_adata,
@@ -500,7 +488,6 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
         )
 
     def solve_ot(self, ctx) -> None:
-        self._attach_assignment_guidance_callback(ctx)
         ctx.runner.local_refinement()
 
 
@@ -540,7 +527,7 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
             rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.5)),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_posterior_conditioning_conf(conf, cfg)
+        _attach_local_refinement_strength(conf, cfg)
 
         input_service = _input_service(ctx)
         adata_st = input_service.read_st_adata(
@@ -617,7 +604,7 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             tacco_annotate_lamb=tacco_annotate_cfg.get("lamb"),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_posterior_conditioning_conf(conf, cfg)
+        _attach_local_refinement_strength(conf, cfg)
 
         input_service = _input_service(ctx)
         adata_sp = input_service.read_st_adata(
@@ -684,25 +671,11 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
                 st_count = int(st_counts.get(candidate, 0))
                 ref_count = int(sc_counts.get(candidate, 0))
                 if ref_count == 0:
-                    ctx.runner.graph_cluster.record_not_applicable(
-                        problem_key=f"standard-sc:{candidate}",
-                        reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
-                        reason_details={"role": "reference_cell"},
-                    )
                     skipped_cell_types.append(
                         {"cell_type": candidate, "reason": "missing_reference_cells", "spatial_cells": st_count}
                     )
                     continue
                 if st_count < 2:
-                    ctx.runner.graph_cluster.record_not_applicable(
-                        problem_key=f"standard-sc:{candidate}",
-                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                        reason_details={
-                            "unit": "spatial_cell",
-                            "observed": st_count,
-                            "required": 2,
-                        },
-                    )
                     ctx.logger.info(
                         "[adapter] all-cell-type sc-SVC singleton fallback: cell_type=%s spatial_cells=%s reference_cells=%s",
                         candidate,
@@ -876,7 +849,7 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
             sr_assignment_seed=_resolve_runtime_seed(ctx),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_posterior_conditioning_conf(conf, cfg)
+        _attach_local_refinement_strength(conf, cfg)
 
         input_service = _input_service(ctx)
         adata_st = input_service.read_st_adata(
@@ -941,7 +914,7 @@ class SpSvcBenchmarkSegStrategy(RunnerBackedStrategy):
             rec_alpha=float(_cfg_get(cfg, "reconstruct", "alpha", default=1.0)),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_posterior_conditioning_conf(conf, cfg)
+        _attach_local_refinement_strength(conf, cfg)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)
@@ -1040,7 +1013,7 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
             sr_noise_seed=int(_cfg_get(cfg, "sc", "sr_noise_seed", default=42)),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_posterior_conditioning_conf(conf, cfg)
+        _attach_local_refinement_strength(conf, cfg)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)
@@ -1161,7 +1134,7 @@ class ScSvcImputeBenchmarkStrategy(RunnerBackedStrategy):
             rec_impute_method=str(_cfg_get(cfg, "impute", "method", default="mean")),
             **_ot_runner_kwargs(cfg, impute=True),
         )
-        _attach_posterior_conditioning_conf(conf, cfg)
+        _attach_local_refinement_strength(conf, cfg)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)

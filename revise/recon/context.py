@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import logging
 import time
-from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -12,7 +11,6 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional
 
 from anndata import AnnData
 
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
 from revise.svc import SVC
 
 
@@ -75,7 +73,7 @@ class PipelineContext:
         init=False, default=None, repr=False
     )
     _run_started_monotonic: float = field(init=False, repr=False)
-    assignment_guidance: AssignmentGuidanceCollector = field(init=False, repr=False)
+    local_refinement_record: Dict[str, Any] = field(init=False)
 
     def __post_init__(self) -> None:
         self.run_started_at = self._timestamp()
@@ -92,10 +90,16 @@ class PipelineContext:
             }
             for name, owner in self.STAGES
         ]
-        self.assignment_guidance = AssignmentGuidanceCollector(
-            request_evidence=getattr(self.merged_config, "request_evidence", {}),
-            resolved_request=self.merged_config.get("local_refinement", {}),
-        )
+        refinement = self.merged_config.get("local_refinement")
+        self.local_refinement_record = {
+            "route": self.route_key,
+            "applied": False,
+            "strength": (
+                float(refinement["strength"])
+                if refinement is not None
+                else None
+            ),
+        }
         for phase in ("ga", "lr"):
             solver = self.merged_config["ot"][phase]["solver"]
             self.record_ot_event(phase, solver, "requested")
@@ -177,7 +181,9 @@ class PipelineContext:
             "artifact_records": copy.deepcopy(self.artifact_records),
             "sr_allocation_records": copy.deepcopy(self.sr_allocation_records),
             "ot_events": copy.deepcopy(self.ot_events),
-            "assignment_guidance_events": self.assignment_guidance.snapshot(),
+            "local_refinement_record": copy.deepcopy(
+                self.local_refinement_record
+            ),
         }
         try:
             yield
@@ -194,9 +200,7 @@ class PipelineContext:
             self.artifact_records = snapshot["artifact_records"]
             self.sr_allocation_records = snapshot["sr_allocation_records"]
             self.ot_events = snapshot["ot_events"]
-            self.assignment_guidance.restore(
-                snapshot["assignment_guidance_events"]
-            )
+            self.local_refinement_record = snapshot["local_refinement_record"]
             raise
 
     def _stage_record(self, name: str) -> Dict[str, Any]:
@@ -267,9 +271,6 @@ class PipelineContext:
             )
 
         with self._durable_transition():
-            self.assignment_guidance.terminate_open(
-                outcome="interrupted" if interrupted else "failed",
-            )
             record["status"] = "interrupted" if interrupted else "failed"
             record["duration_seconds"] = max(
                 0.0, time.monotonic() - self._stage_started_monotonic.pop(name)
@@ -315,9 +316,6 @@ class PipelineContext:
             return
 
         with self._durable_transition():
-            self.assignment_guidance.terminate_open(
-                outcome="interrupted" if interrupted else "failed",
-            )
             skip_reason = "run_interrupted" if interrupted else "upstream_failure"
             for record in self.stage_records:
                 if record["status"] == "pending":
@@ -340,32 +338,6 @@ class PipelineContext:
         ]
         if unfinished:
             raise RuntimeError(f"Cannot succeed run with unfinished stages: {unfinished}")
-        unfinished_guidance = [
-            event["problem_key"]
-            for event in self.assignment_guidance.events
-            if event["outcome"] == "not_started"
-        ]
-        if unfinished_guidance:
-            raise RuntimeError(
-                "Cannot succeed run with unfinished assignment guidance: "
-                f"{unfinished_guidance}"
-            )
-        fallback_reasons = Counter(
-            str(event["reason"])
-            for event in self.assignment_guidance.events
-            if event["outcome"] == "fallback"
-        )
-        if fallback_reasons:
-            reason_counts = ", ".join(
-                f"{reason}={count}"
-                for reason, count in sorted(fallback_reasons.items())
-            )
-            self.logger.warning(
-                "[assignment-guidance] base-path fallback used for %s "
-                "invocation(s): %s",
-                sum(fallback_reasons.values()),
-                reason_counts,
-            )
         with self._durable_transition():
             self.run_status = "succeeded"
             self.run_ended_at = self._timestamp()
@@ -377,20 +349,13 @@ class PipelineContext:
         with self._durable_transition():
             self.artifact_records.append(dict(artifact))
 
-    def assignment_guidance_callback(
-        self,
-        action: str,
-        *,
-        problem_key: str,
-        **fields: Any,
-    ) -> Dict[str, Any]:
+    def record_local_refinement(self, applied: bool) -> None:
+        if not isinstance(applied, bool):
+            raise TypeError("applied must be a bool")
         with self._durable_transition():
-            event = self.assignment_guidance.callback(
-                action,
-                problem_key=problem_key,
-                **fields,
+            self.local_refinement_record["applied"] = bool(
+                self.local_refinement_record["applied"] or applied
             )
-        return event
 
     def record_sr_allocation(self, evidence: Dict[str, Any]) -> None:
         with self._durable_transition():

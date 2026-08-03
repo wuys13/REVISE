@@ -228,7 +228,7 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
     assert version.stdout.strip() == f"revise-reconstruct {__version__}"
 
 
-def test_installed_wheel_benchmark_module_and_report_aliases(installed_cli):
+def test_installed_wheel_benchmark_module_and_refinement_option(installed_cli):
     python = installed_cli["python"]
     root = installed_cli["root"]
     env = installed_cli["env"]
@@ -239,8 +239,7 @@ def test_installed_wheel_benchmark_module_and_report_aliases(installed_cli):
         env=env,
     )
     assert help_result.returncode == 0, help_result.stderr
-    assert "--local-refinement-guidance" in help_result.stdout
-    assert "--posterior-key" in help_result.stdout
+    assert "--local-refinement-strength" in help_result.stdout
 
     probe = _run(
         [
@@ -248,15 +247,7 @@ def test_installed_wheel_benchmark_module_and_report_aliases(installed_cli):
             "-c",
             (
                 "import json, revise.benchmark.cli as cli;"
-                "from revise.framework import REVISEPipeline;"
-                "pipeline=REVISEPipeline();"
-                "aliases=cli._resolved_report_aliases("
-                "raw_config=pipeline.raw_config,"
-                "profile='benchmark_seg',"
-                "platform='sim2real',"
-                "confounding='segmentation',"
-                "algorithm_overrides={});"
-                "print(json.dumps({'module': cli.__file__, 'aliases': aliases}))"
+                "print(json.dumps({'module': cli.__file__}))"
             ),
         ],
         cwd=root,
@@ -265,14 +256,6 @@ def test_installed_wheel_benchmark_module_and_report_aliases(installed_cli):
     assert probe.returncode == 0, probe.stderr
     payload = json.loads(probe.stdout)
     assert str(installed_cli["root"] / "venv") in payload["module"]
-    assert payload["aliases"]["posterior_mode"] == "cost"
-    assert payload["aliases"]["posterior_strict"] is False
-    guidance = payload["aliases"]["assignment_guidance"]
-    assert guidance["schema_version"] == 2
-    assert guidance["resolved"]["guidance"] == "prefer"
-    assert guidance["resolved"]["compatibility_mode"] == "cost"
-    assert guidance["events"] == []
-    assert guidance["summary"] == "not_started"
 
 
 def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
@@ -384,13 +367,11 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         }
         assert "result_hash" not in manifest
         assert manifest["stages"][3]["status"] == "succeeded"
-        guidance = manifest["assignment_guidance"]
-        assert guidance["schema_version"] == 2
-        assert guidance["configured"]["source"] == "route_default"
-        assert guidance["resolved"]["guidance"] == "prefer"
-        assert guidance["resolved"]["compatibility_mode"] == "cost"
-        assert guidance["summary"] in {"applied", "not_applicable", "mixed"}
-        assert guidance["events"]
+        assert manifest["local_refinement"] == {
+            "route": "sp_svc:bin2cell",
+            "applied": True,
+            "strength": 0.2,
+        }
         public_artifacts = [
             artifact
             for artifact in manifest["artifacts"]

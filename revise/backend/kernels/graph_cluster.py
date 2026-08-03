@@ -8,12 +8,6 @@ from sklearn.metrics.cluster import adjusted_rand_score, normalized_mutual_info_
 from tqdm import tqdm
 
 from revise.backend.kernels.base import BaseKernel
-from revise.backend.ops.assignment_guidance import (
-    NotApplicableReason,
-    assignment_guidance_mode,
-)
-
-
 class GraphClusterKernel(BaseKernel):
     """
     Graph-based clustering with spatial and alignment score evaluation.
@@ -173,79 +167,6 @@ class GraphClusterKernel(BaseKernel):
         adata_raw.obs = adata.obs.copy()
         return adata_raw, merge_df, best_res
 
-    def _guidance_mode(self) -> str:
-        return assignment_guidance_mode(self.config)
-
-    def _start_guidance_event(self, *, problem_key, applicability):
-        callback = getattr(
-            self.config,
-            "assignment_guidance_callback",
-            None,
-        )
-        if callback is not None:
-            callback(
-                "start",
-                problem_key=problem_key,
-                route=str(
-                    getattr(
-                        self.config,
-                        "assignment_guidance_route",
-                        "sc_svc:segmentation",
-                    )
-                ),
-                operator="graph_edge",
-                phase="lr",
-                mode=self._guidance_mode(),
-                applicability=applicability,
-                numerics={
-                    "beta": float(
-                        getattr(
-                            self.config,
-                            "posterior_conditioning_beta",
-                            1.0,
-                        )
-                    ),
-                    "min_affinity": float(
-                        getattr(
-                            self.config,
-                            "posterior_conditioning_min_affinity",
-                            0.05,
-                        )
-                    ),
-                    "operator_strength": float(
-                        getattr(
-                            self.config,
-                            "posterior_conditioning_cost_strength",
-                            0.2,
-                        )
-                    ),
-                },
-                solver=None,
-            )
-        return callback
-
-    def record_not_applicable(
-        self,
-        *,
-        problem_key,
-        reason: NotApplicableReason,
-        reason_details=None,
-    ):
-        # Temporary adapter compatibility only. U7 removes this old evidence
-        # outlet together with its two adapter callers; clustering never calls it.
-        callback = self._start_guidance_event(
-            problem_key=problem_key,
-            applicability="not_applicable",
-        )
-        if callback is not None:
-            callback(
-                "terminal",
-                problem_key=problem_key,
-                outcome="not_applicable",
-                reason=reason,
-                reason_details=reason_details or {},
-            )
-
 def get_spatial_score(adata, res):
 
     nn_graph_space = adata.obsp["spatial_connectivities"]
@@ -295,7 +216,6 @@ def get_weighted_align_score(adata, res, label="Level2"):
         max_idx = int(sum_scores.argmax())
         dominant_labels.append(max_idx)
         cluster_sizes.append(len(idx))
-        dom_name = col_names[max_idx] if col_names is not None else str(max_idx)
 
         align_score += max_sum
 

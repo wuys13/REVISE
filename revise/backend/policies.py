@@ -51,7 +51,6 @@ class ModeValidationPolicy(InputValidationPolicy):
                 f"Missing required io keys for {mode}:{task}: {missing}"
             )
 
-        self._validate_solver_compatibility(ctx)
         if any(
             str(ctx.merged_config["ot"][phase]["solver"]) == "tacco"
             for phase in ("ga", "lr")
@@ -94,80 +93,6 @@ class ModeValidationPolicy(InputValidationPolicy):
         report_path = run_dir / "preflight.json"
         write_json(report_path, report)
         ctx.record_artifact(completed_artifact("preflight", report_path))
-
-    @staticmethod
-    def _validate_solver_compatibility(ctx) -> None:
-        refinement = ctx.merged_config.get("local_refinement", {}) or {}
-        guidance = str(refinement.get("guidance", "off"))
-        if guidance == "off":
-            return
-        compatibility = refinement.get("compatibility", {}) or {}
-        uses_reference = compatibility.get("mode") == "reference"
-        runtime = ctx.runtime
-        mode = str(runtime.get("mode"))
-        task = str(runtime.get("task"))
-        lr_solver = str(ctx.merged_config["ot"]["lr"]["solver"])
-
-        if task == "sc_svc" and uses_reference:
-            raise ValueError(
-                "graph_edge local refinement does not support reference "
-                "compatibility; use compatibility mode 'cost'"
-            )
-        if mode == "application" and uses_reference:
-            raise ValueError(
-                "application local refinement does not support reference "
-                "compatibility; use compatibility mode 'cost'"
-            )
-        if uses_reference and lr_solver == "tacco":
-            raise ValueError(
-                "TACCO local refinement is incompatible with reference "
-                "compatibility; use compatibility mode 'cost' or set "
-                "ot.lr.solver=pot for a supported benchmark ablation"
-            )
-        if (
-            mode == "benchmark"
-            and task == "sc_svc_sr"
-            and not bool(
-                ctx.merged_config.get("sc", {}).get(
-                    "sr_graph_agg_enabled",
-                    False,
-                )
-            )
-            and guidance == "require"
-        ):
-            callback = getattr(
-                ctx,
-                "assignment_guidance_callback",
-                None,
-            )
-            if callback is not None:
-                problem_key = "sr-benchmark:graph-branch"
-                callback(
-                    "start",
-                    problem_key=problem_key,
-                    route=str(ctx.route_key),
-                    operator="virtual_cell_ot",
-                    phase="lr",
-                    mode="require",
-                    applicability="applicable",
-                    numerics={
-                        "beta": compatibility.get("beta"),
-                        "min_affinity": compatibility.get("min_affinity"),
-                        "operator_strength": compatibility.get("strength"),
-                    },
-                    solver=lr_solver,
-                )
-                callback(
-                    "terminal",
-                    problem_key=problem_key,
-                    outcome="failed",
-                    availability="unavailable",
-                )
-            raise ValueError(
-                "required local-refinement guidance is incompatible with the "
-                "disabled SR graph branch"
-            )
-
 
 class ModeEvaluationPolicy(EvaluationPolicy):
     def should_evaluate(self, ctx) -> bool:

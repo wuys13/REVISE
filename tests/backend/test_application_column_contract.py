@@ -211,7 +211,6 @@ def test_lightweight_fixture_restores_relevant_prefix_keys_and_identities():
     next(fixture)
     try:
         importlib.import_module("revise.backend.ops.assignment")
-        importlib.import_module("revise.backend.ops.assignment_guidance")
         importlib.import_module("revise.backend.ops.local_ot")
         importlib.import_module("revise.backend.ops.posterior_conditioning")
         importlib.import_module("revise.backend.ops.sr_allocation")
@@ -275,14 +274,7 @@ def _sp_argmax_runner(module):
         rec_pot_reg=0.1,
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="kl",
-        assignment_guidance_policy="prefer",
-        posterior_conditioning_enabled=True,
-        posterior_conditioning_mode="cost",
-        posterior_conditioning_key="major_type",
-        posterior_conditioning_strict=False,
-        posterior_conditioning_beta=1.0,
-        posterior_conditioning_min_affinity=0.0,
-        posterior_conditioning_cost_strength=1.0,
+        local_refinement_strength=1.0,
     )
     runner.logger = logging.getLogger("test-sp-argmax-fallback")
     runner.graph_aggregate = SimpleNamespace(run=lambda *, adata, **_kwargs: adata)
@@ -347,15 +339,7 @@ def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path
                 "preprocess": {},
                 "graph": {},
                 "plot": {},
-                "local_refinement": {
-                    "guidance": "prefer",
-                    "compatibility": {
-                        "mode": "cost",
-                        "beta": 1.0,
-                        "min_affinity": 0.05,
-                        "strength": 0.2,
-                    },
-                },
+                "local_refinement": {"strength": 0.2},
         },
         io={
             "sample_name": "sample",
@@ -673,9 +657,9 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
             "true_cell_type": ["Unknown"] * 3,
         }
     )
-    runner.spot_sr = SpotSrKernel(config, logging.getLogger("test-sr-mode-off-assignment"))
+    runner.spot_sr = SpotSrKernel(config, logging.getLogger("test-sr-assignment"))
     runner.graph_aggregate = SimpleNamespace()
-    runner.logger = logging.getLogger("test-sr-mode-off-allocation")
+    runner.logger = logging.getLogger("test-sr-allocation")
     runner.svc = {}
     captured = {}
 

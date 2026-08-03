@@ -167,9 +167,6 @@ def _run_a_cohort(module, level1_posterior):
                 result.obs["Level2"] = ["a1", "a2"]
             return result
 
-        def assignment_state(self, *_args, **_kwargs):
-            pytest.fail("sc-SVC must not package or transfer AssignmentState")
-
     runner.local_annotate_method = LocalProducer()
 
     def graph_run(adata, resolutions, evaluation_label):
@@ -193,7 +190,7 @@ def _run_a_cohort(module, level1_posterior):
     return spatial_result, expression_result, captured
 
 
-def test_graph_cluster_public_api_has_no_assignment_guidance_input():
+def test_graph_cluster_public_api_is_minimal():
     names = (
         "scanpy",
         "squidpy",
@@ -220,9 +217,7 @@ def test_graph_cluster_public_api_has_no_assignment_guidance_input():
         _remove_modules(names)
         _restore_modules(snapshot)
 
-    assert "guidance_state" not in parameters
-    assert "problem_key" not in parameters
-    assert "selected_resolution" not in parameters
+    assert tuple(parameters) == ("self", "adata", "resolution", "label")
 
 
 def test_same_argmax_different_ga_q_preserves_cohort_and_level2_consumption():
@@ -258,7 +253,7 @@ def test_same_argmax_different_ga_q_preserves_cohort_and_level2_consumption():
     assert second_spatial.obs["SVC_cluster"].tolist() == ["0", "1"]
 
 
-def test_sc_svc_retains_ga_q_while_graph_cluster_does_not_receive_it_as_guidance():
+def test_sc_svc_retains_ga_q_and_graph_cluster_consumes_level2_results():
     level1_q = np.array(
         [[0.9, 0.1], [0.6, 0.4], [0.2, 0.8], [0.1, 0.9]]
     )
@@ -302,9 +297,6 @@ def test_missing_reference_and_singleton_fail_before_local_anchoring():
         runner.sc_ref_adata = _reference()[
             _reference().obs["Level1"] == "B"
         ].copy()
-        runner.graph_cluster = SimpleNamespace(
-            record_not_applicable=lambda **_kwargs: None
-        )
         with pytest.raises(ValueError, match="no reference cells"):
             runner.local_refinement("A", "Level2", [0.5])
 

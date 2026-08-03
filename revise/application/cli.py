@@ -12,9 +12,37 @@ from revise._version import __version__
 
 from .service import APPLICATION_ROUTES
 
+_REMOVED_ASSIGNMENT_FLAGS = frozenset(
+    {
+        "--local-refinement-guidance",
+        "--local-refinement-compatibility-mode",
+        "--posterior-mode",
+        "--posterior-strict",
+        "--posterior-key",
+        "--posterior-beta",
+        "--posterior-min-affinity",
+        "--posterior-cost-strength",
+    }
+)
+_MIGRATION_ERROR = (
+    "Assignment guidance options were removed; "
+    "use --local-refinement-strength"
+)
+
+
+class _ApplicationArgumentParser(argparse.ArgumentParser):
+    def parse_known_args(self, args=None, namespace=None):
+        raw_args = sys.argv[1:] if args is None else list(args)
+        if any(
+            str(token).split("=", 1)[0] in _REMOVED_ASSIGNMENT_FLAGS
+            for token in raw_args
+        ):
+            self.error(_MIGRATION_ERROR)
+        return super().parse_known_args(raw_args, namespace)
+
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ApplicationArgumentParser(
         description="Reconstruct one SVC through revise-svc",
     )
     parser.add_argument(
@@ -41,6 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Set both Global Anchoring and Local Refinement OT solvers; "
             "standard sc-SVC defaults to TACCO, while 'pot' explicitly "
             "selects a different algorithm"
+        ),
+    )
+    parser.add_argument(
+        "--local-refinement-strength",
+        type=float,
+        default=None,
+        help=(
+            "Override posterior-conditioned local OT strength for sp-SVC "
+            "or sc-SVC-sr"
         ),
     )
     parser.add_argument("--seed", type=int, default=None)

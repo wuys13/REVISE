@@ -83,51 +83,29 @@ attempted, and completed solver events separately. If TACCO is unavailable and
 a different algorithm is acceptable, application users may explicitly rerun
 with ``--ot-method pot``; this is a solver change, not an automatic fallback.
 
-Reference-mode posterior conditioning is not compatible with TACCO LR. Select
-a supported conditioning mode or POT LR; the configuration/preflight layer
-rejects that combination before reconstruction.
+Assignment and local refinement
+-------------------------------
 
-Assignment guidance
--------------------
-
-Assignment-related behavior has three separate layers:
-
-1. anchoring produces a soft assignment state and its argmax label;
-2. algorithm-defining consumers, including sc-SVC-sr expression allocation,
-   use assignment distributions regardless of optional guidance;
-3. local refinement can optionally use assignment compatibility.
-
-The optional policy is configured with:
+Global anchoring produces a validated posterior ``Q`` and ``argmax(Q)`` labels.
+The only public local-refinement option is:
 
 .. code-block:: yaml
 
    local_refinement:
-     guidance: prefer  # off | prefer | require
-     compatibility:
-       mode: cost      # reference is a POT-only benchmark ablation
-       beta: 1.0
-       min_affinity: 0.05
-       strength: 0.2
+     strength: 0.2
 
-``off`` runs the base local problem without constructing compatibility.
-``prefer`` applies guidance when the route-provided Assignment State is valid
-and otherwise records a structured fallback. Fallback reasons are aggregated
-into one run-level warning rather than emitted once per local invocation.
-``require`` raises when the state or route capability is unavailable. Omitting
-``guidance`` uses route resolution; the resolved value and whether it came from
-a route default or an explicit request are both recorded in
-``provenance.json.assignment_guidance``.
+sp-SVC defaults to ``0.2``. sc-SVC-sr defaults to ``0.0`` and accepts an
+explicit non-negative finite strength. Standard sc-SVC and imputation reject
+this option and omit ``local_refinement`` from resolved configuration. sp-SVC
+uses ``Q`` in local OT; sc-SVC-sr first projects ``Q`` to virtual cells;
+standard sc-SVC uses only ``argmax(Q)`` for cohort routing. There are no
+policy, compatibility-mode, reference-mode, or one-hot-fallback settings.
+Application and benchmark entrypoints expose the same single override as
+``--local-refinement-strength``.
 
-Cost guidance is the supported cross-route form for POT and TACCO. Reference
-conditioning is limited to explicit benchmark routes with POT; application,
-Graph-only, and TACCO-reference combinations fail preflight. These failures
-never switch solver implementations.
-
-For standard sc-SVC, Level1 assignment selects the broad cohort and Level2
-assignment guides the subtype Graph. Resolution is selected on the unguided
-Graph, then held fixed for the guided clustering pass. For sc-SVC-sr, the
-closed-form expression allocation remains mandatory and is not controlled by
-``local_refinement.guidance``.
+The manifest records exactly ``route``, ``applied``, and ``strength`` under
+``local_refinement``. Mandatory sc-SVC-sr expression allocation is recorded
+separately under ``sr_allocation``.
 
 POT parameter example
 ---------------------

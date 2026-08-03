@@ -36,31 +36,18 @@ Dedicated configuration controls
 Benchmark variants use named options rather than a generic key/value override.
 These options are applied after the selected profile or custom ``--config``:
 
-- ``--local-refinement-guidance off|prefer|require`` selects the optional
-  assignment-guidance policy;
-- ``--local-refinement-compatibility-mode cost|reference`` selects the
-  compatibility Adapter;
-- ``--posterior-mode``, ``--posterior-beta``,
-  ``--posterior-min-affinity``, ``--posterior-cost-strength``, and
-  ``--posterior-strict`` are deprecated compatibility aliases;
-- a non-empty ``--posterior-key`` is rejected because each route supplies an
-  axis-labelled Assignment State;
+- ``--local-refinement-strength`` sets the non-negative finite OT conditioning
+  strength for sp-SVC and sc-SVC-sr routes;
 - ``--sr-refinement-preset confidence_anchor`` selects the controlled graph
   refinement used by ``batch_effect`` and ``spot_size`` runs, while ``none``
   disables that refinement.
 
-Omitting guidance flags creates no algorithm override. Route resolution remains
-authoritative and is observable in the report's canonical
-``assignment_guidance`` object. ``posterior_mode`` and ``posterior_strict``
-remain deprecated report aliases derived from that same resolved object; they
-are not a second source of truth.
-
-Cost guidance is the formal cross-solver benchmark mode. Reference
-conditioning is retained only as an explicit POT benchmark ablation. TACCO
-reference requests fail before reconstruction and never fall back to POT.
-sc-SVC-sr always performs its composition, row assignment, and closed-form
-expression allocation; the guidance policy controls only the subsequent
-virtual-cell graph refinement.
+Omitting the strength creates no CLI override; route defaults remain
+authoritative. Each result reports minimal ``local_refinement`` evidence with
+``route``, ``applied``, and ``strength``. Removed policy and posterior flags are
+rejected with a migration message rather than translated. sc-SVC-sr always
+performs composition, row assignment, and closed-form expression allocation;
+the strength controls only posterior-conditioned local OT.
 
 ``--seed-scope process`` (the default) derives a reproducible effective seed
 for each leaf run from ``--seed``. Every effective seed is stored as
@@ -154,13 +141,14 @@ validation, real-tissue reconstruction quality, or comparability across
 datasets with different preprocessing. The current real-data end-to-end suite
 is deferred and is not part of this candidate's evidence.
 
-Assignment-guidance route tests and candidate-wheel solver smoke prove
-configuration, axis alignment, Adapter invocation, solver dispatch, and
-provenance mechanics. The CI solver gate imports the packaged candidate outside
-the source checkout, runs copied tests in pytest importlib mode, asserts the
-test process is importing from the isolated wheel environment, and exercises
-both POT and TACCO conditioned-cost paths. These checks do not show that
-guidance improves any biological or benchmark metric.
+Route-specific local-refinement tests and candidate-wheel solver smoke prove
+configuration, axis alignment, Adapter invocation, solver dispatch, and the
+minimal ``route/applied/strength`` record. The CI solver gate imports the
+packaged candidate outside the source checkout, runs copied tests in pytest
+importlib mode, asserts the test process is importing from the isolated wheel
+environment, and exercises both POT and TACCO conditioned-cost paths. These
+checks do not show that posterior conditioning improves any biological or
+benchmark metric.
 
 Benchmark notebooks
 -------------------

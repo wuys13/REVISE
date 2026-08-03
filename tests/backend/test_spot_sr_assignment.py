@@ -439,7 +439,7 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     def stop_before_io(_ctx):
         raise StopAfterConfig
 
-    monkeypatch.setattr(adapters, "_attach_posterior_conditioning_conf", capture_conf)
+    monkeypatch.setattr(adapters, "_attach_local_refinement_strength", capture_conf)
     monkeypatch.setattr(adapters, "_input_service", stop_before_io)
     ctx = SimpleNamespace(
         merged_config=merged,
@@ -493,7 +493,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
     def stop_before_io(_ctx):
         raise StopAfterConfig
 
-    monkeypatch.setattr(adapters, "_attach_posterior_conditioning_conf", capture_conf)
+    monkeypatch.setattr(adapters, "_attach_local_refinement_strength", capture_conf)
     monkeypatch.setattr(adapters, "_input_service", stop_before_io)
     ctx = SimpleNamespace(
         merged_config=merged,

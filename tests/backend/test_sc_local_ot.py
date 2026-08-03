@@ -127,7 +127,6 @@ def test_ist_local_refinement_uses_configured_columns_and_local_ot(
         cell_type_col=cell_type_col,
         confidence_col="Confidence",
         unknown_key="Unknown",
-        assignment_guidance_policy="off",
     )
     runner = ScSVC(
         _adata(["sp1", "sp2"], ["A", "A"], cell_type_col),
@@ -417,15 +416,6 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
                     "multi_center": 1,
                     "lamb": 0.001,
                 }
-            },
-            "local_refinement": {
-                "guidance": "off",
-                "compatibility": {
-                    "mode": "off",
-                    "beta": 1.0,
-                    "min_affinity": 0.05,
-                    "strength": 0.2,
-                },
             },
         },
         io={

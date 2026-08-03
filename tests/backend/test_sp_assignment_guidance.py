@@ -245,7 +245,7 @@ def sp_modules():
         yield modules
 
 
-def _config(*, solver="pot", strength=0.2, callback=None):
+def _config(*, solver="pot", strength=0.2):
     return SimpleNamespace(
         plot_flag=False,
         cell_type_col="major_type",
@@ -259,8 +259,7 @@ def _config(*, solver="pot", strength=0.2, callback=None):
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="kl",
         rec_alpha=1.0,
-        posterior_conditioning_cost_strength=strength,
-        assignment_guidance_callback=callback,
+        local_refinement_strength=strength,
         ot_event_callback=None,
     )
 
@@ -280,7 +279,6 @@ def _application_runner(
     probabilities=None,
     solver="pot",
     strength=0.2,
-    callback=None,
 ):
     obs_names = [f"spot-{index}" for index in range(n_obs)]
     st = AnnData(
@@ -304,7 +302,6 @@ def _application_runner(
     runner.config = _config(
         solver=solver,
         strength=strength,
-        callback=callback,
     )
     runner.logger = logging.getLogger("test-sp-application-strict-ga")
     runner.graph_aggregate = SimpleNamespace(
@@ -366,7 +363,7 @@ def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
     monkeypatch.setattr(module, "solve_local_ot", solve)
 
 
-def test_strict_sp_assignment_requires_soft_q_without_one_hot_fallback(
+def test_sp_assignment_requires_soft_q(
     sp_modules,
 ):
     application, _benchmark = sp_modules
@@ -404,21 +401,26 @@ def test_strict_sp_assignment_rejects_invalid_q(
         application,
         probabilities=[[0.9, 0.1]] * 51,
     )
+    adata = runner.st_adata
     if mutation == "permuted":
-        runner.st_adata.obsm["major_type"].index = (
-            runner.st_adata.obs_names[::-1]
+        posterior = adata.obsm["major_type"].copy()
+        posterior.index = adata.obs_names[::-1]
+        adata = SimpleNamespace(
+            obs=adata.obs,
+            obsm={"major_type": posterior},
+            obs_names=adata.obs_names,
         )
     elif mutation == "negative":
-        runner.st_adata.obsm["major_type"].iloc[0] = [-0.1, 1.1]
+        adata.obsm["major_type"].iloc[0] = [-0.1, 1.1]
     else:
-        runner.st_adata.obs["major_type"] = "B"
+        adata.obs["major_type"] = "B"
     assignment = importlib.import_module(
         "revise.backend.runners.sp_svc_assignment"
     )
 
     with pytest.raises(GlobalAssignmentContractError, match=message):
         assignment.global_assignment_from_adata(
-            runner.st_adata,
+            adata,
             key="major_type",
             expected_categories=pd.Index(["A", "B"]),
         )
@@ -476,9 +478,6 @@ def test_application_conditions_cost_for_cost_capable_solver(
         application,
         probabilities=[[0.9, 0.1]] * 51,
         solver=solver,
-        callback=lambda *_args, **_kwargs: pytest.fail(
-            "strict sp route must not call legacy guidance callback"
-        ),
     )
     captured = {}
     _patch_application_problem(application, monkeypatch, captured)
@@ -486,7 +485,6 @@ def test_application_conditions_cost_for_cost_capable_solver(
     assert runner.local_refinement() is True
     assert np.all(captured["cost"] > 0.0)
     assert captured["kwargs"]["method"] == solver
-    assert captured["kwargs"]["reference_measure"] is None
 
 
 def test_application_validates_full_ga_once_before_group_conditioning(
@@ -596,7 +594,6 @@ def test_application_zero_strength_keeps_baseline_solver_inputs(
         rtol=1e-6,
         atol=1e-8,
     )
-    assert captured["kwargs"]["reference_measure"] is None
 
 
 def test_application_all_skipped_reports_not_applied(
@@ -608,9 +605,6 @@ def test_application_all_skipped_reports_not_applied(
         application,
         n_obs=2,
         probabilities=[[0.9, 0.1]] * 2,
-        callback=lambda *_args, **_kwargs: pytest.fail(
-            "strict sp route must not call legacy guidance callback"
-        ),
     )
     monkeypatch.setattr(
         application,
@@ -621,7 +615,7 @@ def test_application_all_skipped_reports_not_applied(
     assert runner.local_refinement() is False
 
 
-def _benchmark_runner(module, *, solver="tacco", strength=0.2, callback=None):
+def _benchmark_runner(module, *, solver="tacco", strength=0.2):
     replace_count = 50
     donor_count = 2
     total = replace_count + donor_count
@@ -654,7 +648,6 @@ def _benchmark_runner(module, *, solver="tacco", strength=0.2, callback=None):
     runner.config = _config(
         solver=solver,
         strength=strength,
-        callback=callback,
     )
     runner.logger = logging.getLogger("test-sp-benchmark-strict-ga")
     runner.seg_evaluate = SimpleNamespace(run=lambda adata, _logger: adata)
@@ -699,18 +692,12 @@ def _patch_benchmark_problem(module, monkeypatch, captured):
 
 def test_benchmark_conditions_replace_to_donor_q(sp_modules, monkeypatch):
     _application, benchmark = sp_modules
-    runner = _benchmark_runner(
-        benchmark,
-        callback=lambda *_args, **_kwargs: pytest.fail(
-            "strict sp route must not call legacy guidance callback"
-        ),
-    )
+    runner = _benchmark_runner(benchmark)
     captured = {}
     _patch_benchmark_problem(benchmark, monkeypatch, captured)
 
     assert runner.local_refinement() is True
     assert np.all(captured["cost"] > 0.0)
-    assert captured["kwargs"]["reference_measure"] is None
 
 
 def test_benchmark_zero_strength_matches_unconditioned_solver_call(

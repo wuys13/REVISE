@@ -211,7 +211,7 @@ class SpSVC(ApplicationSVC):
         )
         conditioning_strength = getattr(
             self.config,
-            "posterior_conditioning_cost_strength",
+            "local_refinement_strength",
             0.2,
         )
         conditioning_applied = False

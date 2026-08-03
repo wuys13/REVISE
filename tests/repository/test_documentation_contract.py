@@ -256,27 +256,18 @@ def test_benchmark_docs_describe_dedicated_configuration_controls():
     text = " ".join(_read(ROOT / "docs/source/benchmark.rst").split())
 
     for option in (
-        "--local-refinement-guidance",
-        "--local-refinement-compatibility-mode",
-        "--posterior-mode",
-        "--posterior-key",
-        "--posterior-beta",
-        "--posterior-min-affinity",
-        "--posterior-cost-strength",
-        "--posterior-strict",
+        "--local-refinement-strength",
         "--sr-refinement-preset",
     ):
         assert option in text
     assert "applied after the selected profile or custom ``--config``" in text
-    assert "Omitting guidance flags creates no algorithm override" in text
-    assert "canonical ``assignment_guidance`` object" in text
-    assert "deprecated report aliases" in text
-    assert "explicit POT benchmark ablation" in text
-    assert "never fall back to POT" in text
+    assert "Omitting the strength creates no CLI override" in text
+    assert "minimal ``local_refinement`` evidence" in text
+    assert "Removed policy and posterior flags are rejected" in text
     assert "--set" not in text
 
 
-def test_assignment_guidance_docs_match_three_layer_runtime_contract():
+def test_assignment_docs_match_route_specific_runtime_contract():
     configuration = " ".join(
         _read(ROOT / "docs/source/configuration.rst").split()
     )
@@ -287,18 +278,15 @@ def test_assignment_guidance_docs_match_three_layer_runtime_contract():
         _read(ROOT / "docs/source/limitations.rst").split()
     )
 
-    assert "three separate layers" in configuration
-    assert "off | prefer | require" in configuration
-    assert "closed-form expression allocation remains mandatory" in configuration
-    assert "Level1 assignment selects the broad cohort" in configuration
-    assert "Resolution is selected on the unguided Graph" in configuration
-    assert "one Assignment State carrier" in architecture
-    assert "bilateral assignment source/level/value semantics/lineage" in architecture
-    assert "not_started" in architecture
-    assert "schema version 2" in architecture
-    assert "required only for ``fallback`` and ``not_applicable``" in architecture
-    assert "typed stage/run error" in architecture
-    assert "one run-level warning" in configuration
+    assert "The only public local-refinement option" in configuration
+    assert "sp-SVC defaults to ``0.2``" in configuration
+    assert "sc-SVC-sr defaults to ``0.0``" in configuration
+    assert "uses only ``argmax(Q)``" in configuration
+    assert "There are no policy" in configuration
+    assert "sp-SVC conditions each local OT cost with ``Q``" in architecture
+    assert "does not reweight GraphCluster with ``Q``" in architecture
+    assert "``route``, ``applied``, and ``strength``" in architecture
+    assert "authoritative failure explanation" in architecture
     assert "publication rollback" in architecture
     assert "not that posterior compatibility improves" in limitations
 
@@ -531,6 +519,6 @@ def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():
     assert '"${GITHUB_WORKSPACE}/tests/integration/solvers/' not in tacco_job
     assert "tests/integration/solvers/test_tacco_solver_smoke.py" in tacco_job
     assert (
-        "tests/integration/solvers/test_assignment_guidance_solver_smoke.py"
+        "tests/integration/solvers/test_local_refinement_solver_smoke.py"
         in tacco_job
     )

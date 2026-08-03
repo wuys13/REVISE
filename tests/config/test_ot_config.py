@@ -82,311 +82,6 @@ def test_application_sc_tacco_annotation_parameters_are_locked():
         )
 
 
-@pytest.mark.parametrize(
-    ("profile", "expected"),
-    [
-        ("application_sp", "prefer"),
-        ("benchmark_seg", "prefer"),
-        ("application_sc", "off"),
-        ("application_sc_sr", "off"),
-        ("benchmark_sr_batch", "off"),
-        ("benchmark_impute_panel", "off"),
-    ],
-)
-def test_absent_guidance_resolves_from_route_family(profile, expected):
-    merged = _merge(_raw_config(), profile)
-
-    assert merged["local_refinement"]["guidance"] == expected
-    assert merged["local_refinement"]["compatibility"]["mode"] == (
-        "cost" if expected != "off" else None
-    )
-    assert merged.request_evidence["assignment_guidance"]["resolution_source"] == (
-        "route_default"
-    )
-
-
-@pytest.mark.parametrize("guidance", ["off", "prefer", "require"])
-@pytest.mark.parametrize("profile", ["application_sp", "application_sc"])
-def test_explicit_guidance_overrides_route_default(profile, guidance):
-    merged = _merge(
-        _raw_config(),
-        profile,
-        {"local_refinement": {"guidance": guidance}},
-    )
-
-    assert merged["local_refinement"]["guidance"] == guidance
-    assert merged.request_evidence["assignment_guidance"] == {
-        "configured_guidance": guidance,
-        "configured_compatibility_mode": None,
-        "resolution_source": "new",
-        "deprecations": [],
-    }
-
-
-@pytest.mark.parametrize("guidance", [True, None, "enabled", 1])
-def test_invalid_guidance_value_is_rejected(guidance):
-    with pytest.raises(ConfigError, match=r"guidance must be one of.*off.*prefer.*require"):
-        _merge(
-            _raw_config(),
-            "application_sp",
-            {"local_refinement": {"guidance": guidance}},
-        )
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("beta", 0),
-        ("beta", math.nan),
-        ("min_affinity", 0),
-        ("min_affinity", 1.1),
-        ("strength", -0.1),
-        ("strength", math.inf),
-    ],
-)
-def test_guidance_compatibility_numerics_are_strict(field, value):
-    with pytest.raises(ConfigError, match=field):
-        _merge(
-            _raw_config(),
-            "application_sp",
-            {
-                "local_refinement": {
-                    "guidance": "prefer",
-                    "compatibility": {field: value},
-                }
-            },
-        )
-
-
-@pytest.mark.parametrize(
-    ("new", "legacy", "expected", "source"),
-    [
-        (None, None, "prefer", "route_default"),
-        ({"guidance": "require"}, None, "require", "new"),
-        (
-            None,
-            {"enabled": True, "mode": "cost", "strict": True},
-            "require",
-            "legacy",
-        ),
-        (
-            {"guidance": "require"},
-            {"enabled": True, "mode": "cost", "strict": True},
-            "require",
-            "new",
-        ),
-    ],
-)
-def test_new_and_legacy_guidance_source_matrix(new, legacy, expected, source):
-    overrides = {}
-    if new is not None:
-        overrides["local_refinement"] = new
-    if legacy is not None:
-        overrides["posterior_conditioning"] = legacy
-
-    merged = _merge(_raw_config(), "application_sp", overrides)
-
-    assert merged["local_refinement"]["guidance"] == expected
-    assert merged.request_evidence["assignment_guidance"]["resolution_source"] == source
-    assert merged.request_evidence["assignment_guidance"]["deprecations"] == (
-        [f"posterior_conditioning.{key}" for key in sorted(legacy)]
-        if legacy is not None
-        else []
-    )
-
-
-def test_conflicting_new_and_legacy_guidance_is_rejected():
-    with pytest.raises(ConfigError, match="conflicts with legacy"):
-        _merge(
-            _raw_config(),
-            "application_sp",
-            {
-                "local_refinement": {"guidance": "prefer"},
-                "posterior_conditioning": {
-                    "enabled": True,
-                    "mode": "cost",
-                    "strict": True,
-                },
-            },
-        )
-
-
-@pytest.mark.parametrize(
-    "legacy",
-    [
-        {"enabled": False, "mode": "cost"},
-        {"enabled": True, "mode": "off"},
-        {"enabled": False, "mode": "off", "strict": True},
-    ],
-)
-def test_conflicting_legacy_guidance_is_rejected(legacy):
-    with pytest.raises(ConfigError, match="conflict"):
-        _merge(
-            _raw_config(),
-            "application_sp",
-            {"posterior_conditioning": legacy},
-        )
-
-
-def test_nonempty_legacy_posterior_key_is_rejected_with_replacement():
-    with pytest.raises(
-        ConfigError,
-        match=r"posterior_key.*Assignment State.*explicitly.*route",
-    ):
-        _merge(
-            _raw_config(),
-            "application_sp",
-            {"posterior_conditioning": {"posterior_key": "Level1"}},
-        )
-
-
-def test_all_legacy_yaml_fields_translate_with_deprecation_evidence():
-    merged = _merge(
-        _raw_config(),
-        "application_sp",
-        {
-            "posterior_conditioning": {
-                "enabled": True,
-                "mode": "reference",
-                "posterior_key": None,
-                "beta": 2.0,
-                "min_affinity": 0.1,
-                "cost_strength": 3.0,
-                "strict": False,
-            }
-        },
-    )
-
-    assert merged["local_refinement"] == {
-        "guidance": "prefer",
-        "compatibility": {
-            "mode": "reference",
-            "beta": 2.0,
-            "min_affinity": 0.1,
-            "strength": 3.0,
-        },
-    }
-    evidence = merged.request_evidence["assignment_guidance"]
-    assert evidence["configured_guidance"] == "prefer"
-    assert evidence["configured_compatibility_mode"] == "reference"
-    assert evidence["deprecations"] == [
-        f"posterior_conditioning.{key}"
-        for key in sorted(
-            {
-                "enabled",
-                "mode",
-                "posterior_key",
-                "beta",
-                "min_affinity",
-                "cost_strength",
-                "strict",
-            }
-        )
-    ]
-
-
-def test_new_and_legacy_compare_after_effective_strength_default_resolution():
-    merged = _merge(
-        _raw_config(),
-        "application_sp",
-        {
-            "local_refinement": {
-                "guidance": "prefer",
-                "compatibility": {"mode": "cost", "strength": None},
-            },
-            "posterior_conditioning": {
-                "enabled": True,
-                "mode": "cost",
-                "cost_strength": 0.2,
-                "strict": False,
-            },
-        },
-    )
-
-    assert merged["local_refinement"]["compatibility"]["strength"] == 0.2
-
-
-def test_new_and_legacy_ignore_inactive_numeric_differences_when_off():
-    merged = _merge(
-        _raw_config(),
-        "application_sp",
-        {
-            "local_refinement": {
-                "guidance": "off",
-                "compatibility": {
-                    "mode": "reference",
-                    "beta": 9.0,
-                    "min_affinity": 0.5,
-                    "strength": 7.0,
-                },
-            },
-            "posterior_conditioning": {
-                "enabled": False,
-                "mode": "off",
-                "beta": 2.0,
-                "min_affinity": 0.1,
-                "cost_strength": 0.2,
-                "strict": False,
-            },
-        },
-    )
-
-    assert merged["local_refinement"] == {
-        "guidance": "off",
-        "compatibility": {
-            "mode": None,
-            "beta": None,
-            "min_affinity": None,
-            "strength": None,
-        },
-    }
-
-
-def test_nonoverlapping_legacy_numeric_composes_with_new_guidance_policy():
-    merged = _merge(
-        _raw_config(),
-        "application_sp",
-        {
-            "local_refinement": {"guidance": "require"},
-            "posterior_conditioning": {"beta": 2.0},
-        },
-    )
-
-    assert merged["local_refinement"] == {
-        "guidance": "require",
-        "compatibility": {
-            "mode": "cost",
-            "beta": 2.0,
-            "min_affinity": 0.05,
-            "strength": 0.2,
-        },
-    }
-
-
-def test_guidance_resolver_runs_once_and_adapter_only_projects_resolved_state(
-    adapters,
-    monkeypatch,
-):
-    import revise.config.loader as loader
-
-    calls = []
-    real_resolver = loader._resolve_assignment_guidance
-
-    def counted(config):
-        calls.append(config["runtime"]["strategy"])
-        return real_resolver(config)
-
-    monkeypatch.setattr(loader, "_resolve_assignment_guidance", counted)
-    merged = _merge(_raw_config(), "application_sp")
-    conf = SimpleNamespace(cell_type_col=merged["columns"]["cell_type_col"])
-
-    adapters._attach_posterior_conditioning_conf(conf, merged)
-    adapters._attach_posterior_conditioning_conf(conf, merged)
-
-    assert calls == ["SpSvcApplicationStrategy"]
-    assert conf.assignment_guidance_policy == "prefer"
-
-
 def test_structured_algorithm_overrides_merge_only_algorithm_sections():
     merged = merge_unified_config(
         raw_config=_raw_config(),
@@ -629,40 +324,19 @@ def test_impute_reuses_lr_solver_with_independent_numerics(adapters):
     assert "rec_pot_reg" not in kwargs
 
 
-def test_adapter_projects_only_resolved_guidance_to_legacy_runner_fields(adapters):
+def test_adapter_projects_only_local_refinement_strength(adapters):
     merged = _merge(
         _raw_config(),
         "application_sc_sr",
         {
-            "columns": {"cell_type_col": "major_type"},
-            "local_refinement": {
-                "guidance": "require",
-                "compatibility": {
-                    "mode": "cost",
-                    "beta": 2.0,
-                    "min_affinity": 0.1,
-                    "strength": 3.0,
-                },
-            },
+            "local_refinement": {"strength": 3.0},
         },
     )
-    merged["posterior_conditioning"] = {
-        "enabled": False,
-        "mode": "off",
-        "strict": False,
-    }
-    conf = SimpleNamespace(cell_type_col=merged["columns"]["cell_type_col"])
+    conf = SimpleNamespace()
 
-    adapters._attach_posterior_conditioning_conf(conf, merged)
+    adapters._attach_local_refinement_strength(conf, merged)
 
-    assert conf.assignment_guidance_policy == "require"
-    assert conf.posterior_conditioning_enabled is True
-    assert conf.posterior_conditioning_mode == "cost"
-    assert conf.posterior_conditioning_key == "major_type"
-    assert conf.posterior_conditioning_beta == 2.0
-    assert conf.posterior_conditioning_min_affinity == 0.1
-    assert conf.posterior_conditioning_cost_strength == 3.0
-    assert conf.posterior_conditioning_strict is True
+    assert vars(conf) == {"local_refinement_strength": 3.0}
 
 
 @pytest.mark.parametrize(
@@ -866,6 +540,11 @@ def test_framework_provenance_records_resolved_ot_config_and_events(tmp_path):
             {"phase": "ga", "solver": "pot", "status": "requested", "call": 0},
             {"phase": "lr", "solver": "pot", "status": "requested", "call": 0},
         ],
+        local_refinement_record={
+            "route": "sp_svc:bin2cell",
+            "applied": False,
+            "strength": 0.2,
+        },
     )
 
     REVISEPipeline()._write_final_metadata(ctx)

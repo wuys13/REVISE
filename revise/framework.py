@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional
 from revise.backend import ModeEvaluationPolicy
 from revise.backend import ModeValidationPolicy
 from revise.backend import build_default_registry
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
 from revise.config import infer_default_profile
 from revise.config import load_raw_config
 from revise.config import merge_unified_config
@@ -329,12 +328,6 @@ class REVISEPipeline:
         write_json(Path(ctx.run_dir) / "merged_config.json", self._export_merged_config(ctx))
 
     def _write_final_metadata(self, ctx: PipelineContext) -> None:
-        assignment_guidance = getattr(ctx, "assignment_guidance", None)
-        if assignment_guidance is None:
-            assignment_guidance = AssignmentGuidanceCollector(
-                request_evidence=getattr(ctx.merged_config, "request_evidence", {}),
-                resolved_request=ctx.merged_config.get("local_refinement", {}),
-            )
         provenance = {
             "schema_version": 2,
             "run": copy.deepcopy(
@@ -383,7 +376,9 @@ class REVISEPipeline:
             "svc_summary": ctx.svc.summary() if ctx.svc else {},
             "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
             "ot_events": copy.deepcopy(ctx.ot_events),
-            "assignment_guidance": assignment_guidance.manifest(),
+            "local_refinement": copy.deepcopy(
+                ctx.local_refinement_record
+            ),
             "sr_allocation": copy.deepcopy(
                 getattr(ctx, "sr_allocation_records", [])
             ),

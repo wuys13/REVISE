@@ -74,6 +74,11 @@ def _build_algorithm_overrides(args: argparse.Namespace) -> dict:
             "ga": {"solver": args.ot_method},
             "lr": {"solver": args.ot_method},
         }
+    local_refinement_strength = getattr(args, "local_refinement_strength", None)
+    if local_refinement_strength is not None:
+        overrides["local_refinement"] = {
+            "strength": local_refinement_strength,
+        }
     columns = {}
     if args.cell_type_col is not None:
         columns["cell_type_col"] = args.cell_type_col

@@ -13,11 +13,11 @@ Data and biology
   localization accuracy, or biological parity across OT implementations.
 - Historical notebook outputs are preserved material, not results reproduced
   by the current checkout.
-- Assignment-guidance tests establish software behavior, not that posterior
+- Route-specific assignment tests establish software behavior, not that posterior
   compatibility improves reconstruction, subtype recovery, or imputation.
-- Cost guidance is the unified product mechanism because it is portable across
-  supported local solvers; this is not evidence that it is scientifically
-  superior to the POT-only reference ablation.
+- Cost conditioning is the fixed product mechanism for sp-SVC and sc-SVC-sr
+  because it is portable across supported local solvers; this is not evidence
+  that it is scientifically superior to another biological model.
 - Paper data and reproduced results are available at
   ``https://zenodo.org/records/17705737``.
 
@@ -67,7 +67,7 @@ installs it with TACCO 0.5.0, verifies the import from outside the source
 checkout, copies the solver tests outside that checkout, and runs them with
 pytest importlib mode. The test process also asserts that ``revise.__file__``
 is under the isolated candidate-wheel environment before running the base
-TACCO and assignment-guidance solver smokes. An ad-hoc local run may still
+TACCO and local-refinement solver smokes. An ad-hoc local run may still
 report the TACCO checks as skipped when the exact optional dependency is
 absent; a synthetic stub or source-checkout import is not installed-solver
 evidence.

@@ -15,9 +15,6 @@ from anndata import AnnData
 from revise.config.runner_conf import InputSpec
 from revise.config.runner_conf import resolve_input_specs
 from revise.config import (
-    AssignmentGuidanceRequestEvidence,
-    AssignmentGuidanceRequestRecord,
-    ResolvedConfig,
     load_raw_config,
     merge_unified_config,
 )
@@ -30,7 +27,7 @@ from revise.utils.provenance import fingerprint_paths, hash_jsonable
 CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
-def _resolved_guidance(profile, algorithm_overrides=None):
+def _resolved_config(profile, algorithm_overrides=None):
     return merge_unified_config(
         raw_config=load_raw_config(CONFIG_PATH),
         profile=profile,
@@ -296,145 +293,35 @@ def test_solver_changes_change_config_hash(tmp_path, phase):
     )
 
 
-def test_effective_guidance_changes_config_hash():
-    off = _resolved_guidance(
+def test_effective_local_refinement_strength_changes_config_hash():
+    baseline = _resolved_config("application_sp")
+    changed = _resolved_config(
         "application_sp",
-        {"local_refinement": {"guidance": "off"}},
-    )
-    prefer = _resolved_guidance(
-        "application_sp",
-        {"local_refinement": {"guidance": "prefer"}},
+        {"local_refinement": {"strength": 0.5}},
     )
 
-    assert hash_jsonable(canonical_config_projection(off)) != hash_jsonable(
-        canonical_config_projection(prefer)
+    assert hash_jsonable(canonical_config_projection(baseline)) != hash_jsonable(
+        canonical_config_projection(changed)
     )
 
 
-def test_route_default_and_explicit_equal_share_hash_but_not_request_evidence():
-    default = _resolved_guidance("application_sp")
-    explicit = _resolved_guidance(
+def test_route_default_and_explicit_equal_strength_share_hash():
+    default = _resolved_config("application_sp")
+    explicit = _resolved_config(
         "application_sp",
-        {"local_refinement": {"guidance": "prefer"}},
+        {"local_refinement": {"strength": 0.2}},
     )
 
     assert hash_jsonable(canonical_config_projection(default)) == hash_jsonable(
         canonical_config_projection(explicit)
     )
-    assert default.request_evidence != explicit.request_evidence
 
 
-def test_request_evidence_survives_pipeline_context_without_entering_hash(tmp_path):
-    default = _resolved_guidance("application_sp")
-    explicit = _resolved_guidance(
-        "application_sp",
-        {"local_refinement": {"guidance": "prefer"}},
-    )
-    default_ctx = PipelineContext(
-        merged_config=default,
-        raw_config=load_raw_config(CONFIG_PATH),
-        config_path=str(CONFIG_PATH),
-        profile="application_sp",
-        runtime=default["runtime"],
-        route_key="sp_svc:bin2cell",
-        run_dir=tmp_path / "default",
-        logger=logging.getLogger("test-request-evidence-default"),
-    )
-    explicit_ctx = PipelineContext(
-        merged_config=explicit,
-        raw_config=load_raw_config(CONFIG_PATH),
-        config_path=str(CONFIG_PATH),
-        profile="application_sp",
-        runtime=explicit["runtime"],
-        route_key="sp_svc:bin2cell",
-        run_dir=tmp_path / "explicit",
-        logger=logging.getLogger("test-request-evidence-explicit"),
-    )
+def test_sc_route_omits_inactive_local_refinement_identity():
+    resolved = _resolved_config("application_sc")
 
-    assert default_ctx.merged_config.request_evidence == default.request_evidence
-    assert explicit_ctx.merged_config.request_evidence == explicit.request_evidence
-    assert default_ctx.merged_config.request_evidence != (
-        explicit_ctx.merged_config.request_evidence
-    )
-    assert hash_jsonable(
-        canonical_config_projection(default_ctx.merged_config)
-    ) == hash_jsonable(canonical_config_projection(explicit_ctx.merged_config))
-
-
-def test_resolved_config_copies_preserve_noncanonical_request_evidence():
-    resolved = _resolved_guidance(
-        "application_sp",
-        {"local_refinement": {"guidance": "prefer"}},
-    )
-
-    shallow = resolved.copy()
-    stdlib_shallow = copy.copy(resolved)
-    deep = copy.deepcopy(resolved)
-
-    assert isinstance(resolved, ResolvedConfig)
-    assert isinstance(shallow, ResolvedConfig)
-    assert isinstance(stdlib_shallow, ResolvedConfig)
-    assert isinstance(deep, ResolvedConfig)
-    assert shallow.request_evidence == resolved.request_evidence
-    assert stdlib_shallow.request_evidence == resolved.request_evidence
-    assert deep.request_evidence == resolved.request_evidence
-    shallow.request_evidence["assignment_guidance"]["resolution_source"] = "changed"
-    assert resolved.request_evidence["assignment_guidance"]["resolution_source"] == "new"
-    assert hash_jsonable(canonical_config_projection(shallow)) == hash_jsonable(
-        canonical_config_projection(resolved)
-    )
-    assert hash_jsonable(canonical_config_projection(dict(resolved))) == hash_jsonable(
-        canonical_config_projection(resolved)
-    )
-
-
-def test_assignment_guidance_evidence_types_are_public():
-    record = AssignmentGuidanceRequestRecord(
-        configured_guidance="prefer",
-        configured_compatibility_mode="cost",
-        resolution_source="new",
-        deprecations=[],
-    )
-    evidence = AssignmentGuidanceRequestEvidence(
-        assignment_guidance=record,
-    )
-
-    assert evidence["assignment_guidance"] == record
-
-
-def test_guidance_off_omits_inactive_compatibility_from_hash():
-    first = _resolved_guidance(
-        "application_sp",
-        {
-            "local_refinement": {
-                "guidance": "off",
-                "compatibility": {
-                    "mode": "cost",
-                    "beta": 1.0,
-                    "min_affinity": 0.05,
-                    "strength": 0.2,
-                },
-            }
-        },
-    )
-    second = _resolved_guidance(
-        "application_sp",
-        {
-            "local_refinement": {
-                "guidance": "off",
-                "compatibility": {
-                    "mode": "reference",
-                    "beta": 2.0,
-                    "min_affinity": 0.5,
-                    "strength": 9.0,
-                },
-            }
-        },
-    )
-
-    assert hash_jsonable(canonical_config_projection(first)) == hash_jsonable(
-        canonical_config_projection(second)
-    )
+    assert "local_refinement" not in resolved
+    assert "local_refinement" not in canonical_config_projection(resolved)
 
 
 def test_pipeline_manifest_uses_location_independent_identities(tmp_path):

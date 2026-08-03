@@ -174,11 +174,6 @@ class BaseConf:
     cell_type_col: str
     confidence_col: str
     unknown_key: str
-    assignment_guidance_policy: Optional[str] = field(
-        default=None,
-        init=False,
-        repr=False,
-    )
 
 
 @dataclass

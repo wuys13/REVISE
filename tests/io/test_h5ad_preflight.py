@@ -828,11 +828,8 @@ def _policy_context(
     *,
     ga_solver="pot",
     lr_solver="pot",
-    guidance="prefer",
-    compatibility_mode="cost",
     mode="application",
     task="sp_svc",
-    graph_enabled=True,
 ):
     runtime, io, _ = _application_specs(tmp_path)
     runtime = {**runtime, "mode": mode, "task": task}
@@ -840,18 +837,15 @@ def _policy_context(
         "runtime": runtime,
         "io": {**io, "output_root": str(tmp_path / "output")},
         "columns": COLUMNS,
-        "sc": {"sr_graph_agg_enabled": graph_enabled},
         "ot": {
             "ga": {"solver": ga_solver},
             "lr": {"solver": lr_solver},
         },
-        "local_refinement": {
-            "guidance": guidance,
-            "compatibility": {
-                "mode": compatibility_mode if guidance != "off" else None,
-            },
-        },
     }
+    if task in {"sp_svc", "sc_svc_sr"}:
+        merged["local_refinement"] = {
+            "strength": 0.2 if task == "sp_svc" else 0.0,
+        }
     return PipelineContext(
         merged_config=merged,
         raw_config={},
@@ -872,7 +866,7 @@ def test_preflight_requires_tacco_before_reconstruction(monkeypatch, tmp_path, p
     _write_application_inputs(tmp_path)
     solvers = {"ga_solver": "pot", "lr_solver": "pot"}
     solvers[f"{phase}_solver"] = "tacco"
-    ctx = _policy_context(tmp_path, guidance="off", **solvers)
+    ctx = _policy_context(tmp_path, **solvers)
 
     def missing_tacco():
         raise ModuleNotFoundError("TACCO is missing", name="tacco")
@@ -882,109 +876,19 @@ def test_preflight_requires_tacco_before_reconstruction(monkeypatch, tmp_path, p
         ModeValidationPolicy().validate(ctx)
 
 
-@pytest.mark.parametrize(
-    ("lr_solver", "compatibility_mode"),
-    [
-        ("tacco", "cost"),
-    ],
-)
-def test_preflight_accepts_supported_solver_guidance_pairs(
-    monkeypatch,
-    tmp_path,
-    lr_solver,
-    compatibility_mode,
-):
+def test_preflight_accepts_tacco_local_refinement_solver(monkeypatch, tmp_path):
     import revise.backend.policies as policies
 
     _write_application_inputs(tmp_path)
     ctx = _policy_context(
         tmp_path,
-        lr_solver=lr_solver,
-        compatibility_mode=compatibility_mode,
+        lr_solver="tacco",
     )
     monkeypatch.setattr(policies, "require_tacco", lambda: None)
 
     ModeValidationPolicy().validate(ctx)
 
     assert (ctx.run_dir / "preflight.json").exists()
-
-
-@pytest.mark.parametrize(
-    ("mode", "task", "lr_solver", "graph_enabled", "message"),
-    [
-        ("application", "sp_svc", "pot", True, "application"),
-        ("application", "sc_svc", "pot", True, "graph_edge"),
-        ("benchmark", "sp_svc", "tacco", True, "TACCO"),
-    ],
-)
-def test_preflight_rejects_unsupported_reference_guidance(
-    tmp_path,
-    mode,
-    task,
-    lr_solver,
-    graph_enabled,
-    message,
-):
-    ctx = _policy_context(
-        tmp_path,
-        mode=mode,
-        task=task,
-        lr_solver=lr_solver,
-        graph_enabled=graph_enabled,
-        compatibility_mode="reference",
-    )
-
-    with pytest.raises(ValueError, match=message):
-        ModeValidationPolicy._validate_solver_compatibility(ctx)
-
-
-def test_preflight_allows_pot_benchmark_reference_guidance(tmp_path):
-    ctx = _policy_context(
-        tmp_path,
-        mode="benchmark",
-        task="sp_svc",
-        lr_solver="pot",
-        compatibility_mode="reference",
-    )
-
-    ModeValidationPolicy._validate_solver_compatibility(ctx)
-
-
-def test_preflight_rejects_required_guidance_when_sr_graph_branch_is_disabled(
-    tmp_path,
-):
-    ctx = _policy_context(
-        tmp_path,
-        mode="benchmark",
-        task="sc_svc_sr",
-        guidance="require",
-        graph_enabled=False,
-    )
-
-    with pytest.raises(ValueError, match=r"required.*disabled SR graph branch"):
-        ModeValidationPolicy._validate_solver_compatibility(ctx)
-
-    [event] = ctx.assignment_guidance.events
-    assert event["operator"] == "virtual_cell_ot"
-    assert event["availability"] == "unavailable"
-    assert event["attempted"] is False
-    assert event["outcome"] == "failed"
-    assert event["reason"] is None
-
-
-def test_preflight_allows_preferred_guidance_when_sr_graph_branch_is_disabled(
-    tmp_path,
-):
-    ctx = _policy_context(
-        tmp_path,
-        mode="benchmark",
-        task="sc_svc_sr",
-        guidance="prefer",
-        graph_enabled=False,
-    )
-
-    ModeValidationPolicy._validate_solver_compatibility(ctx)
-
 
 def test_preflight_report_is_persisted_without_scientific_outputs(tmp_path):
     from revise.framework import REVISEPipeline

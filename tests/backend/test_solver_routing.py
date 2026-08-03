@@ -15,10 +15,6 @@ import pytest
 from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
-from revise.backend.ops.assignment_guidance import (
-    FallbackReason,
-    NotApplicableReason,
-)
 from revise.backend.ops.local_ot import solve_local_ot
 from revise.recon.context import PipelineContext
 from revise.svc import SVC
@@ -58,18 +54,28 @@ def _load_runner_method(relative_path, class_name, method_name, namespace):
     return namespace[method_name]
 
 
-def _context(tmp_path: Path, *, ga: str = "pot", lr: str = "tacco"):
+def _context(
+    tmp_path: Path,
+    *,
+    ga: str = "pot",
+    lr: str = "tacco",
+    task: str | None = None,
+    strength: float | None = None,
+):
+    merged_config = {
+        "ot": {
+            "ga": {"solver": ga},
+            "lr": {"solver": lr},
+        }
+    }
+    if strength is not None:
+        merged_config["local_refinement"] = {"strength": strength}
     return PipelineContext(
-        merged_config={
-            "ot": {
-                "ga": {"solver": ga},
-                "lr": {"solver": lr},
-            }
-        },
+        merged_config=merged_config,
         raw_config={},
         config_path="revise/revise.yaml",
         profile="application_sc",
-        runtime={},
+        runtime={"task": task} if task is not None else {},
         route_key="sc_svc:segmentation",
         run_dir=tmp_path,
         logger=logging.getLogger("test-ot-events"),
@@ -287,13 +293,7 @@ def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
         "revise/backend/runners/sc_svc_sr_benchmark.py",
         "ScSVCSr",
         "_apply_graph_aggregation",
-            {
-                "np": np,
-                "NotApplicableReason": NotApplicableReason,
-                "record_virtual_cell_not_applicable": (
-                    lambda *_args, **_kwargs: None
-                ),
-        },
+        {"np": np},
     )
     runner = SimpleNamespace(
         config=SimpleNamespace(),
@@ -357,83 +357,6 @@ def test_sp_benchmark_validates_ga_before_insufficient_units_short_circuit():
     assert assignment_loaded["value"] is True
     assert applied is False
     assert runner.svc["sp_svc"].n_obs == 2
-
-
-def test_sr_benchmark_required_graph_disabled_fails_before_allocation():
-    allocation_reached = {"value": False}
-
-    def fail_required_guidance(
-        _config,
-        *,
-        problem_key,
-        reason,
-        reason_details,
-    ):
-        assert problem_key == "sr-benchmark:graph-branch"
-        assert reason is FallbackReason.OPERATOR_UNAVAILABLE
-        assert reason_details["condition"] == "graph_branch_disabled"
-        raise ValueError("required assignment guidance unavailable: graph_branch_disabled")
-
-    local_refinement = _load_runner_method(
-        "revise/backend/runners/sc_svc_sr_benchmark.py",
-        "ScSVCSr",
-        "local_refinement",
-        {
-            "np": np,
-            "pd": pd,
-            "FallbackReason": FallbackReason,
-            "guidance_mode": lambda _config: "require",
-            "record_virtual_cell_unavailable": fail_required_guidance,
-        },
-    )
-    st = AnnData(
-        X=np.array([[2.0, 8.0]]),
-        obs=pd.DataFrame(index=["spot-1"]),
-        var=pd.DataFrame(index=["g1", "g2"]),
-    )
-    st.obsm["Level1"] = pd.DataFrame(
-        [[1.0]],
-        index=st.obs_names,
-        columns=["A"],
-    )
-    reference = AnnData(
-        X=np.array([[1.0, 3.0]]),
-        obs=pd.DataFrame({"clusters": ["A"]}, index=["ref-1"]),
-        var=pd.DataFrame(index=["g1", "g2"]),
-    )
-    svc_obs = pd.DataFrame(
-        {
-            "spot_name": ["spot-1", "spot-1"],
-            "cell_id": ["virtual-1", "virtual-2"],
-        }
-    )
-
-    def assign_rows(target):
-        allocation_reached["value"] = True
-        target.svc_obs["cell_type"] = "A"
-
-    runner = SimpleNamespace(
-        st_adata=st,
-        sc_ref_adata=reference,
-        svc_obs=svc_obs,
-        spot_sr=SimpleNamespace(run=assign_rows),
-        config=SimpleNamespace(rec_graph_agg_enabled=False),
-        logger=SimpleNamespace(
-            info=lambda *_args, **_kwargs: None,
-            warning=lambda *_args, **_kwargs: None,
-        ),
-        svc={},
-        _apply_graph_aggregation=lambda *_args, **_kwargs: pytest.fail(
-            "disabled graph branch must not validate assignment"
-        ),
-        _get_graphagg_posterior_matrix=lambda: pytest.fail(
-            "disabled graph branch must not load assignment"
-        ),
-    )
-
-    with pytest.raises(ValueError, match="graph_branch_disabled"):
-        types.MethodType(local_refinement, runner)()
-    assert allocation_reached["value"] is False
 
 
 def test_local_multiple_invocations_record_each_actual_call(monkeypatch):
@@ -676,6 +599,60 @@ def test_runner_strategy_attaches_production_ot_recorder_and_persists_calls(
         {"phase": "lr", "solver": "pot", "status": "attempted", "call": 1},
         {"phase": "lr", "solver": "pot", "status": "completed", "call": 1},
     ]
+
+
+def test_runner_strategy_records_completed_conditioning_before_later_failure(
+    monkeypatch, tmp_path
+):
+    scanpy = types.ModuleType("scanpy")
+    scanpy.pp = SimpleNamespace()
+    scanpy.pl = SimpleNamespace()
+    scanpy.tl = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "scanpy", scanpy)
+    import revise.backend.kernels as kernels
+    from revise.backend.adapters import RunnerBackedStrategy
+
+    ctx = _context(
+        tmp_path,
+        ga="pot",
+        lr="pot",
+        task="sp_svc",
+        strength=0.2,
+    )
+    ctx.runner_config = SimpleNamespace()
+
+    class FakeGlobalKernel:
+        def run(self, target, reference, **kwargs):
+            return target
+
+    class ConcreteStrategy(RunnerBackedStrategy):
+        def prepare_context(self, ctx):
+            raise NotImplementedError
+
+        def finalize_svc(self, ctx):
+            raise NotImplementedError
+
+    ctx.runner = SimpleNamespace(st_adata=object(), sc_ref_adata=object())
+    monkeypatch.setattr(
+        kernels,
+        "build_kernel",
+        lambda *args, **kwargs: FakeGlobalKernel(),
+    )
+    strategy = ConcreteStrategy()
+    strategy.global_anchoring(ctx)
+
+    def local_refinement():
+        callback = ctx.runner_config.ot_event_callback
+        callback("lr", "pot", "attempted")
+        callback("lr", "pot", "completed")
+        raise RuntimeError("later cell type failed")
+
+    ctx.runner.local_refinement = local_refinement
+
+    with pytest.raises(RuntimeError, match="later cell type failed"):
+        strategy.solve_ot(ctx)
+
+    assert ctx.local_refinement_record["applied"] is True
 
 
 def test_ci_has_mandatory_exact_tacco_smoke_job():

@@ -128,7 +128,7 @@ jobs:
           mkdir -p "${smoke_root}"
           cp tests/integration/solvers/conftest.py "${smoke_root}/"
           cp tests/integration/solvers/test_tacco_solver_smoke.py "${smoke_root}/"
-          cp tests/integration/solvers/test_assignment_guidance_solver_smoke.py "${smoke_root}/"
+          cp tests/integration/solvers/test_local_refinement_solver_smoke.py "${smoke_root}/"
       - name: Verify candidate wheel import outside checkout
         working-directory: ${{ runner.temp }}
         run: >-

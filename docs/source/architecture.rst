@@ -48,25 +48,23 @@ GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
 preserve the same two-stage selection even when a legacy runner has a different
 internal call shape.
 
-Assignment-guidance boundary
-----------------------------
+Assignment boundary
+-------------------
 
-The assignment subsystem separates inference, mandatory use, and optional
-local-refinement guidance. Routes share one Assignment State carrier, one
-label-aligned compatibility definition, and one ``off|prefer|require`` policy.
-They do not share a single local-problem implementation:
+Global anchoring produces one validated posterior ``Q`` and its ``argmax(Q)``
+labels. Downstream ownership is explicit per route:
 
-- sp-SVC injects compatibility into neighbor or replacement OT cost;
-- standard sc-SVC reweights existing Graph edges;
-- sc-SVC-sr injects projected spot assignment into virtual-cell OT cost;
-- imputation injects spatial-to-reference-subcluster compatibility into OT.
+- sp-SVC conditions each local OT cost with ``Q``;
+- sc-SVC-sr projects spot-level ``Q`` to virtual cells, then conditions local
+  OT cost;
+- standard sc-SVC uses only ``argmax(Q)`` to split broad cohorts and does not
+  reweight GraphCluster with ``Q``;
+- imputation does not expose assignment-based local refinement.
 
-Argmax labels are represented as one-hot Assignment States rather than a
-parallel mechanism. Standard sc-SVC uses Level1 for cohort routing and the
-newly inferred Level2 soft state for Graph guidance. It selects resolution on
-the unguided Graph and only then performs fixed-resolution guided clustering.
-sc-SVC-sr's composition and closed-form expression allocation are
-algorithm-defining steps and remain active when optional guidance is off.
+There is no optional policy or fallback state machine. ``Q`` must already have
+the expected observation/category axes, finite non-negative values, and
+positive row mass. sc-SVC-sr composition and closed-form expression allocation
+remain mandatory algorithm steps independent of local OT conditioning.
 
 Run evidence
 ------------
@@ -90,15 +88,11 @@ under a cell-type subdirectory. The manifest records each public result role
 and the internal route separately. Strategy artifacts remain in the canonical
 run but are not additional public output contracts.
 
-``provenance.json.assignment_guidance`` schema version 2 records configured
-request, resolved policy, resolution source, and every local invocation. Each
-event records route, operator, solver, compatibility numerics, bilateral
-assignment source/level/value semantics/lineage, attempted state, terminal
-outcome, and optional reason details. Stable reason codes are required only for
-``fallback`` and ``not_applicable``; ``off``, ``applied``, ``failed``, and
-``interrupted`` do not duplicate outcome or exception information.
-``sr_allocation`` is adjacent durable evidence because mandatory allocation is
-not a guidance outcome.
+``provenance.json.local_refinement`` is the minimal route-level evidence:
+``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,
+``strength`` is ``null`` because those routes do not accept the option.
+``sr_allocation`` remains adjacent durable evidence for mandatory SR
+allocation.
 
 Failure model
 -------------
@@ -113,12 +107,10 @@ Solver telemetry records requested, attempted, and completed events separately.
 A requested TACCO run cannot be reported as completed POT because TACCO does not
 fall back to POT.
 
-Guidance outcomes are likewise explicit: ``not_started``, ``not_applicable``,
-``off``, ``applied``, ``fallback``, ``mixed``, ``failed``, or ``interrupted``.
-Failure/interruption manifests retain earlier completed events. A required
-guidance failure raises through the normal stage error and publication rollback
-and cannot publish a successful result. Its guidance event has a null reason;
-the typed stage/run error is the authoritative failure explanation.
+The ``local_refinement.applied`` flag changes to true only after a local OT
+conditioning call succeeds. Failure and interruption continue through the
+normal stage error and publication rollback; stage/run errors remain the
+authoritative failure explanation.
 
 Extension boundary
 ------------------

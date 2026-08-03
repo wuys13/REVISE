@@ -71,6 +71,52 @@ def test_canonical_application_cli_rejects_benchmark_only_spot_size(monkeypatch)
         cli.parse_args()
 
 
+def test_canonical_application_cli_exposes_only_local_refinement_strength():
+    from revise.application import cli
+
+    args = cli.parse_args(
+        [
+            "--svc-type",
+            "sp-SVC",
+            "--sample-name",
+            "sample",
+            "--st-file",
+            "st.h5ad",
+            "--sc-ref-file",
+            "sc.h5ad",
+            "--data-root",
+            "data",
+            "--local-refinement-strength",
+            "0.4",
+        ]
+    )
+
+    assert args.local_refinement_strength == pytest.approx(0.4)
+    help_text = cli.build_parser().format_help()
+    assert "--local-refinement-strength" in help_text
+    assert "--local-refinement-guidance" not in help_text
+    assert "--posterior-conditioning-mode" not in help_text
+
+
+def test_canonical_application_cli_removed_guidance_flag_has_migration_error(monkeypatch):
+    from revise.application import cli
+
+    parser = cli.build_parser()
+
+    def fail(message):
+        raise ValueError(message)
+
+    monkeypatch.setattr(parser, "error", fail)
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Assignment guidance options were removed; "
+            "use --local-refinement-strength"
+        ),
+    ):
+        parser.parse_args(["--posterior-mode", "cost"])
+
+
 def test_root_wrapper_delegates_only_to_the_canonical_main():
     import reconstruct
     from revise.application import cli
@@ -108,6 +154,7 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
         patient_key="Patient",
         spot_size=50,
         ot_method="pot",
+        local_refinement_strength=0.4,
         select_ct="all",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
@@ -119,6 +166,9 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
     assert captured["profile"] == "application_sp"
     assert captured["runtime_overrides"]["confounding"] == "bin2cell"
     assert "spot_size" not in captured["io_overrides"]
+    assert captured["algorithm_overrides"]["local_refinement"] == {
+        "strength": 0.4,
+    }
 
 
 @pytest.mark.parametrize(

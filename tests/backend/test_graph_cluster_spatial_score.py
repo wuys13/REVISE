@@ -9,12 +9,6 @@ import pytest
 from anndata import AnnData
 from scipy import sparse
 
-from revise.backend.ops.assignment_guidance import (
-    AssignmentGuidanceCollector,
-    NotApplicableReason,
-)
-
-
 ISOLATED_GRAPH_CLUSTER_MODULE_NAMES = (
     "scanpy",
     "squidpy",
@@ -84,22 +78,12 @@ def spatial_score(graph_cluster_module):
     return graph_cluster_module.get_spatial_score
 
 
-def _config(collector=None):
+def _config():
     return SimpleNamespace(
         rec_random_state=11,
         rec_graph_alpha=0.25,
         rec_graph_method="joint",
         plot_flag=False,
-        # Temporary compatibility fields are used only by
-        # record_not_applicable until U7 removes the old collector.
-        assignment_guidance_policy="off",
-        assignment_guidance_callback=(
-            None if collector is None else collector.callback
-        ),
-        assignment_guidance_route="sc_svc:segmentation",
-        posterior_conditioning_beta=1.0,
-        posterior_conditioning_min_affinity=0.05,
-        posterior_conditioning_cost_strength=0.2,
     )
 
 
@@ -188,12 +172,12 @@ def _patch_graph_runtime(module, monkeypatch):
     return gene_graph, spatial_graph, captured
 
 
-def _run_kernel(module, monkeypatch, level1_q, *, collector=None):
+def _run_kernel(module, monkeypatch, level1_q):
     gene_graph, spatial_graph, captured = _patch_graph_runtime(
         module, monkeypatch
     )
     kernel = module.GraphClusterKernel(
-        _config(collector),
+        _config(),
         SimpleNamespace(
             info=lambda *_args, **_kwargs: None,
             warning=lambda *_args, **_kwargs: None,
@@ -251,38 +235,6 @@ def test_same_argmax_different_ga_q_preserves_graph_edges_and_leiden(
     ].tolist()
     assert "assignment_guided_connectivities" not in first_output.obsp
     assert "assignment_guided_connectivities" not in second_output.obsp
-
-
-def test_temporary_not_applicable_event_does_not_change_clustering(
-    graph_cluster_module, monkeypatch
-):
-    collector = AssignmentGuidanceCollector()
-    q = np.array(
-        [[0.9, 0.1], [0.6, 0.4], [0.2, 0.8], [0.1, 0.9]]
-    )
-    kernel = graph_cluster_module.GraphClusterKernel(
-        _config(collector),
-        SimpleNamespace(
-            info=lambda *_args, **_kwargs: None,
-            warning=lambda *_args, **_kwargs: None,
-        ),
-    )
-    kernel.record_not_applicable(
-        problem_key="standard-sc:skipped",
-        reason=NotApplicableReason.INSUFFICIENT_UNITS,
-        reason_details={"observed": 1, "required": 2},
-    )
-    _gene, _space, calls = _patch_graph_runtime(
-        graph_cluster_module, monkeypatch
-    )
-    output, _metrics, _best = kernel.run(
-        _adata(q), resolution=[0.5, 1.0], label="Level2"
-    )
-
-    assert len(calls["leiden"]) == 2
-    assert output.obs["leiden_1.0"].tolist() == ["0", "0", "1", "1"]
-    [event] = collector.events
-    assert event["outcome"] == "not_applicable"
 
 
 def test_graph_clustering_needs_no_assignment_policy_config(

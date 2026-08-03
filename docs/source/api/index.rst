@@ -109,10 +109,10 @@ Backend Compatibility Runners
 These classes are kept for notebooks, parity checks, and low-level debugging.
 New application and benchmark code should prefer ``REVISEPipeline`` or the
 application or benchmark entrypoints.
-Direct callers must provide a resolved ``assignment_guidance_policy`` with one
-of ``off``, ``prefer``, or ``require`` in the runner configuration. Legacy
-``posterior_conditioning.enabled`` or ``strict`` fields no longer infer this
-policy inside a runner.
+Direct sp-SVC and sc-SVC-sr runner callers receive the resolved
+``local_refinement_strength`` value. Standard sc-SVC and imputation callers do
+not provide it. Assignment ``Q`` is validated at the global-assignment boundary
+and is not synthesized or repaired inside a runner.
 
 .. autosummary::
     :toctree: generated
