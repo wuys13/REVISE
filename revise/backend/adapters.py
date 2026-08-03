@@ -850,6 +850,7 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
             **_ot_runner_kwargs(cfg),
         )
         _attach_local_refinement_strength(conf, cfg)
+        conf.pm_on_cell = getattr(ctx, "pm_on_cell", None)
 
         input_service = _input_service(ctx)
         adata_st = input_service.read_st_adata(
@@ -1014,6 +1015,7 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
             **_ot_runner_kwargs(cfg),
         )
         _attach_local_refinement_strength(conf, cfg)
+        conf.pm_on_cell = getattr(ctx, "pm_on_cell", None)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)

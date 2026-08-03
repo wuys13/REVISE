@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import os
 import shutil
 from pathlib import Path
 
@@ -12,7 +11,6 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
-from revise.config.runner_conf import InputSpec
 from revise.config.runner_conf import resolve_input_specs
 from revise.config import (
     load_raw_config,
@@ -21,7 +19,7 @@ from revise.config import (
 from revise.framework import REVISEPipeline
 from revise.recon.context import PipelineContext
 from revise.utils.deterministic import canonical_config_projection
-from revise.utils.provenance import fingerprint_paths, hash_jsonable
+from revise.utils.provenance import hash_jsonable, input_identities
 
 
 CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
@@ -95,136 +93,6 @@ def _write_inputs(root: Path) -> None:
     )
     st.write_h5ad(root / "sample_Xenium.h5ad")
     sc_ref.write_h5ad(root / "adata_sc_all_reanno.h5ad")
-
-
-def test_file_fingerprint_binds_roles_and_bytes_not_location_or_metadata(tmp_path):
-    left = tmp_path / "left"
-    right = tmp_path / "right"
-    left.mkdir()
-    right.mkdir()
-    left_st = left / "st.bin"
-    left_sc = left / "sc.bin"
-    left_st.write_bytes(b"st-content")
-    left_sc.write_bytes(b"sc-content")
-    right_st = right / "renamed-st.bin"
-    right_sc = right / "renamed-sc.bin"
-    shutil.copy2(left_st, right_st)
-    shutil.copy2(left_sc, right_sc)
-    os.utime(right_st, ns=(1_000_000_000, 1_000_000_000))
-
-    baseline = fingerprint_paths(
-        (InputSpec("st", str(left_st)), InputSpec("sc_ref", str(left_sc)))
-    )
-    moved = fingerprint_paths(
-        (InputSpec("sc_ref", str(right_sc)), InputSpec("st", str(right_st)))
-    )
-    swapped = fingerprint_paths(
-        (InputSpec("st", str(right_sc)), InputSpec("sc_ref", str(right_st)))
-    )
-
-    assert baseline == moved
-    assert baseline != swapped
-
-
-def test_equal_size_equal_mtime_byte_change_changes_fingerprint(tmp_path):
-    path = tmp_path / "input.bin"
-    path.write_bytes(b"first-value")
-    before_stat = path.stat()
-    before = fingerprint_paths((InputSpec("st", str(path)),))
-
-    path.write_bytes(b"other-value")
-    os.utime(path, ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns))
-    after_stat = path.stat()
-    after = fingerprint_paths((InputSpec("st", str(path)),))
-
-    assert after_stat.st_size == before_stat.st_size
-    assert after_stat.st_mtime_ns == before_stat.st_mtime_ns
-    assert after != before
-
-
-def test_missing_empty_file_and_empty_directory_have_distinct_identities(tmp_path):
-    empty_file = tmp_path / "empty.bin"
-    empty_file.touch()
-    empty_directory = tmp_path / "empty.zarr"
-    empty_directory.mkdir()
-
-    missing_a = fingerprint_paths((InputSpec("st", str(tmp_path / "missing-a")),))
-    missing_b = fingerprint_paths((InputSpec("st", str(tmp_path / "missing-b")),))
-    missing_other_role = fingerprint_paths(
-        (InputSpec("sc_ref", str(tmp_path / "missing-a")),)
-    )
-    empty_file_id = fingerprint_paths((InputSpec("st", str(empty_file)),))
-    empty_directory_id = fingerprint_paths((InputSpec("st", str(empty_directory)),))
-
-    assert missing_a == missing_b
-    assert len({missing_a, missing_other_role, empty_file_id, empty_directory_id}) == 4
-
-
-def test_directory_fingerprint_tracks_relative_structure_and_nested_bytes(tmp_path):
-    left = tmp_path / "left.zarr"
-    right = tmp_path / "right.zarr"
-    (left / "tables").mkdir(parents=True)
-    (left / "empty-group").mkdir()
-    (left / ".zgroup").write_bytes(b"group-v1")
-    nested = left / "tables" / "chunk-0"
-    nested.write_bytes(b"chunk-v1")
-    shutil.copytree(left, right)
-
-    baseline = fingerprint_paths((InputSpec("st", str(left)),))
-    assert baseline == fingerprint_paths((InputSpec("st", str(right)),))
-
-    before_stat = (right / "tables" / "chunk-0").stat()
-    (right / "tables" / "chunk-0").write_bytes(b"chunk-v2")
-    os.utime(
-        right / "tables" / "chunk-0",
-        ns=(before_stat.st_atime_ns, before_stat.st_mtime_ns),
-    )
-    assert baseline != fingerprint_paths((InputSpec("st", str(right)),))
-
-    shutil.rmtree(right)
-    shutil.copytree(left, right)
-    (right / "tables" / "chunk-0").rename(right / "tables" / "chunk-renamed")
-    assert baseline != fingerprint_paths((InputSpec("st", str(right)),))
-
-
-def test_fingerprint_rejects_duplicate_roles_and_resolves_root_symbolic_links(
-    tmp_path,
-):
-    path = tmp_path / "input.bin"
-    path.write_bytes(b"content")
-    duplicate = (InputSpec("st", str(path)), InputSpec("st", str(path)))
-    with pytest.raises(ValueError, match="duplicate input role"):
-        fingerprint_paths(duplicate)
-
-    link = tmp_path / "link.bin"
-    link.symlink_to(path)
-    assert fingerprint_paths((InputSpec("st", str(link)),)) == fingerprint_paths(
-        (InputSpec("st", str(path)),)
-    )
-
-
-def test_fingerprint_does_not_treat_unenumerable_directory_as_empty(
-    monkeypatch,
-    tmp_path,
-):
-    import revise.utils.provenance as provenance
-
-    empty = tmp_path / "empty.zarr"
-    blocked = tmp_path / "blocked.zarr"
-    empty.mkdir()
-    blocked.mkdir()
-    real_scandir = provenance.os.scandir
-
-    def guarded_scandir(path):
-        if Path(path) == blocked:
-            raise PermissionError("blocked fixture")
-        return real_scandir(path)
-
-    monkeypatch.setattr(provenance.os, "scandir", guarded_scandir)
-    empty_id = fingerprint_paths((InputSpec("st", str(empty)),))
-    with pytest.raises(PermissionError, match="blocked fixture"):
-        fingerprint_paths((InputSpec("st", str(blocked)),))
-    assert empty_id
 
 
 @pytest.mark.parametrize("payload", [{"value": float("nan")}, {"value": object()}])
@@ -324,7 +192,7 @@ def test_sc_route_omits_inactive_local_refinement_identity():
     assert "local_refinement" not in canonical_config_projection(resolved)
 
 
-def test_pipeline_manifest_uses_location_independent_identities(tmp_path):
+def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
     left_data = tmp_path / "left-data"
     right_data = tmp_path / "right-data"
     _write_inputs(left_data)
@@ -352,18 +220,31 @@ def test_pipeline_manifest_uses_location_independent_identities(tmp_path):
     assert configs[0]["io"]["data_root"] != configs[1]["io"]["data_root"]
     assert configs[0]["io"]["output_root"] != configs[1]["io"]["output_root"]
     assert manifests[0]["config_hash"] == manifests[1]["config_hash"]
-    assert manifests[0]["data_fingerprint"] == manifests[1]["data_fingerprint"]
-    assert manifests[0]["data_fingerprint"] is not None
+    assert "data_fingerprint" not in manifests[0]
+    assert "data_fingerprint" not in manifests[1]
+    assert [record["role"] for record in manifests[0]["input_identities"]] == [
+        "sc_ref",
+        "st",
+    ]
+    assert [record["sha256"] for record in manifests[0]["input_identities"]] == [
+        record["sha256"] for record in manifests[1]["input_identities"]
+    ]
+    assert [record["path"] for record in manifests[0]["input_identities"]] != [
+        record["path"] for record in manifests[1]["input_identities"]
+    ]
     for manifest, config in zip(manifests, configs):
         expected_specs = resolve_input_specs(config["runtime"], config["io"])
         assert manifest["runtime_seed"] == config["runtime"]["seed"]
         assert manifest["config_hash"] == hash_jsonable(
             canonical_config_projection(config)
         )
-        assert manifest["data_fingerprint"] == fingerprint_paths(expected_specs)
+        assert manifest["input_identities"] == sorted(
+            input_identities(expected_specs),
+            key=lambda identity: identity["role"],
+        )
 
 
-def test_pipeline_computes_content_fingerprint_once(
+def test_pipeline_computes_input_identities_once(
     monkeypatch,
     tmp_path,
 ):
@@ -371,14 +252,14 @@ def test_pipeline_computes_content_fingerprint_once(
 
     data_root = tmp_path / "data"
     _write_inputs(data_root)
-    real_fingerprint = policies.fingerprint_paths
+    real_identities = policies.input_identities
     calls = []
 
     def counted(specs):
         calls.append(tuple(specs))
-        return real_fingerprint(specs)
+        return real_identities(specs)
 
-    monkeypatch.setattr(policies, "fingerprint_paths", counted)
+    monkeypatch.setattr(policies, "input_identities", counted)
     REVISEPipeline().run(
         profile="application_sp",
         io_overrides={
@@ -392,18 +273,62 @@ def test_pipeline_computes_content_fingerprint_once(
     assert len(calls) == 1
 
 
-def test_fingerprint_failure_persists_terminal_manifest(monkeypatch, tmp_path):
+def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
+    tmp_path,
+):
+    data_root = tmp_path / "data"
+    _write_inputs(data_root)
+    pm_path = data_root / "sample_Xenium_PM_on_cell.csv"
+    pm_path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
+
+    manifests = []
+    for name, replacement in (
+        ("before", None),
+        ("after", ",A,B\nc1,0,1\nc2,1,0\n"),
+    ):
+        if replacement is not None:
+            pm_path.write_text(replacement, encoding="utf-8")
+        svc = REVISEPipeline().run(
+            profile="application_sc_sr",
+            io_overrides={
+                "data_root": str(data_root),
+                "output_root": str(tmp_path / name),
+                "sample_name": "sample",
+            },
+            dry_run=True,
+        )
+        manifests.append(
+            json.loads(
+                (Path(svc.provenance["run_dir"]) / "provenance.json").read_text()
+            )
+        )
+
+    before = {item["role"]: item for item in manifests[0]["input_identities"]}
+    after = {item["role"]: item for item in manifests[1]["input_identities"]}
+    assert [item["role"] for item in manifests[0]["input_identities"]] == [
+        "pm_on_cell",
+        "sc_ref",
+        "st",
+    ]
+    assert set(before) == set(after) == {"st", "sc_ref", "pm_on_cell"}
+    assert before["st"]["sha256"] == after["st"]["sha256"]
+    assert before["sc_ref"]["sha256"] == after["sc_ref"]["sha256"]
+    assert before["pm_on_cell"]["sha256"] != after["pm_on_cell"]["sha256"]
+    assert all("data_fingerprint" not in manifest for manifest in manifests)
+
+
+def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path):
     import revise.backend.policies as policies
 
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
     _write_inputs(data_root)
 
-    def fail_fingerprint(_specs):
-        raise PermissionError("synthetic fingerprint denial")
+    def fail_identities(_specs):
+        raise PermissionError("synthetic identity denial")
 
-    monkeypatch.setattr(policies, "fingerprint_paths", fail_fingerprint)
-    with pytest.raises(ValueError, match="content fingerprint"):
+    monkeypatch.setattr(policies, "input_identities", fail_identities)
+    with pytest.raises(ValueError, match="input identities"):
         REVISEPipeline().run(
             profile="application_sp",
             io_overrides={
@@ -418,8 +343,9 @@ def test_fingerprint_failure_persists_terminal_manifest(monkeypatch, tmp_path):
     assert len(manifests) == 1
     manifest = json.loads(manifests[0].read_text())
     assert manifest["run"]["status"] == "failed"
-    assert manifest["data_fingerprint"] is None
-    assert manifest["data_fingerprint_error"]["type"] == "PermissionError"
+    assert manifest["input_identities"] == []
+    assert "input_identities_error" not in manifest
+    assert manifest["run"]["error"]["type"] == "ValueError"
 
 
 def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
@@ -484,4 +410,5 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
         },
     }
     assert ctx.provenance["results"] == manifest["results"]
-    assert manifest["data_fingerprint"] is None
+    assert manifest["input_identities"] == []
+    assert "data_fingerprint" not in manifest

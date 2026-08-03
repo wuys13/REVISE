@@ -25,15 +25,13 @@ import pandas as pd
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
 from revise.backend.ops.local_ot import solve_local_ot
-from revise.config.runner_conf import InputSpec
 from revise.recon.context import PipelineContext
 from revise.utils.deterministic import canonical_config_projection
-from revise.utils.provenance import fingerprint_paths, hash_jsonable
+from revise.utils.provenance import hash_jsonable
 
 seed = int(sys.argv[1])
 input_root = Path(sys.argv[2])
 output_root = sys.argv[3]
-reverse_specs = sys.argv[4] == "reverse"
 input_root.mkdir(parents=True)
 st_path = input_root / "st.bin"
 sc_path = input_root / "sc.bin"
@@ -68,10 +66,6 @@ config = {
         "lr": {"solver": "pot", "pot": {"reg": 0.1}},
     },
 }
-specs = [InputSpec("st", str(st_path)), InputSpec("sc_ref", str(sc_path))]
-if reverse_specs:
-    specs.reverse()
-
 svc_obs = pd.DataFrame(
     [
         {"spot_name": spot, "cell_id": f"{spot}-{index}"}
@@ -129,13 +123,12 @@ print(json.dumps({
     "coupling": np.asarray(coupling).tolist(),
     "solver_trace": ctx.ot_events,
     "config_hash": hash_jsonable(canonical_config_projection(config)),
-    "data_fingerprint": fingerprint_paths(specs),
 }))
 """
 
 
-def _probe(tmp_path: Path, *, seed: int, hash_seed: int, reverse: bool) -> dict:
-    name = f"seed-{seed}-hash-{hash_seed}-{'reverse' if reverse else 'forward'}"
+def _probe(tmp_path: Path, *, seed: int, hash_seed: int) -> dict:
+    name = f"seed-{seed}-hash-{hash_seed}"
     env = os.environ.copy()
     env["PYTHONHASHSEED"] = str(hash_seed)
     result = subprocess.run(
@@ -146,7 +139,6 @@ def _probe(tmp_path: Path, *, seed: int, hash_seed: int, reverse: bool) -> dict:
             str(seed),
             str(tmp_path / name / "inputs"),
             str(tmp_path / name / "outputs"),
-            "reverse" if reverse else "forward",
         ],
         cwd=ROOT,
         env=env,
@@ -159,8 +151,8 @@ def _probe(tmp_path: Path, *, seed: int, hash_seed: int, reverse: bool) -> dict:
 
 
 def test_fresh_processes_match_normalized_semantic_output(tmp_path):
-    first = _probe(tmp_path, seed=17, hash_seed=1, reverse=False)
-    second = _probe(tmp_path, seed=17, hash_seed=987654, reverse=True)
+    first = _probe(tmp_path, seed=17, hash_seed=1)
+    second = _probe(tmp_path, seed=17, hash_seed=987654)
 
     assert first["input_paths"] != second["input_paths"]
     assert first["ordered_cell_ids"] == second["ordered_cell_ids"]
@@ -184,12 +176,11 @@ def test_fresh_processes_match_normalized_semantic_output(tmp_path):
         {"phase": "lr", "solver": "pot", "status": "completed", "call": 1},
     ]
     assert first["config_hash"] == second["config_hash"]
-    assert first["data_fingerprint"] == second["data_fingerprint"]
 
 
 def test_fresh_process_seed_change_changes_positions_and_preserves_quota(tmp_path):
-    first = _probe(tmp_path, seed=17, hash_seed=1, reverse=False)
-    second = _probe(tmp_path, seed=18, hash_seed=1, reverse=False)
+    first = _probe(tmp_path, seed=17, hash_seed=1)
+    second = _probe(tmp_path, seed=18, hash_seed=1)
 
     assert first["ordered_labels"] != second["ordered_labels"]
     assert first["quota_counts"] == second["quota_counts"] == {
@@ -197,4 +188,3 @@ def test_fresh_process_seed_change_changes_positions_and_preserves_quota(tmp_pat
         "spot-b": {"A": 2, "B": 2, "C": 2},
     }
     assert first["config_hash"] != second["config_hash"]
-    assert first["data_fingerprint"] == second["data_fingerprint"]

@@ -17,7 +17,7 @@ from revise.config.runner_conf import resolved_input_path
 from revise.framework import REVISEPipeline
 from revise.io.input_service import REVISEInputService
 from revise.recon.context import PipelineContext
-from revise.utils import fingerprint_paths
+from revise.utils import input_identities
 from revise.utils.spot_sr_input import ensure_all_cells_in_spot
 
 
@@ -1004,4 +1004,5 @@ def test_pipeline_preflight_failure_persists_terminal_run_truth(tmp_path):
         InputSpec("st", str(tmp_path / "missing-case_Xenium.h5ad")),
         InputSpec("sc_ref", str(tmp_path / "adata_sc_all_reanno.h5ad")),
     ]
-    assert manifest["data_fingerprint"] == fingerprint_paths(expected_inputs)
+    assert manifest["input_identities"] == input_identities(expected_inputs)
+    assert "data_fingerprint" not in manifest

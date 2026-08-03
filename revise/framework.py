@@ -353,9 +353,8 @@ class REVISEPipeline:
             "run_dir": str(ctx.run_dir),
             "runtime_seed": ctx.merged_config.get("runtime", {}).get("seed"),
             "config_hash": getattr(ctx, "config_hash", None),
-            "data_fingerprint": getattr(ctx, "data_fingerprint", None),
-            "data_fingerprint_error": copy.deepcopy(
-                getattr(ctx, "data_fingerprint_error", None)
+            "input_identities": copy.deepcopy(
+                getattr(ctx, "input_identities", [])
             ),
             "packages": collect_package_versions(
                 [

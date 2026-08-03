@@ -51,8 +51,8 @@ class PipelineContext:
     ot_events: List[Dict[str, str | int]] = field(default_factory=list)
     artifact_records: List[Dict[str, Any]] = field(default_factory=list)
     sr_allocation_records: List[Dict[str, Any]] = field(default_factory=list)
-    data_fingerprint: Optional[str] = None
-    data_fingerprint_error: Optional[Dict[str, str]] = None
+    input_identities: List[Dict[str, str]] = field(default_factory=list)
+    pm_on_cell: Any = None
 
     run_status: str = field(init=False, default="running")
     run_started_at: str = field(init=False)

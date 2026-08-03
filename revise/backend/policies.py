@@ -7,9 +7,11 @@ from revise.backend.contracts import EvaluationPolicy
 from revise.backend.contracts import InputValidationPolicy
 from revise.backend.ops.tacco_runtime import require_tacco
 from revise.config.runner_conf import REQUIRED_IO_BY_MODE_TASK
+from revise.config.runner_conf import pm_on_cell_path_from_st_path
 from revise.config.runner_conf import resolve_input_specs
+from revise.config.runner_conf import resolved_input_path
 from revise.io import REVISEInputService
-from revise.utils import completed_artifact, fingerprint_paths, write_json
+from revise.utils import completed_artifact, input_identities, write_json
 
 
 class ModeValidationPolicy(InputValidationPolicy):
@@ -59,19 +61,27 @@ class ModeValidationPolicy(InputValidationPolicy):
 
         specs = resolve_input_specs(runtime, io_cfg)
         ctx.input_specs = specs
+        input_service = REVISEInputService.from_context(ctx)
         try:
-            ctx.data_fingerprint = fingerprint_paths(specs)
+            identities = input_identities(specs)
+            ctx.pm_on_cell = None
+            if str(task) == "sc_svc_sr":
+                st_path = resolved_input_path(specs, "st", "")
+                pm_path = pm_on_cell_path_from_st_path(st_path)
+                ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
+                    pm_path
+                )
+                if pm_identity is not None:
+                    identities.append(pm_identity)
+            identities.sort(key=lambda identity: identity["role"])
+            ctx.input_identities = identities
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
-            ctx.data_fingerprint = None
-            ctx.data_fingerprint_error = {
-                "type": type(exc).__name__,
-                "message": str(exc),
-            }
+            ctx.input_identities = []
             raise ValueError(
-                "Invalid input content fingerprint: "
+                "Invalid input identities: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
-        report = REVISEInputService.from_context(ctx).preflight(
+        report = input_service.preflight(
             specs,
             runtime=runtime,
             columns=ctx.columns,

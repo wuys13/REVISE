@@ -12,7 +12,7 @@ from revise.backend.kernels.spot_sr import SpotSrKernel
 
 def _kernel(*, completeness=True):
     config = SimpleNamespace(
-        pm_on_cell_file="/path/that/does/not/exist.csv",
+        pm_on_cell=None,
         svc_completeness=completeness,
         sr_assignment_seed=42,
     )

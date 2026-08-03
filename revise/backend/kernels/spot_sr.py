@@ -1,5 +1,3 @@
-import os
-
 import numpy as np
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
@@ -12,10 +10,7 @@ class SpotSrKernel(BaseKernel):
 
     def __init__(self, config, logger):
         super().__init__(config, logger)
-        if os.path.exists(self.config.pm_on_cell_file):
-            self.pm_on_cell = pd.read_csv(self.config.pm_on_cell_file, index_col=0)
-        else:
-            self.pm_on_cell = None
+        self.pm_on_cell = getattr(self.config, "pm_on_cell", None)
 
     def run(self, sc_svc):
         cell_type_col = str(getattr(self.config, "cell_type_col", "Level1"))
@@ -189,40 +184,20 @@ class SpotSrKernel(BaseKernel):
     def _validate_and_align_pm(self, SVC_obs, type_list):
         if not isinstance(self.pm_on_cell, pd.DataFrame):
             raise TypeError("pm_on_cell must be a pandas DataFrame")
-        pm_on_cell = self.pm_on_cell.copy()
-        if pm_on_cell.index.has_duplicates:
-            raise ValueError("pm_on_cell has a duplicate row label")
-        if pm_on_cell.columns.has_duplicates:
-            raise ValueError("pm_on_cell has a duplicate column label")
-
-        string_index = pm_on_cell.index.astype(str)
-        if string_index.has_duplicates:
-            raise ValueError("pm_on_cell row labels collide after string conversion")
-        normalized_columns = [str(value).replace("/", "_") for value in pm_on_cell.columns]
-        if pd.Index(normalized_columns).has_duplicates:
-            raise ValueError("pm_on_cell columns collide after slash normalization")
-        pm_on_cell.index = string_index
-        pm_on_cell.columns = normalized_columns
-
+        pm_on_cell = self.pm_on_cell
         svc_cell_ids = SVC_obs["cell_id"].tolist()
-        missing = sorted(set(svc_cell_ids) - set(pm_on_cell.index))
-        if missing:
+        missing_cells = sorted(set(svc_cell_ids) - set(pm_on_cell.index))
+        extra_cells = sorted(set(pm_on_cell.index) - set(svc_cell_ids))
+        if missing_cells or extra_cells:
             raise ValueError(
-                "pm_on_cell must contain all SVC cell IDs; "
-                f"missing_count={len(missing)}, missing_preview={missing[:10]}"
+                "pm_on_cell cell ID set must exactly match active SVC cells; "
+                f"missing={missing_cells[:10]}, extra={extra_cells[:10]}"
             )
-        missing = sorted(set(type_list) - set(pm_on_cell.columns))
-        if missing:
+        missing_types = sorted(set(type_list) - set(pm_on_cell.columns))
+        extra_types = sorted(set(pm_on_cell.columns) - set(type_list))
+        if missing_types or extra_types:
             raise ValueError(
-                "pm_on_cell must contain all requested classes; "
-                f"missing={missing}"
+                "pm_on_cell class set must exactly match active classes; "
+                f"missing={missing_types}, extra={extra_types}"
             )
-        pm_on_cell = pm_on_cell.loc[svc_cell_ids, type_list]
-        try:
-            values = pm_on_cell.to_numpy(dtype=np.float64, copy=True)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("pm_on_cell values must be convertible to float64") from exc
-        if not np.isfinite(values).all():
-            raise ValueError("pm_on_cell values must be finite")
-
-        return pd.DataFrame(values, index=pm_on_cell.index, columns=pm_on_cell.columns)
+        return pm_on_cell.loc[svc_cell_ids, type_list]

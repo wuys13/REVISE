@@ -85,9 +85,9 @@ def _path_content_record(
     )
 
 
-def fingerprint_paths(specs: Iterable[Any]) -> str:
-    """Hash resolved inputs by semantic role and streamed content."""
-    records = []
+def input_identities(specs: Iterable[Any]) -> list[Dict[str, str]]:
+    """Record each resolved external input by role, path, and content SHA-256."""
+    identities = []
     roles = set()
     for spec in specs:
         role = str(spec.role)
@@ -96,14 +96,17 @@ def fingerprint_paths(specs: Iterable[Any]) -> str:
         if role in roles:
             raise ValueError(f"duplicate input role: {role}")
         roles.add(role)
-        records.append(
-            {
-                "role": role,
-                "content": _path_content_record(Path(spec.path)),
-            }
+        path = Path(spec.path)
+        content = _path_content_record(path)
+        content_sha = (
+            str(content["sha256"])
+            if content["kind"] == "file"
+            else hash_jsonable(content)
         )
-    records.sort(key=lambda record: record["role"])
-    return hash_jsonable(records)
+        identities.append(
+            {"role": role, "path": str(path), "sha256": content_sha}
+        )
+    return identities
 
 
 def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:

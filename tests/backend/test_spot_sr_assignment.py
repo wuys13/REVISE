@@ -21,14 +21,12 @@ CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 def _kernel(*, pm=None, seed=42, cell_type_col="Level1"):
     config = SimpleNamespace(
-        pm_on_cell_file="/path/that/does/not/exist.csv",
+        pm_on_cell=pm,
         svc_completeness=True,
         sr_assignment_seed=seed,
         cell_type_col=cell_type_col,
     )
-    kernel = SpotSrKernel(config, logging.getLogger("test-spot-sr-assignment"))
-    kernel.pm_on_cell = pm
-    return kernel
+    return SpotSrKernel(config, logging.getLogger("test-spot-sr-assignment"))
 
 
 def _svc(spot_cells):
@@ -85,8 +83,8 @@ def test_pm_is_aligned_by_string_cell_id_and_normalized_class_without_changing_v
     quota = _quota(columns=("Mono/Macro", "T"), values=((1, 1),))
     pm = pd.DataFrame(
         [[0.25, -3.0], [4.5, 0.75]],
-        index=[1, 2],
-        columns=["T", "Mono/Macro"],
+        index=["1", "2"],
+        columns=["T", "Mono_Macro"],
     )
     kernel = _kernel(pm=pm)
 
@@ -165,20 +163,11 @@ def test_run_reads_cell_contributions_from_the_configured_column():
 @pytest.mark.parametrize(
     ("pm", "message"),
     [
-        (pd.DataFrame([[1.0, 0.0]], index=["c1"], columns=["A", "B"]), "cell IDs"),
-        (pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=["c1", "c1"], columns=["A", "B"]), "duplicate row"),
-        (pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=[1, "1"], columns=["A", "B"]), "string conversion"),
+        (pd.DataFrame([[1.0, 0.0]], index=["c1"], columns=["A", "B"]), "cell ID"),
         (pd.DataFrame([[1.0], [0.0]], index=["c1", "c2"], columns=["A"]), "classes"),
-        (pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=["c1", "c2"], columns=["A", "A"]), "duplicate column"),
-        (
-            pd.DataFrame([[1.0, 0.0], [0.0, 1.0]], index=["c1", "c2"], columns=["A/B", "A_B"]),
-            "normalization",
-        ),
-        (pd.DataFrame([[np.nan, 0.0], [0.0, 1.0]], index=["c1", "c2"], columns=["A", "B"]), "finite"),
-        (pd.DataFrame([[np.inf, 0.0], [0.0, 1.0]], index=["c1", "c2"], columns=["A", "B"]), "finite"),
     ],
 )
-def test_pm_contract_rejects_misalignment_collisions_and_nonfinite_values(pm, message):
+def test_pm_allocation_rejects_missing_active_axes(pm, message):
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
 
     with pytest.raises(ValueError, match=message):
@@ -187,32 +176,26 @@ def test_pm_contract_rejects_misalignment_collisions_and_nonfinite_values(pm, me
     assert "cell_type" not in svc_obs
 
 
-def test_pm_contract_subsets_patient_level_rows_to_current_case_cells():
+def test_pm_allocation_rejects_extra_patient_level_rows():
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
     pm = pd.DataFrame(
         [[1.0, 0.0], [0.0, 1.0], [0.2, 0.8]],
         index=["c1", "c2", "unrelated-case-cell"],
         columns=["A", "B"],
     )
-    kernel = _kernel(pm=pm)
-
-    kernel.assign_cell_types(svc_obs, _quota())
-
-    assert kernel.pm_on_cell.index.tolist() == ["c1", "c2"]
+    with pytest.raises(ValueError, match="extra"):
+        _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
 
 
-def test_pm_contract_subsets_global_classes_to_reference_classes():
+def test_pm_allocation_rejects_extra_global_classes():
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
     pm = pd.DataFrame(
         [[1.0, 0.0, 0.3], [0.0, 1.0, 0.7]],
         index=["c1", "c2"],
         columns=["A", "B", "unrelated-reference-class"],
     )
-    kernel = _kernel(pm=pm)
-
-    kernel.assign_cell_types(svc_obs, _quota())
-
-    assert kernel.pm_on_cell.columns.tolist() == ["A", "B"]
+    with pytest.raises(ValueError, match="extra"):
+        _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
 
 
 @pytest.mark.parametrize(
@@ -450,12 +433,14 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         run_dir=tmp_path,
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=False,
+        pm_on_cell=pd.DataFrame([[1.0]], index=["c1"], columns=["A"]),
     )
 
     with pytest.raises(StopAfterConfig):
         getattr(adapters, strategy_name)().prepare_context(ctx)
 
     assert captured["conf"].sr_assignment_seed == 731
+    assert captured["conf"].pm_on_cell is ctx.pm_on_cell
 
 
 def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed_is_none(

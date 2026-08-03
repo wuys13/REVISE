@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import csv
 from contextlib import ExitStack
 from dataclasses import dataclass, field
+from hashlib import sha256
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -45,6 +48,86 @@ class REVISEInputService:
 
     def read_real_adata(self, path: Union[str, Path]) -> AnnData:
         return self._read_role(path, role="gt").adata
+
+    def snapshot_pm_on_cell(
+        self,
+        path: Union[str, Path],
+    ) -> tuple[Optional[pd.DataFrame], Optional[Dict[str, str]]]:
+        snapshot_path = Path(path)
+        try:
+            payload = snapshot_path.read_bytes()
+        except FileNotFoundError:
+            return None, None
+
+        identity = {
+            "role": "pm_on_cell",
+            "path": str(snapshot_path),
+            "sha256": sha256(payload).hexdigest(),
+        }
+        try:
+            header = next(csv.reader(StringIO(payload.decode("utf-8-sig"))))
+            labels = header[1:]
+            normalized_labels = [label.replace("/", "_") for label in labels]
+            if (
+                not labels
+                or any(not label.strip() for label in labels)
+                or len(labels) != len(set(labels))
+                or len(normalized_labels) != len(set(normalized_labels))
+            ):
+                raise ValueError(
+                    "header labels must be non-empty and unique before and "
+                    "after slash normalization"
+                )
+            frame = pd.read_csv(BytesIO(payload), index_col=0)
+        except Exception as exc:
+            raise ValueError(
+                f"Invalid pm_on_cell snapshot: path={snapshot_path}; "
+                f"actual={type(exc).__name__}: {exc}"
+            ) from exc
+        self._validate_pm_on_cell_snapshot(frame, path=snapshot_path)
+        return frame, identity
+
+    @staticmethod
+    def _validate_pm_on_cell_snapshot(frame: pd.DataFrame, *, path: Path) -> None:
+        context = f"pm_on_cell snapshot: path={path}"
+        if not isinstance(frame, pd.DataFrame):
+            raise TypeError(f"Invalid {context}; expected=pandas DataFrame")
+        if frame.index.isna().any() or frame.columns.isna().any():
+            raise ValueError(f"Invalid {context}; axes must be non-null")
+        if frame.index.has_duplicates or frame.columns.has_duplicates:
+            raise ValueError(f"Invalid {context}; axes must be unique")
+
+        normalized_index = frame.index.astype(str)
+        normalized_columns = pd.Index(
+            [str(value).replace("/", "_") for value in frame.columns]
+        )
+        if normalized_index.has_duplicates:
+            raise ValueError(
+                f"Invalid {context}; row labels collide after string normalization"
+            )
+        if normalized_columns.has_duplicates:
+            raise ValueError(
+                f"Invalid {context}; columns collide after slash normalization"
+            )
+
+        try:
+            values = frame.to_numpy(dtype=np.float64, copy=True)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid {context}; values must be numeric") from exc
+        if not np.isfinite(values).all():
+            raise ValueError(f"Invalid {context}; values must be finite")
+        if np.any(values < 0.0) or np.any(values > 1.0):
+            raise ValueError(f"Invalid {context}; values must be within [0, 1]")
+        if not np.allclose(
+            values.sum(axis=1),
+            1.0,
+            rtol=0.0,
+            atol=1e-6,
+        ):
+            raise ValueError(f"Invalid {context}; each row must sum to 1")
+
+        frame.index = normalized_index
+        frame.columns = normalized_columns
 
     def load_bundle(
         self,

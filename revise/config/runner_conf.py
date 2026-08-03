@@ -89,6 +89,12 @@ def benchmark_st_path(
     raise ValueError(f"Unsupported benchmark task for ST path: {task}")
 
 
+def pm_on_cell_path_from_st_path(resolved_st_path: str) -> str:
+    parent, filename = os.path.split(resolved_st_path)
+    stem, _ = os.path.splitext(filename)
+    return os.path.join(parent, f"{stem}_PM_on_cell.csv")
+
+
 def configured_st_source_path(io_config, h5ad_path: str) -> str:
     input_format = str(io_config.get("input_format", "h5ad")).lower()
     spatialdata_path = io_config.get("spatialdata_path")
@@ -336,7 +342,7 @@ class ApplicationScSrConf(BaseConf):
 
     @property
     def pm_on_cell_file(self):
-        return os.path.join(self.raw_data_path, "PM_on_cell.csv")
+        return pm_on_cell_path_from_st_path(self.st_file_path)
 
 
 @dataclass
@@ -486,7 +492,7 @@ class BenchmarkSrConf(BaseConf):
 
     @property
     def pm_on_cell_file(self):
-        return os.path.join(os.path.dirname(os.path.join(self.raw_data_path, self.sample_name)), "PM_on_cell.csv")
+        return pm_on_cell_path_from_st_path(self.st_file_path)
 
 
 @dataclass
