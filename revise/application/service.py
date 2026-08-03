@@ -332,10 +332,10 @@ def _build_sc_public_results(args, profile, ctx):
 
     selected_cell_type = ctx.svc.provenance.get(
         "selected_cell_type",
-        getattr(args, "select_ct", "all"),
+        getattr(args, "select_ct", None),
     )
     if selected_cell_type in (None, ""):
-        selected_cell_type = getattr(args, "select_ct", "all") or "all"
+        raise RuntimeError("sc-SVC result is missing its selected cell type")
     output_dir = (
         Path(args.output_root)
         / args.sample_name

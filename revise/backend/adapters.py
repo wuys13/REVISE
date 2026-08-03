@@ -291,40 +291,11 @@ def _as_float_list(values: Any, default: List[float]) -> List[float]:
     return uniq if uniq else list(default)
 
 
-def _is_all_cell_types(value: Any) -> bool:
-    return isinstance(value, str) and value.strip().lower() in {"all", "*", "__all__", "all_cell_types"}
-
-
-def _prefix_svc_cluster_labels(adata, cell_type: str, cluster_col: str = "SVC_cluster"):
-    if cluster_col not in adata.obs:
-        return adata
-    adata = adata.copy()
-    prefix = str(cell_type).replace("/", "_").replace(" ", "_")
-    adata.obs[cluster_col] = prefix + "_" + adata.obs[cluster_col].astype(str)
-    adata.obs[cluster_col] = adata.obs[cluster_col].astype("category")
-    return adata
-
-
-def _singleton_sc_svc_outputs(
-    runner,
-    cell_type: str,
-    cell_type_col: str,
-    sub_cell_type_col: str,
-):
-    spatial = runner.st_adata[
-        runner.st_adata.obs[cell_type_col].astype(str) == str(cell_type)
-    ].copy()
-    expr = runner.sc_ref_adata[
-        runner.sc_ref_adata.obs[cell_type_col].astype(str) == str(cell_type)
-    ].copy()
-    cluster = f"{str(cell_type).replace('/', '_').replace(' ', '_')}_singleton"
-    for adata in (spatial, expr):
-        adata.obs["SVC_cluster"] = pd.Categorical([cluster] * adata.n_obs)
-        if sub_cell_type_col not in adata.obs:
-            adata.obs[sub_cell_type_col] = adata.obs[cell_type_col].astype(str)
-        if "Confidence" not in adata.obs:
-            adata.obs["Confidence"] = 1.0
-    return spatial, expr
+def _require_concrete_cell_type(value: Any) -> str:
+    select_ct = value.strip() if isinstance(value, str) else ""
+    if select_ct.lower() in {"", "all", "*", "__all__", "all_cell_types"}:
+        raise ValueError("sc-SVC --select-ct must name one concrete cell type")
+    return select_ct
 
 
 def _build_svc(
@@ -639,92 +610,17 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         sc_cfg = ctx.merged_config.get("sc", {})
         sub_cell_type_col = ctx.columns.get("sub_cell_type_col", "Level2")
 
-        select_ct = sc_cfg.get("select_ct")
-        all_cell_types = _is_all_cell_types(select_ct)
-        if not select_ct:
-            counts = ctx.runner.st_adata.obs[ctx.columns.get("cell_type_col", "Level1")].value_counts()
-            if counts.empty:
-                raise ValueError("No cell types available after global anchoring")
-            select_ct = counts.index[0]
+        select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
 
         resolutions = list(sc_cfg.get("resolutions", [0.6, 0.7, 0.8]))
         select_res = sc_cfg.get("select_resolution")
-        if all_cell_types:
-            cell_type_col = ctx.columns.get("cell_type_col", "Level1")
-            st_counts = ctx.runner.st_adata.obs[cell_type_col].astype(str).value_counts()
-            sc_counts = ctx.runner.sc_ref_adata.obs[cell_type_col].astype(str).value_counts()
-            selected_cell_types: List[str] = []
-            skipped_cell_types: List[Dict[str, Any]] = []
-            fallback_cell_types: List[str] = []
-            spatial_parts = []
-            expr_parts = []
-
-            for candidate in st_counts.index.tolist():
-                st_count = int(st_counts.get(candidate, 0))
-                ref_count = int(sc_counts.get(candidate, 0))
-                if ref_count == 0:
-                    skipped_cell_types.append(
-                        {"cell_type": candidate, "reason": "missing_reference_cells", "spatial_cells": st_count}
-                    )
-                    continue
-                if st_count < 2:
-                    ctx.logger.info(
-                        "[adapter] all-cell-type sc-SVC singleton fallback: cell_type=%s spatial_cells=%s reference_cells=%s",
-                        candidate,
-                        st_count,
-                        ref_count,
-                    )
-                    sc_svc_spatial_part, sc_svc_expr_part = _singleton_sc_svc_outputs(
-                        ctx.runner,
-                        candidate,
-                        cell_type_col,
-                        sub_cell_type_col,
-                    )
-                    spatial_parts.append(sc_svc_spatial_part)
-                    expr_parts.append(sc_svc_expr_part)
-                    selected_cell_types.append(str(candidate))
-                    fallback_cell_types.append(str(candidate))
-                    continue
-
-                ctx.logger.info(
-                    "[adapter] reconstruct all-cell-type sc-SVC: cell_type=%s spatial_cells=%s reference_cells=%s",
-                    candidate,
-                    st_count,
-                    ref_count,
-                )
-                sc_svc_spatial_part, sc_svc_expr_part = ctx.runner.local_refinement(
-                    candidate,
-                    sub_cell_type_col,
-                    resolutions,
-                    select_res=select_res,
-                )
-                ctx.record_local_refinement(True)
-                spatial_parts.append(_prefix_svc_cluster_labels(sc_svc_spatial_part, candidate))
-                expr_parts.append(_prefix_svc_cluster_labels(sc_svc_expr_part, candidate))
-                selected_cell_types.append(str(candidate))
-
-            if not spatial_parts or not expr_parts:
-                raise ValueError(
-                    "No cell types could be reconstructed in all-cell-type mode; "
-                    f"skipped={skipped_cell_types}"
-                )
-
-            sc_svc_spatial = sc.concat(spatial_parts, join="outer", merge="same", uns_merge="unique", index_unique=None)
-            sc_svc_expr = sc.concat(expr_parts, join="outer", merge="same", uns_merge="unique", index_unique=None)
-            select_ct = "all"
-            ctx.artifacts["selected_cell_types"] = selected_cell_types
-            ctx.artifacts["skipped_cell_types"] = skipped_cell_types
-            ctx.artifacts["fallback_cell_types"] = fallback_cell_types
-        else:
-            # Keep runner behavior: local_refinement returns two adatas and the
-            # unified SVC wrapper standardizes them into expr/spatial fields.
-            sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
-                select_ct,
-                sub_cell_type_col,
-                resolutions,
-                select_res=select_res,
-            )
-            ctx.record_local_refinement(True)
+        sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
+            select_ct,
+            sub_cell_type_col,
+            resolutions,
+            select_res=select_res,
+        )
+        ctx.record_local_refinement(True)
         ctx.artifacts["outputs"] = {
             "sc_svc_spatial": sc_svc_spatial,
             "sc_svc_expr": sc_svc_expr,
@@ -741,9 +637,6 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             spatial=outputs.get("sc_svc_spatial"),
             extra_provenance={
                 "selected_cell_type": ctx.artifacts.get("selected_cell_type"),
-                "selected_cell_types": ctx.artifacts.get("selected_cell_types"),
-                "skipped_cell_types": ctx.artifacts.get("skipped_cell_types"),
-                "fallback_cell_types": ctx.artifacts.get("fallback_cell_types"),
             },
         )
 
@@ -765,12 +658,7 @@ class ScSvcHyperApplicationStrategy(ScSvcApplicationStrategy):
             return super().solve_ot(ctx)
 
         sub_cell_type_col = ctx.columns.get("sub_cell_type_col", "Level2")
-        select_ct = sc_cfg.get("select_ct")
-        if not select_ct:
-            counts = ctx.runner.st_adata.obs[ctx.columns.get("cell_type_col", "Level1")].value_counts()
-            if counts.empty:
-                raise ValueError("No cell types available after global anchoring")
-            select_ct = counts.index[0]
+        select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
 
         base_res = _as_float_list(sc_cfg.get("resolutions"), default=[0.6, 0.7, 0.8])
         hyper_res_cfg = hyper_cfg.get("resolutions")

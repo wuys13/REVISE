@@ -439,24 +439,108 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
     assert ctx.runner.sc_ref_adata.obs[sub_cell_type_col].tolist() == ["A_1", "A_2"]
 
 
-def test_ist_singleton_fallback_uses_configured_cell_type_column(monkeypatch):
+@pytest.mark.parametrize(
+    "select_ct",
+    [None, "", " ", "all", "*", "__all__", "all_cell_types"],
+)
+@pytest.mark.parametrize(
+    ("strategy_name", "hyper_enabled"),
+    [
+        ("ScSvcApplicationStrategy", False),
+        ("ScSvcHyperApplicationStrategy", True),
+    ],
+)
+def test_ist_adapter_requires_one_concrete_cell_type(
+    monkeypatch,
+    select_ct,
+    strategy_name,
+    hyper_enabled,
+):
     _import_sc_svc(monkeypatch)
     from revise.backend import adapters
 
-    runner = SimpleNamespace(
-        st_adata=_adata(["sp1"], ["A"], "custom_level1"),
-        sc_ref_adata=_adata(["sc1"], ["A"], "custom_level1"),
+    ctx = SimpleNamespace(
+        merged_config={
+            "sc": {
+                "select_ct": select_ct,
+                "resolutions": [0.5],
+                "hyperresolution": {
+                    "enabled": hyper_enabled,
+                    "resolutions": [0.5],
+                },
+            }
+        },
+        columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
+        runner=SimpleNamespace(
+            st_adata=_adata(["sp1", "sp2"], ["A", "A"]),
+            local_refinement=lambda *_args, **_kwargs: pytest.fail(
+                "invalid selection reached local refinement"
+            ),
+        ),
+        logger=logging.getLogger("test-concrete-sc-selection"),
     )
 
-    spatial, expr = adapters._singleton_sc_svc_outputs(
-        runner,
-        "A",
-        "custom_level1",
-        "custom_level2",
+    strategy = getattr(adapters, strategy_name)()
+    with pytest.raises(
+        ValueError,
+        match="sc-SVC --select-ct must name one concrete cell type",
+    ):
+        strategy.solve_ot(ctx)
+
+
+@pytest.mark.parametrize(
+    ("strategy_name", "hyper_enabled"),
+    [
+        ("ScSvcApplicationStrategy", False),
+        ("ScSvcHyperApplicationStrategy", True),
+    ],
+)
+def test_ist_adapter_refines_only_the_selected_cell_type(
+    monkeypatch,
+    strategy_name,
+    hyper_enabled,
+):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+
+    spatial = _adata(["sp1", "sp2"], ["T", "T"])
+    expression = _adata(["sc1", "sc2"], ["T", "T"])
+    calls = []
+
+    def local_refinement(select_ct, sub_cell_type_col, resolutions, select_res=None):
+        calls.append((select_ct, sub_cell_type_col, resolutions, select_res))
+        return spatial, expression
+
+    applied = []
+    ctx = SimpleNamespace(
+        merged_config={
+            "sc": {
+                "select_ct": "T",
+                "resolutions": [0.5],
+                "select_resolution": 0.5,
+                "hyperresolution": {
+                    "enabled": hyper_enabled,
+                    "resolutions": [0.5],
+                    "select_resolution": 0.5,
+                },
+            }
+        },
+        columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
+        runner=SimpleNamespace(local_refinement=local_refinement),
+        logger=logging.getLogger("test-single-sc-selection"),
+        artifacts={},
+        record_local_refinement=applied.append,
     )
 
-    assert spatial.obs["custom_level2"].tolist() == ["A"]
-    assert expr.obs["custom_level2"].tolist() == ["A"]
+    getattr(adapters, strategy_name)().solve_ot(ctx)
+
+    assert calls == [("T", "Level2", [0.5], 0.5)]
+    assert applied == [True]
+    assert ctx.artifacts["outputs"] == {
+        "sc_svc_spatial": spatial,
+        "sc_svc_expr": expression,
+    }
+    assert ctx.artifacts["selected_cell_type"] == "T"
 
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
@@ -466,7 +550,7 @@ def test_unified_cli_switches_global_and_local_methods_together(method):
     args = SimpleNamespace(
         svc_type="sc-SVC",
         ot_method=method,
-        select_ct="all",
+        select_ct="T",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
     )

@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _required_args(svc_type: str) -> list[str]:
-    return [
+    args = [
         "--svc-type",
         svc_type,
         "--sample-name",
@@ -34,6 +34,9 @@ def _required_args(svc_type: str) -> list[str]:
         "--data-root",
         "data",
     ]
+    if svc_type == "sc-SVC":
+        args.extend(["--select-ct", "T"])
+    return args
 
 
 def test_parser_exposes_only_the_three_1x_svc_types():
@@ -203,7 +206,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
         sc_ref_file="sc.h5ad",
         patient_key="Patient",
         ot_method="pot",
-        select_ct="all",
+        select_ct="T",
         cell_type_col="Level1",
         sub_cell_type_col="Level2",
     )
@@ -226,7 +229,7 @@ def test_pipeline_receives_the_internal_route_for_each_public_type(
             "cell_type_col": "Level1",
             "sub_cell_type_col": "Level2",
         },
-        **({"sc": {"select_ct": "all"}} if svc_type == "sc-SVC" else {}),
+        **({"sc": {"select_ct": "T"}} if svc_type == "sc-SVC" else {}),
     }
 
 

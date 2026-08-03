@@ -472,7 +472,7 @@ def _cli_args(**overrides):
     values = {
         "svc_type": "sc-SVC",
         "ot_method": None,
-        "select_ct": "all",
+        "select_ct": "T",
         "cell_type_col": "Level1",
         "sub_cell_type_col": "Level2",
     }
@@ -493,6 +493,7 @@ def test_cli_omitted_ot_method_parses_as_none(monkeypatch):
             "--st-file", "st.h5ad",
             "--sc-ref-file", "sc.h5ad",
             "--data-root", "data",
+            "--select-ct", "T",
         ],
     )
 

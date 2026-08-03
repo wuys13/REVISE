@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--patient-key", default="Patient")
-    parser.add_argument("--select-ct", default="all")
+    parser.add_argument("--select-ct", default=None)
     parser.add_argument("--cell-type-col", default=None)
     parser.add_argument("--sub-cell-type-col", default=None)
     parser.add_argument(
@@ -94,7 +94,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    return build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.svc_type == "sc-SVC":
+        select_ct = args.select_ct.strip() if isinstance(args.select_ct, str) else ""
+        if select_ct.lower() in {"", "all", "*", "__all__", "all_cell_types"}:
+            parser.error("--select-ct must name one concrete cell type")
+        args.select_ct = select_ct
+    return args
 
 
 def main() -> None:

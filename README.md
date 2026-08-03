@@ -142,8 +142,8 @@ data/
   their configured solver. If TACCO is unavailable and a different algorithm
   is acceptable, explicitly pass `--ot-method pot`. REVISE never falls back
   automatically.
-- `--select-ct`: for `sc-SVC`, reconstruct one broad cell type or use the
-  default `all`.
+- `--select-ct`: required for `sc-SVC`; names the one concrete broad cell type
+  to reconstruct.
 - `--cell-type-col`: selects the broad reference annotation column for all
   three routes.
 - `--sub-cell-type-col`: selects the refined annotation required only by

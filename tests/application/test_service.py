@@ -113,6 +113,41 @@ def test_sc_svc_publication_preserves_the_notebook_spatial_and_expression_pair(
     assert "ot_events" not in published_spatial.uns["revise_reconstruction"]
 
 
+def test_sc_svc_publication_requires_selected_cell_type(tmp_path):
+    from revise.application.service import _build_sc_public_results
+
+    spatial, expression = _sc_outputs()
+    ctx = PublicationContext(
+        svc=SVC(
+            expr=expression,
+            spatial=spatial,
+            svc_kind="sc",
+            artifacts={
+                "outputs": {
+                    "sc_svc_spatial": spatial,
+                    "sc_svc_expr": expression,
+                }
+            },
+        ),
+        run_dir=tmp_path / "run",
+        merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
+        provenance={},
+        artifact_records=[],
+        record_artifact=lambda artifact: None,
+    )
+    args = SimpleNamespace(
+        svc_type="sc-SVC",
+        output_root=str(tmp_path / "out"),
+        sample_name="sample",
+        seed=17,
+        ot_method="pot",
+        select_ct=None,
+    )
+
+    with pytest.raises(RuntimeError, match="missing its selected cell type"):
+        _build_sc_public_results(args, "application_sc", ctx)
+
+
 def test_single_file_publication_reloads_staged_h5ad_before_replace(
     monkeypatch,
     tmp_path,

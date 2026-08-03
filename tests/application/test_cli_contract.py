@@ -97,6 +97,34 @@ def test_canonical_application_cli_exposes_only_local_refinement_strength():
     assert "--posterior-conditioning-mode" not in help_text
 
 
+@pytest.mark.parametrize(
+    "select_ct",
+    [None, "", " ", "all", "*", "__all__", "all_cell_types"],
+)
+def test_sc_svc_cli_requires_one_concrete_cell_type(select_ct, capsys):
+    from revise.application import cli
+
+    argv = [
+        "--svc-type",
+        "sc-SVC",
+        "--sample-name",
+        "sample",
+        "--st-file",
+        "st.h5ad",
+        "--sc-ref-file",
+        "sc.h5ad",
+        "--data-root",
+        "data",
+    ]
+    if select_ct is not None:
+        argv.extend(["--select-ct", select_ct])
+
+    with pytest.raises(SystemExit, match="2"):
+        cli.parse_args(argv)
+
+    assert "--select-ct must name one concrete cell type" in capsys.readouterr().err
+
+
 def test_canonical_application_cli_removed_guidance_flag_has_migration_error(monkeypatch):
     from revise.application import cli
 

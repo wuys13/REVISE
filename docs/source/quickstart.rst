@@ -72,8 +72,9 @@ Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
 sc-SVC-sr`` for spot super-resolution. ``--cell-type-col`` selects the broad
 reference annotation on every route. ``--sub-cell-type-col`` selects the
 refined annotation required only by standard sc-SVC. sc-SVC-sr uses the broad
-assignment for composition and expression allocation. sc-SVC also accepts
-``--select-ct``. Its application profile defaults to TACCO; install it with
+assignment for composition and expression allocation. sc-SVC requires
+``--select-ct`` naming one concrete broad cell type. Its application profile
+defaults to TACCO; install it with
 ``python -m pip install ".[tacco]"`` from source or ``python -m pip install
 "revise-svc[tacco]"`` from a published package. If TACCO is unavailable and a
 different algorithm is acceptable, explicitly add ``--ot-method pot``. REVISE
