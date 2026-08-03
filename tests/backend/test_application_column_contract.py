@@ -483,6 +483,7 @@ def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):
     st.obsm["major_type"] = pd.DataFrame(
         [[1.0]], index=st.obs_names, columns=["A"]
     )
+    st.obs["major_type"] = "A"
     reference = AnnData(
         X=np.ones((2, 2)),
         obs=pd.DataFrame(
@@ -526,6 +527,7 @@ def test_sr_benchmark_custom_broad_column_drives_mandatory_allocation(
         index=st.obs_names,
         columns=["A"],
     )
+    st.obs["major_type"] = "A"
     reference = AnnData(
         X=np.ones((1, 2)),
         obs=pd.DataFrame({"major_type": ["A"]}, index=["cell-1"]),
@@ -537,10 +539,7 @@ def test_sr_benchmark_custom_broad_column_drives_mandatory_allocation(
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
         rec_graph_agg_enabled=False,
-        assignment_guidance_policy="off",
-        posterior_conditioning_enabled=False,
-        posterior_conditioning_mode="off",
-        posterior_conditioning_strict=False,
+        local_refinement_strength=0.0,
     )
     runner.svc_obs = pd.DataFrame(
         {
@@ -585,6 +584,7 @@ def test_sr_benchmark_reference_uses_configured_broad_column_without_clusters(
         index=st.obs_names,
         columns=["A"],
     )
+    st.obs["major_type"] = "A"
     reference = AnnData(
         X=np.ones((1, 1)),
         obs=pd.DataFrame({"major_type": ["A"]}, index=["cell-1"]),
@@ -596,10 +596,7 @@ def test_sr_benchmark_reference_uses_configured_broad_column_without_clusters(
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
         rec_graph_agg_enabled=False,
-        assignment_guidance_policy="off",
-        posterior_conditioning_enabled=False,
-        posterior_conditioning_mode="off",
-        posterior_conditioning_strict=False,
+        local_refinement_strength=0.0,
     )
     runner.svc_obs = pd.DataFrame(
         {
@@ -626,7 +623,7 @@ def test_sr_benchmark_reference_uses_configured_broad_column_without_clusters(
     assert runner.svc["sc_svc_dec"].obs["cell_type"].tolist() == ["A"]
 
 
-def test_sr_mode_off_preserves_quota_row_and_expression_allocation(
+def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
     monkeypatch,
     load_runner,
 ):
@@ -646,6 +643,7 @@ def test_sr_mode_off_preserves_quota_row_and_expression_allocation(
         index=st.obs_names,
         columns=["A", "B"],
     )
+    st.obs["major_type"] = "A"
     reference = AnnData(
         X=np.array([[9.0, 1.0], [1.0, 9.0]]),
         obs=pd.DataFrame(
@@ -659,10 +657,7 @@ def test_sr_mode_off_preserves_quota_row_and_expression_allocation(
         svc_completeness=True,
         sr_assignment_seed=17,
         cell_type_col="major_type",
-        assignment_guidance_policy="off",
-        posterior_conditioning_enabled=False,
-        posterior_conditioning_mode="off",
-        posterior_conditioning_strict=True,
+        local_refinement_strength=0.0,
         rec_match_spot_sum=True,
     )
     runner = module.ScSVCSr.__new__(module.ScSVCSr)

@@ -345,13 +345,12 @@ def test_local_anchoring_routes_normalized_problem_to_shared_solver(
         "event_callback": None,
     }
     assert result.obs["Level2"].tolist() == ["A", "B"]
-    state = kernel.assignment_state(result, "Level2")
-    assert state is not None
-    assert state.level == "Level2"
-    assert state.source == "local_anchoring:obsm[Level2]"
-    assert tuple(state.observation_labels) == ("sp1", "sp2")
-    assert tuple(state.category_labels) == ("A", "B")
-    np.testing.assert_allclose(state.values, [[1.0, 0.0], [0.0, 1.0]])
+    assert tuple(result.obsm["Level2"].index) == ("sp1", "sp2")
+    assert tuple(result.obsm["Level2"].columns) == ("A", "B")
+    np.testing.assert_allclose(
+        result.obsm["Level2"].to_numpy(), [[1.0, 0.0], [0.0, 1.0]]
+    )
+    np.testing.assert_allclose(result.obs["Confidence"], [1.0, 1.0])
 
 
 @pytest.mark.parametrize(

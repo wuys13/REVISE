@@ -1,21 +1,20 @@
 import numpy as np
+import pandas as pd
 import scanpy as sc
 
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.kernels import SpotSrKernel as SpotSr
-from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.meta import construct_sc_ref
 from revise.backend.ops.meta import get_sc_obs
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.sr_allocation import (
+    condition_virtual_cell_ot_cost,
     mandatory_reference_allocation,
-    prepare_virtual_cell_guidance,
-    projected_virtual_assignment,
+    project_spot_assignment_to_virtual_cells,
     record_mandatory_allocation,
-    record_virtual_cell_guidance_terminal,
-    record_virtual_cell_not_applicable,
+    spot_global_assignment,
     subset_virtual_assignment,
 )
 from revise.backend.ops.topology import get_adjacency_graph
@@ -73,10 +72,17 @@ class ScSVCSr(ApplicationSVC):
         """
         overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
         key_type = self.config.cell_type_col
+        assignment = spot_global_assignment(
+            self.st_adata,
+            broad_key=key_type,
+            expected_categories=pd.Index(
+                pd.unique(self.sc_ref_adata.obs[key_type])
+            ),
+        )
         try:
             st_adata_common = self.st_adata[:, overlap_genes].copy()
             sc.pp.normalize_total(st_adata_common, target_sum=1e4)
-            cell_contributions = st_adata_common.obsm[key_type].copy()
+            cell_contributions = assignment.posterior.copy()
             sc.pp.normalize_total(self.st_adata, target_sum=1e4)
             sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
             self.spot_sr.run(self)
@@ -150,22 +156,20 @@ class ScSVCSr(ApplicationSVC):
             allocation_method="posterior_reference_allocation",
         )
         self.logger.info("Extracted SVC expressions using simple allocation method")
+        projected_assignment = project_spot_assignment_to_virtual_cells(
+            assignment,
+            self.svc_obs,
+        )
+        conditioning_strength = getattr(
+            self.config,
+            "local_refinement_strength",
+            0.0,
+        )
+        conditioning_applied = False
 
         n_cells = SVC_X.shape[0]
         if n_cells > 1:
             self.logger.info("Applying OT-based neighbor enhancement among single cells")
-            projected_state = None
-
-            def load_projected_state():
-                nonlocal projected_state
-                if projected_state is None:
-                    projected_state = projected_virtual_assignment(
-                        self.st_adata,
-                        self.svc_obs,
-                        broad_key=key_type,
-                    )
-                return projected_state
-
             cell_types = self.svc_obs["cell_type"].astype(str).to_numpy()
             unique_types = np.unique(cell_types)
             spatial = self.svc_obs[["x", "y"]].to_numpy(dtype=np.float64)
@@ -173,19 +177,8 @@ class ScSVCSr(ApplicationSVC):
 
             for cell_type in unique_types:
                 idx = np.where(cell_types == cell_type)[0]
-                problem_key = f"sr-application:{cell_type}"
                 if idx.size < 50:
                     self.logger.info(f"cell type: {cell_type}, has too few cells, skip OT smoothing")
-                    record_virtual_cell_not_applicable(
-                        self.config,
-                        problem_key=problem_key,
-                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                        reason_details={
-                            "unit": "virtual_cell",
-                            "observed": int(idx.size),
-                            "required": 50,
-                        },
-                    )
                     SVC_X_smoothed[idx] = SVC_X[idx]
                     continue
 
@@ -203,12 +196,6 @@ class ScSVCSr(ApplicationSVC):
                 n_ct = idx.size
                 K = min(int(self.config.rec_graph_n_neighbors), n_ct)
                 if K <= 0:
-                    record_virtual_cell_not_applicable(
-                        self.config,
-                        problem_key=problem_key,
-                        reason=NotApplicableReason.EMPTY_SUPPORT,
-                        reason_details={"support": "neighbor"},
-                    )
                     continue
 
                 similarity_matrix = np.zeros((n_ct, K), dtype=np.float64)
@@ -253,12 +240,6 @@ class ScSVCSr(ApplicationSVC):
                         self.logger.info(
                             f"cell type: {cell_type}, skip OT smoothing due to empty active support"
                         )
-                        record_virtual_cell_not_applicable(
-                            self.config,
-                            problem_key=problem_key,
-                            reason=NotApplicableReason.EMPTY_SUPPORT,
-                            reason_details={"support": "active"},
-                        )
                         continue
                     stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
                     stable_support[np.ix_(source_idx, target_idx)] = active_support
@@ -267,96 +248,52 @@ class ScSVCSr(ApplicationSVC):
                         similarity_matrix,
                         valid_neighbor_mask,
                     )
-                    distance_matrix, reference_measure, attempted = (
-                        prepare_virtual_cell_guidance(
-                            self.config,
-                            problem_key=problem_key,
-                            state_loader=lambda idx=idx: (
-                                subset_virtual_assignment(
-                                    load_projected_state(),
-                                    self.svc_obs.iloc[idx]["cell_id"],
-                                )
-                            ),
-                            neighbor_support=neighbor_idx_matrix,
-                            distance_matrix=distance_matrix,
-                            source_mass=nu,
-                            target_mass=mu,
-                        )
+                    group_assignment = subset_virtual_assignment(
+                        projected_assignment,
+                        self.svc_obs.iloc[idx]["cell_id"],
+                    )
+                    distance_matrix = condition_virtual_cell_ot_cost(
+                        distance_matrix,
+                        assignment=group_assignment,
+                        neighbor_indices=neighbor_idx_matrix,
+                        strength=conditioning_strength,
+                    )
+                    conditioning_applied = (
+                        conditioning_applied
+                        or conditioning_strength != 0
                     )
                     distance_matrix[~valid_neighbor_mask] = np.inf
-                    try:
-                        T_transform = solve_local_ot(
-                            nu,
-                            mu,
-                            distance_matrix.T,
-                            method=self.config.rec_ot_method,
-                            pot_reg=self.config.rec_pot_reg,
-                            pot_reg_m=self.config.rec_pot_reg_m,
-                            pot_reg_type=self.config.rec_pot_reg_type,
-                            pot_verbose=False,
-                            pot_num_iter_max=5000,
-                            reference_measure=reference_measure,
-                            valid_support_mask=valid_neighbor_mask.T,
-                            event_callback=getattr(
-                                self.config,
-                                "ot_event_callback",
-                                None,
-                            ),
-                        )
-                        adata_cell = self.graph_aggregate.run(
-                            adata=adata_cell,
-                            neighbor_idx_matrix=neighbor_idx_matrix,
-                            coupling_matrix=T_transform,
-                            valid_neighbor_mask=valid_neighbor_mask,
-                        )
-                    except KeyboardInterrupt:
-                        record_virtual_cell_guidance_terminal(
+                    T_transform = solve_local_ot(
+                        nu,
+                        mu,
+                        distance_matrix.T,
+                        method=self.config.rec_ot_method,
+                        pot_reg=self.config.rec_pot_reg,
+                        pot_reg_m=self.config.rec_pot_reg_m,
+                        pot_reg_type=self.config.rec_pot_reg_type,
+                        pot_verbose=False,
+                        pot_num_iter_max=5000,
+                        reference_measure=None,
+                        valid_support_mask=valid_neighbor_mask.T,
+                        event_callback=getattr(
                             self.config,
-                            problem_key=problem_key,
-                            attempted=attempted,
-                            outcome="interrupted",
-                        )
-                        raise
-                    except Exception:
-                        record_virtual_cell_guidance_terminal(
-                            self.config,
-                            problem_key=problem_key,
-                            attempted=attempted,
-                            outcome="failed",
-                        )
-                        raise
-                    record_virtual_cell_guidance_terminal(
-                        self.config,
-                        problem_key=problem_key,
-                        attempted=attempted,
-                        outcome="applied",
+                            "ot_event_callback",
+                            None,
+                        ),
+                    )
+                    adata_cell = self.graph_aggregate.run(
+                        adata=adata_cell,
+                        neighbor_idx_matrix=neighbor_idx_matrix,
+                        coupling_matrix=T_transform,
+                        valid_neighbor_mask=valid_neighbor_mask,
                     )
                     SVC_X_smoothed[idx] = np.asarray(adata_cell.X)
                 else:
                     self.logger.info(f"cell type: {cell_type}, skip OT smoothing due to empty marginals")
-                    record_virtual_cell_not_applicable(
-                        self.config,
-                        problem_key=problem_key,
-                        reason=NotApplicableReason.INVALID_MASS,
-                        reason_details={
-                            "side": "source_and_target",
-                            "condition": "empty",
-                        },
-                    )
 
             SVC_X = SVC_X_smoothed
         else:
             self.logger.info("Skipping OT enhancement due to small cell count")
-            record_virtual_cell_not_applicable(
-                self.config,
-                problem_key="sr-application:all",
-                reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                reason_details={
-                    "unit": "virtual_cell",
-                    "observed": int(n_cells),
-                    "required": 2,
-                },
-            )
 
         if getattr(self.config, "rec_match_spot_sum", False):
             self.logger.info("Rescaling single-cell expressions to match spot totals")
@@ -377,3 +314,4 @@ class ScSVCSr(ApplicationSVC):
         svc_adata = sc.AnnData(SVC_X, obs=svc_obs)
         svc_adata.var_names = st_adata_common.var_names
         self.svc["sc_svc_dec"] = svc_adata
+        return conditioning_applied

@@ -5,10 +5,6 @@ import scanpy as sc
 from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.kernels import SpotSrKernel as SpotSr
-from revise.backend.ops.assignment_guidance import (
-    FallbackReason,
-    NotApplicableReason,
-)
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.meta import construct_sc_ref
@@ -16,14 +12,11 @@ from revise.backend.ops.meta import get_sc_obs
 from revise.backend.ops.meta import get_true_cell_type
 from revise.backend.ops.meta import resolve_true_cell_type_key
 from revise.backend.ops.sr_allocation import (
-    guidance_mode,
+    condition_virtual_cell_ot_cost,
     mandatory_reference_allocation,
-    prepare_virtual_cell_guidance,
-    projected_virtual_assignment,
+    project_spot_assignment_to_virtual_cells,
     record_mandatory_allocation,
-    record_virtual_cell_guidance_terminal,
-    record_virtual_cell_not_applicable,
-    record_virtual_cell_unavailable,
+    spot_global_assignment,
     subset_virtual_assignment,
 )
 from revise.backend.ops.topology import get_adjacency_graph
@@ -93,23 +86,19 @@ class ScSVCSr(BenchmarkSVC):
         graph_enabled = bool(
             getattr(self.config, "rec_graph_agg_enabled", False)
         )
-        if not graph_enabled and guidance_mode(self.config) == "require":
-            record_virtual_cell_unavailable(
-                self.config,
-                problem_key="sr-benchmark:graph-branch",
-                reason=FallbackReason.OPERATOR_UNAVAILABLE,
-                reason_details={
-                    "operator": "virtual_cell_ot",
-                    "condition": "graph_branch_disabled",
-                },
-            )
-
         overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
         key_type = self.config.cell_type_col
+        assignment = spot_global_assignment(
+            self.st_adata,
+            broad_key=key_type,
+            expected_categories=pd.Index(
+                pd.unique(self.sc_ref_adata.obs[key_type])
+            ),
+        )
         try:
             st_adata_common = self.st_adata[:, overlap_genes].copy()
             sc.pp.normalize_total(st_adata_common, target_sum=1e4)
-            cell_contributions = st_adata_common.obsm[key_type].copy()
+            cell_contributions = assignment.posterior.copy()
             sc.pp.normalize_total(self.st_adata, target_sum=1e4)
             sc.pp.normalize_total(self.sc_ref_adata, target_sum=1e4)
             self.spot_sr.run(self)
@@ -186,7 +175,20 @@ class ScSVCSr(BenchmarkSVC):
             n_virtual_cells=int(len(self.svc_obs)),
             allocation_method="posterior_reference_allocation",
         )
-        self.logger.info(f"Extracted SVC expressions using simple allocation method")
+        self.logger.info("Extracted SVC expressions using simple allocation method")
+        self._projected_assignment = (
+            project_spot_assignment_to_virtual_cells(
+                assignment,
+                self.svc_obs,
+            )
+        )
+        self._conditioning_strength = getattr(
+            self.config,
+            "local_refinement_strength",
+            0.0,
+        )
+        self._conditioning_applied = False
+        self._graphagg_posterior_source = f"project(obsm[{key_type}])"
 
         SVC_X_raw = np.asarray(SVC_X, dtype=np.float64)
         SVC_X_graphagg = None
@@ -205,26 +207,6 @@ class ScSVCSr(BenchmarkSVC):
             )
         else:
             self.logger.info("SR graph aggregation disabled: only raw output will be evaluated")
-            if guidance_mode(self.config) == "off":
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key="sr-benchmark:graph-branch",
-                    reason=NotApplicableReason.ROUTE_EXCLUDED,
-                    reason_details={
-                        "route_component": "graph_branch",
-                        "condition": "disabled",
-                    },
-                )
-            else:
-                record_virtual_cell_unavailable(
-                    self.config,
-                    problem_key="sr-benchmark:graph-branch",
-                    reason=FallbackReason.OPERATOR_UNAVAILABLE,
-                    reason_details={
-                        "operator": "virtual_cell_ot",
-                        "condition": "graph_branch_disabled",
-                    },
-                )
 
         SVC_X_raw = SVC_X_raw / (np.sum(SVC_X_raw, axis=1, keepdims=True) + 1e-10) * 1e4
         if SVC_X_graphagg is not None:
@@ -258,6 +240,7 @@ class ScSVCSr(BenchmarkSVC):
                         "n_total": int(alpha_vals.shape[0]),
                         "alpha_quantiles": {str(q): float(v) for q, v in zip(q_points, q_vals)},
                     }
+        return self._conditioning_applied
 
     def _build_svc_adata(self, X, var_names):
         svc_obs = self.svc_obs.copy()
@@ -563,16 +546,6 @@ class ScSVCSr(BenchmarkSVC):
         n_cells = SVC_X.shape[0]
         if n_cells <= 1:
             self.logger.info("Skipping graph aggregation due to small cell count")
-            record_virtual_cell_not_applicable(
-                self.config,
-                problem_key="sr-benchmark:all",
-                reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                reason_details={
-                    "unit": "virtual_cell",
-                    "observed": int(n_cells),
-                    "required": 2,
-                },
-            )
             return SVC_X.copy()
         if target_mask is not None:
             target_mask = np.asarray(target_mask, dtype=bool)
@@ -602,18 +575,6 @@ class ScSVCSr(BenchmarkSVC):
             self.logger.info(
                 "Confidence-weighted alpha active for SR graph aggregation: full-graph smoothing strength varies by cell confidence"
             )
-        projected_state = None
-
-        def load_projected_state():
-            nonlocal projected_state
-            if projected_state is None:
-                projected_state = projected_virtual_assignment(
-                    self.st_adata,
-                    self.svc_obs,
-                    broad_key=self.config.cell_type_col,
-                )
-                self._graphagg_posterior_source = projected_state.source
-            return projected_state
 
         cell_types = self.svc_obs["cell_type"].astype(str).to_numpy()
         unique_types = np.unique(cell_types)
@@ -623,40 +584,17 @@ class ScSVCSr(BenchmarkSVC):
 
         for cell_type in unique_types:
             idx = np.where(cell_types == cell_type)[0]
-            problem_key = f"sr-benchmark:{cell_type}"
             target_local = None if target_mask is None else target_mask[idx]
             anchor_local = None if anchor_mask is None else anchor_mask[idx]
             alpha_local = None if alpha_weight_global is None else alpha_weight_global[idx]
             if target_local is not None and not np.any(target_local):
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key=problem_key,
-                    reason=NotApplicableReason.ROUTE_EXCLUDED,
-                    reason_details={"selection": "target"},
-                )
                 continue
             if anchor_local is not None and not np.any(anchor_local):
                 if target_local is None or np.any(target_local):
                     self.logger.info(f"cell type: {cell_type}, no selected anchors, skip anchor-only graph aggregation")
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key=problem_key,
-                    reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
-                    reason_details={"role": "anchor_donor"},
-                )
                 continue
             if idx.size < 50:
                 self.logger.info(f"cell type: {cell_type}, has too few cells, skip graph aggregation")
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key=problem_key,
-                    reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                    reason_details={
-                        "unit": "virtual_cell",
-                        "observed": int(idx.size),
-                        "required": 50,
-                    },
-                )
                 continue
 
             adata_cell = sc.AnnData(SVC_X[idx].copy())
@@ -673,12 +611,6 @@ class ScSVCSr(BenchmarkSVC):
             n_ct = idx.size
             K = min(int(self.config.rec_graph_n_neighbors), n_ct)
             if K <= 0:
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key=problem_key,
-                    reason=NotApplicableReason.EMPTY_SUPPORT,
-                    reason_details={"support": "neighbor"},
-                )
                 continue
 
             similarity_matrix = np.zeros((n_ct, K), dtype=np.float64)
@@ -726,15 +658,6 @@ class ScSVCSr(BenchmarkSVC):
             nu = neighbor_margin_expr
             if not (np.any(mu) and np.any(nu)):
                 self.logger.info(f"cell type: {cell_type}, skip graph aggregation due to empty marginals")
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key=problem_key,
-                    reason=NotApplicableReason.INVALID_MASS,
-                    reason_details={
-                        "side": "source_and_target",
-                        "condition": "empty",
-                    },
-                )
                 continue
 
             source_idx, target_idx, active_support = stabilize_local_ot_support(
@@ -746,12 +669,6 @@ class ScSVCSr(BenchmarkSVC):
                 self.logger.info(
                     f"cell type: {cell_type}, skip graph aggregation due to empty active support"
                 )
-                record_virtual_cell_not_applicable(
-                    self.config,
-                    problem_key=problem_key,
-                    reason=NotApplicableReason.EMPTY_SUPPORT,
-                    reason_details={"support": "active"},
-                )
                 continue
             stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
             stable_support[np.ix_(source_idx, target_idx)] = active_support
@@ -760,68 +677,45 @@ class ScSVCSr(BenchmarkSVC):
                 similarity_matrix,
                 valid_neighbor_mask,
             )
-            distance_matrix, reference_measure, attempted = (
-                prepare_virtual_cell_guidance(
-                    self.config,
-                    problem_key=problem_key,
-                    state_loader=lambda idx=idx: subset_virtual_assignment(
-                        load_projected_state(),
-                        self.svc_obs.iloc[idx]["cell_id"],
-                    ),
-                    neighbor_support=neighbor_idx_matrix,
-                    distance_matrix=distance_matrix,
-                    source_mass=nu,
-                    target_mass=mu,
-                )
+            group_assignment = subset_virtual_assignment(
+                self._projected_assignment,
+                self.svc_obs.iloc[idx]["cell_id"],
+            )
+            distance_matrix = condition_virtual_cell_ot_cost(
+                distance_matrix,
+                assignment=group_assignment,
+                neighbor_indices=neighbor_idx_matrix,
+                strength=self._conditioning_strength,
+            )
+            self._conditioning_applied = (
+                self._conditioning_applied
+                or self._conditioning_strength != 0
             )
             distance_matrix[~valid_neighbor_mask] = np.inf
-            try:
-                T_transform = solve_local_ot(
-                    nu,
-                    mu,
-                    distance_matrix.T,
-                    method=self.config.rec_ot_method,
-                    pot_reg=self.config.rec_pot_reg,
-                    pot_reg_m=self.config.rec_pot_reg_m,
-                    pot_reg_type=self.config.rec_pot_reg_type,
-                    pot_verbose=False,
-                    pot_num_iter_max=5000,
-                    reference_measure=reference_measure,
-                    valid_support_mask=valid_neighbor_mask.T,
-                    event_callback=getattr(
-                        self.config,
-                        "ot_event_callback",
-                        None,
-                    ),
-                )
-                adata_cell = self.graph_aggregate.run(
-                    adata=adata_cell,
-                    neighbor_idx_matrix=neighbor_idx_matrix,
-                    coupling_matrix=T_transform,
-                    alpha_override=alpha_local,
-                    valid_neighbor_mask=valid_neighbor_mask,
-                )
-            except KeyboardInterrupt:
-                record_virtual_cell_guidance_terminal(
+            T_transform = solve_local_ot(
+                nu,
+                mu,
+                distance_matrix.T,
+                method=self.config.rec_ot_method,
+                pot_reg=self.config.rec_pot_reg,
+                pot_reg_m=self.config.rec_pot_reg_m,
+                pot_reg_type=self.config.rec_pot_reg_type,
+                pot_verbose=False,
+                pot_num_iter_max=5000,
+                reference_measure=None,
+                valid_support_mask=valid_neighbor_mask.T,
+                event_callback=getattr(
                     self.config,
-                    problem_key=problem_key,
-                    attempted=attempted,
-                    outcome="interrupted",
-                )
-                raise
-            except Exception:
-                record_virtual_cell_guidance_terminal(
-                    self.config,
-                    problem_key=problem_key,
-                    attempted=attempted,
-                    outcome="failed",
-                )
-                raise
-            record_virtual_cell_guidance_terminal(
-                self.config,
-                problem_key=problem_key,
-                attempted=attempted,
-                outcome="applied",
+                    "ot_event_callback",
+                    None,
+                ),
+            )
+            adata_cell = self.graph_aggregate.run(
+                adata=adata_cell,
+                neighbor_idx_matrix=neighbor_idx_matrix,
+                coupling_matrix=T_transform,
+                alpha_override=alpha_local,
+                valid_neighbor_mask=valid_neighbor_mask,
             )
             smoothed_block = np.asarray(adata_cell.X)
             if target_local is None:
