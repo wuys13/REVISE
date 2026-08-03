@@ -234,6 +234,7 @@ def _validate_ist_carriers(spatial, expression, *, random_mapping: bool):
 
 def _mean_expression(expression, spatial_keys, expression_keys):
     import numpy as np
+    from scipy import sparse
 
     means = {}
     for cluster in set(spatial_keys):
@@ -242,7 +243,16 @@ def _mean_expression(expression, spatial_keys, expression_keys):
         ]
         block = expression.X[indices]
         mean = block.mean(axis=0)
-        means[cluster] = np.asarray(mean).reshape(-1)
+        means[cluster] = (
+            sparse.csr_matrix(mean)
+            if sparse.issparse(expression.X)
+            else np.asarray(mean).reshape(-1)
+        )
+    if sparse.issparse(expression.X):
+        return sparse.vstack(
+            [means[cluster] for cluster in spatial_keys],
+            format="csr",
+        )
     return np.vstack([means[cluster] for cluster in spatial_keys])
 
 

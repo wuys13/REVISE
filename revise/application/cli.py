@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Set both Global Anchoring and Local Refinement OT solvers; "
-            "standard sc-SVC defaults to TACCO, while 'pot' explicitly "
+            "iST-SVC defaults to TACCO, while 'pot' explicitly "
             "selects a different algorithm"
         ),
     )
@@ -76,8 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help=(
-            "Override posterior-conditioned local OT strength for sp-SVC "
-            "or sc-SVC-sr"
+            "Override posterior-conditioned local OT strength for hST-SVC "
+            "or sST-SVC"
         ),
     )
     parser.add_argument("--seed", type=int, default=None)

@@ -142,6 +142,7 @@ def test_ist_mean_assembles_single_result_with_explicit_carrier_ownership(
     assert result.obs.equals(spatial.obs)
     assert result.var_names.equals(expression.var_names)
     assert result.var.equals(expression.var)
+    assert sparse.issparse(result.X) is sparse_x
     assert np.allclose(
         result.X.toarray() if sparse.issparse(result.X) else result.X,
         [[4.0, 6.0], [12.0, 14.0], [4.0, 6.0]],
