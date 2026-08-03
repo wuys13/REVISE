@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from anndata import AnnData
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
 from revise.config import load_raw_config, merge_unified_config
@@ -441,6 +442,95 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
 
     assert captured["conf"].sr_assignment_seed == 731
     assert captured["conf"].pm_on_cell is ctx.pm_on_cell
+
+
+def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
+    adapters,
+    monkeypatch,
+    tmp_path,
+):
+    raw = load_raw_config(CONFIG_PATH)
+    merged = merge_unified_config(
+        raw_config=raw,
+        profile="benchmark_sr_batch",
+        runtime_overrides={"seed": 17},
+        io_overrides={"sample_size": 1},
+        algorithm_overrides={},
+    )
+    merged["io"]["data_root"] = str(tmp_path)
+    merged["io"]["output_root"] = str(tmp_path / "output")
+
+    st = AnnData(
+        X=np.ones((2, 1)),
+        obs=pd.DataFrame(index=["spot-1", "spot-2"]),
+        var=pd.DataFrame(index=["g1"]),
+    )
+    st.uns["all_cells_in_spot"] = {
+        "spot-1": ["c1", "c2"],
+        "spot-2": ["c3"],
+    }
+    real = AnnData(
+        X=np.ones((3, 1)),
+        obs=pd.DataFrame(
+            {"cell_id": ["c1", "c2", "c3"]},
+            index=["row-1", "row-2", "row-3"],
+        ),
+        var=pd.DataFrame(index=["g1"]),
+    )
+    reference = AnnData(
+        X=np.ones((2, 1)),
+        obs=pd.DataFrame({"Level1": ["A", "B"]}, index=["r1", "r2"]),
+        var=pd.DataFrame(index=["g1"]),
+    )
+
+    input_service = SimpleNamespace(
+        read_st_adata=lambda _path: st.copy(),
+        read_real_adata=lambda _path: real.copy(),
+        read_sc_ref_adata=lambda _path: reference.copy(),
+    )
+    monkeypatch.setattr(adapters, "_input_service", lambda _ctx: input_service)
+    monkeypatch.setattr(adapters, "ensure_all_cells_in_spot", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        adapters,
+        "_subsample_obs",
+        lambda adata, _size, _seed: (adata[["spot-1"], :].copy(), ["spot-1"]),
+    )
+
+    runner_module = types.ModuleType("revise.backend.runners.sc_svc_sr_benchmark")
+
+    class Runner:
+        def __init__(self, _st, _sc, conf, _real, _logger):
+            self.conf = conf
+
+    runner_module.ScSVCSr = Runner
+    monkeypatch.setitem(
+        sys.modules,
+        "revise.backend.runners.sc_svc_sr_benchmark",
+        runner_module,
+    )
+    pm = pd.DataFrame(
+        [[1.0, 0.0], [0.5, 0.5], [0.0, 1.0]],
+        index=["c1", "c2", "c3"],
+        columns=["A", "B"],
+    )
+    ctx = SimpleNamespace(
+        merged_config=merged,
+        io=merged["io"],
+        columns=merged["columns"],
+        runtime=merged["runtime"],
+        route_key="sim2real:spot_size",
+        run_dir=tmp_path,
+        logger=logging.getLogger("test-sr-subsampled-pm"),
+        compatibility_mode=False,
+        pm_on_cell=pm,
+        input_specs=None,
+    )
+
+    adapters.ScSvcSrBenchmarkStrategy().prepare_context(ctx)
+
+    assert ctx.runner.conf.pm_on_cell.index.tolist() == ["c1", "c2"]
+    assert ctx.real_st_adata.obs["cell_id"].tolist() == ["c1", "c2"]
+    assert ctx.pm_on_cell.index.tolist() == ["c1", "c2", "c3"]
 
 
 def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed_is_none(

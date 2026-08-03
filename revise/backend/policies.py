@@ -11,6 +11,7 @@ from revise.config.runner_conf import pm_on_cell_path_from_st_path
 from revise.config.runner_conf import resolve_input_specs
 from revise.config.runner_conf import resolved_input_path
 from revise.io import REVISEInputService
+from revise.io.input_service import PMOnCellSnapshotError
 from revise.utils import completed_artifact, input_identities, write_json
 
 
@@ -62,6 +63,7 @@ class ModeValidationPolicy(InputValidationPolicy):
         specs = resolve_input_specs(runtime, io_cfg)
         ctx.input_specs = specs
         input_service = REVISEInputService.from_context(ctx)
+        identities = []
         try:
             identities = input_identities(specs)
             ctx.pm_on_cell = None
@@ -76,7 +78,12 @@ class ModeValidationPolicy(InputValidationPolicy):
             identities.sort(key=lambda identity: identity["role"])
             ctx.input_identities = identities
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
-            ctx.input_identities = []
+            if isinstance(exc, PMOnCellSnapshotError):
+                identities.append(exc.identity)
+            ctx.input_identities = sorted(
+                identities,
+                key=lambda identity: identity["role"],
+            )
             raise ValueError(
                 "Invalid input identities: "
                 f"{type(exc).__name__}: {exc}"

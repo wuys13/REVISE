@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from hashlib import sha256
 import json
 import logging
 import shutil
@@ -315,6 +316,32 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
     assert before["sc_ref"]["sha256"] == after["sc_ref"]["sha256"]
     assert before["pm_on_cell"]["sha256"] != after["pm_on_cell"]["sha256"]
     assert all("data_fingerprint" not in manifest for manifest in manifests)
+
+
+def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
+    data_root = tmp_path / "data"
+    output_root = tmp_path / "output"
+    _write_inputs(data_root)
+    pm_path = data_root / "sample_Xenium_PM_on_cell.csv"
+    payload = b",A,B\nc1,invalid,0\nc2,0,1\n"
+    pm_path.write_bytes(payload)
+
+    with pytest.raises(ValueError, match="pm_on_cell"):
+        REVISEPipeline().run(
+            profile="application_sc_sr",
+            io_overrides={
+                "data_root": str(data_root),
+                "output_root": str(output_root),
+                "sample_name": "sample",
+            },
+            dry_run=True,
+        )
+
+    manifest_path = next(output_root.rglob("provenance.json"))
+    manifest = json.loads(manifest_path.read_text())
+    identities = {item["role"]: item for item in manifest["input_identities"]}
+    assert set(identities) == {"pm_on_cell", "sc_ref", "st"}
+    assert identities["pm_on_cell"]["sha256"] == sha256(payload).hexdigest()
 
 
 def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path):

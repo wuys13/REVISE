@@ -16,6 +16,12 @@ from revise.io.input_bundle import REVISEDataBundle
 from revise.io.spatialdata_service import SpatialDataService
 
 
+class PMOnCellSnapshotError(ValueError):
+    def __init__(self, message: str, identity: Dict[str, str]):
+        super().__init__(message)
+        self.identity = identity
+
+
 @dataclass
 class _LoadedAnnData:
     adata: AnnData
@@ -79,12 +85,15 @@ class REVISEInputService:
                     "after slash normalization"
                 )
             frame = pd.read_csv(BytesIO(payload), index_col=0)
+            self._validate_pm_on_cell_snapshot(frame, path=snapshot_path)
         except Exception as exc:
-            raise ValueError(
-                f"Invalid pm_on_cell snapshot: path={snapshot_path}; "
-                f"actual={type(exc).__name__}: {exc}"
+            raise PMOnCellSnapshotError(
+                (
+                    f"Invalid pm_on_cell snapshot: path={snapshot_path}; "
+                    f"actual={type(exc).__name__}: {exc}"
+                ),
+                identity,
             ) from exc
-        self._validate_pm_on_cell_snapshot(frame, path=snapshot_path)
         return frame, identity
 
     @staticmethod

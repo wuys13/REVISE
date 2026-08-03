@@ -1036,8 +1036,17 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
             for spot in adata_st.obs_names:
                 keep_cells.extend(mapping.get(str(spot), []))
             if keep_cells:
-                keep_index = pd.Index(np.asarray(keep_cells, dtype=str)).intersection(adata_real.obs_names)
-                adata_real = adata_real[keep_index, :].copy()
+                keep_index = pd.Index(np.asarray(keep_cells, dtype=str))
+                if "cell_id" in adata_real.obs:
+                    keep_mask = adata_real.obs["cell_id"].astype(str).isin(keep_index)
+                    adata_real = adata_real[keep_mask.to_numpy(), :].copy()
+                else:
+                    real_index = keep_index.intersection(adata_real.obs_names)
+                    adata_real = adata_real[real_index, :].copy()
+                if isinstance(conf.pm_on_cell, pd.DataFrame):
+                    conf.pm_on_cell = conf.pm_on_cell.loc[
+                        keep_index.intersection(conf.pm_on_cell.index)
+                    ].copy()
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st

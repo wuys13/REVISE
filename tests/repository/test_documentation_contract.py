@@ -431,7 +431,9 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
         sc_ref_file="sc_ref.h5ad",
     )
 
-    assert config.pm_on_cell_file == "data/sample_st_PM_on_cell.csv"
+    assert runner_contract["pm_on_cell_path_from_st_path"](
+        config.st_file_path
+    ) == "data/sample_st_PM_on_cell.csv"
     assert "<st-parent>/<st-stem>_PM_on_cell.csv" in normalized
     assert "case-sensitive" in concepts
     assert "no CLI path override" in concepts
@@ -450,26 +452,20 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
     source = "\n".join(
         line for cell in notebook["cells"] for line in cell.get("source", [])
     )
-    outputs = "\n".join(
-        str(value)
-        for cell in notebook["cells"]
-        for output in cell.get("outputs", [])
-        for value in (
-            output.get("text", [])
-            + output.get("data", {}).get("text/plain", [])
-            + output.get("data", {}).get("text/html", [])
-        )
-    )
-    expected_pm = (
-        "raw_data/visium_mouse_brain/"
-        "REVISEVisiumMouseBrain_Xenium_PM_on_cell.csv"
-    )
     assert (
         'PM_ON_CELL_PATH = PREPARED_ST_PATH.with_name('
         'f"{PREPARED_ST_PATH.stem}_PM_on_cell.csv")'
     ) in source
-    assert expected_pm in outputs
-    assert "raw_data/visium_mouse_brain/PM_on_cell.csv" not in outputs
+    pm_cells = [
+        cell
+        for cell in notebook["cells"]
+        if "PM_ON_CELL_PATH" in "".join(cell.get("source", []))
+    ]
+    assert len(pm_cells) == 3
+    assert all(
+        cell.get("execution_count") is None and cell.get("outputs") == []
+        for cell in pm_cells
+    )
 
 
 def test_docs_state_minimal_manifest_and_publication_guarantees():

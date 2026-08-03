@@ -21,10 +21,9 @@ def _base_kwargs(tmp_path):
 def test_pm_on_cell_path_is_derived_from_resolved_application_st_path(tmp_path):
     conf = ApplicationScSrConf(**_base_kwargs(tmp_path))
 
-    assert conf.pm_on_cell_file == str(tmp_path / "sample_spots_PM_on_cell.csv")
     assert callable(getattr(runner_conf, "pm_on_cell_path_from_st_path", None))
-    assert conf.pm_on_cell_file == runner_conf.pm_on_cell_path_from_st_path(
-        conf.st_file_path
+    assert runner_conf.pm_on_cell_path_from_st_path(conf.st_file_path) == str(
+        tmp_path / "sample_spots_PM_on_cell.csv"
     )
 
 
@@ -35,10 +34,13 @@ def test_pm_on_cell_path_keeps_benchmark_spot_sizes_distinct(tmp_path):
     spot_25 = BenchmarkSrConf(**kwargs, spot_size=25)
     spot_50 = BenchmarkSrConf(**kwargs, spot_size=50)
 
-    assert spot_25.pm_on_cell_file == str(
+    spot_25_pm = runner_conf.pm_on_cell_path_from_st_path(spot_25.st_file_path)
+    spot_50_pm = runner_conf.pm_on_cell_path_from_st_path(spot_50.st_file_path)
+
+    assert spot_25_pm == str(
         tmp_path / "sample" / "spot_25" / "spots_PM_on_cell.csv"
     )
-    assert spot_50.pm_on_cell_file == str(
+    assert spot_50_pm == str(
         tmp_path / "sample" / "spot_50" / "spots_PM_on_cell.csv"
     )
-    assert spot_25.pm_on_cell_file != spot_50.pm_on_cell_file
+    assert spot_25_pm != spot_50_pm

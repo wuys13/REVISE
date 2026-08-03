@@ -340,11 +340,6 @@ class ApplicationScSrConf(BaseConf):
     def sc_ref_file_path(self):
         return application_sc_ref_path(self.raw_data_path, self.sc_ref_file)
 
-    @property
-    def pm_on_cell_file(self):
-        return pm_on_cell_path_from_st_path(self.st_file_path)
-
-
 @dataclass
 class BenchmarkSegConf(BaseConf):
     st_file: str
@@ -489,11 +484,6 @@ class BenchmarkSrConf(BaseConf):
             self.sample_name,
             self.sc_ref_file,
         )
-
-    @property
-    def pm_on_cell_file(self):
-        return pm_on_cell_path_from_st_path(self.st_file_path)
-
 
 @dataclass
 class BenchmarkImputeConf(BaseConf):
