@@ -109,9 +109,9 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
     assert sc_path in quickstart
     assert "unique ``obs_names`` and unique ``var_names``" in normalized
     assert "Every route requires the configured broad annotation" in normalized
-    assert "Only standard sc-SVC requires the configured subtype annotation" in normalized
+    assert "Only iST-SVC requires the configured subtype annotation" in normalized
     assert (
-        "sc-SVC-sr composition and expression allocation use the broad "
+        "sST-SVC composition and expression allocation use the broad "
         "assignment and do not require a subtype column"
     ) in normalized
     assert "default ``Patient`` column" in normalized
@@ -141,44 +141,56 @@ def test_installation_describes_base_and_optional_capability_layers():
         "base package contains reconstruction, benchmarking, the POT implementation"
         in normalized
     )
-    assert "Standard sc-SVC default solver" in installation
-    assert "required by the default standard sc-SVC route" in normalized
+    assert "iST-SVC default solver" in installation
+    assert "required by the default iST-SVC route" in normalized
     assert "--ot-method pot" in installation
     assert "never selects POT as an automatic fallback" in normalized
 
 
-def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
+def test_public_docs_use_the_2x_selector_and_single_file_contract():
     text = _joined()
     service = _read(ROOT / "revise/application/service.py")
     case = _read(ROOT / "docs/source/case.rst")
     configuration = _read(ROOT / "docs/source/configuration.rst")
     api_diagram = _read(ROOT / "docs/source/api/classes_revise.svg")
     test_guide = _read(ROOT / "tests/README.md")
-    canonical_case, compatibility_case = case.split(
-        "Paper notebook compatibility", maxsplit=1
-    )
+    compatibility_heading = "Historical 1.x notebook compatibility"
+    assert compatibility_heading in case
+    canonical_case, compatibility_case = case.split(compatibility_heading, maxsplit=1)
 
-    for filename in ("hST-SVC.h5ad", "iST-SVC.h5ad", "sST-SVC.h5ad"):
-        assert filename not in text
+    for svc_type in ("hST-SVC", "iST-SVC", "sST-SVC"):
+        assert svc_type in text
     assert "sp_SVC.h5ad" not in canonical_case
     assert "sp_SVC.h5ad" in compatibility_case
     for sc_filename in ("sc_SVC_expr.h5ad", "sc_SVC_spatial.h5ad"):
-        assert sc_filename in canonical_case
-        assert sc_filename in service
+        assert sc_filename not in canonical_case
         assert sc_filename in compatibility_case
-    assert "<output-root>/<sample-name>/SVC.h5ad" in text
+    assert "<output-root>/<sample-name>/<svc-type>/SVC.h5ad" in text
     assert 'output_dir / "SVC.h5ad"' in service
-    assert 'output_dir / "sc_SVC_expr.h5ad"' in service
-    assert 'output_dir / "sc_SVC_spatial.h5ad"' in service
-    assert "result.type" in text
-    assert "sp-SVC" in text
-    assert "sc-SVC" in text
-    assert "sc-SVC-sr" in text
+    assert "Path(args.output_root) / args.sample_name / args.svc_type" in service
+    assert "``result`` contains exactly ``filename`` and ``type``" in configuration
+    assert "Only iST-SVC adds the top-level ``assembly`` record" in configuration
+    assert "--select-ct" not in text
+    assert "--sc-mapping" not in text
     assert "provenance.json" in text
-    assert "H5AD result(s) + manifest" in api_diagram
-    assert "SVC.h5ad + manifest type" not in api_diagram
-    assert "single public result file" not in configuration
+    assert "one route-qualified SVC.h5ad + manifest" in api_diagram
+    assert "single public result file" in configuration
     assert "optional legacy merge" not in test_guide
+
+
+def test_docs_label_1x_reproduction_material_without_recasting_it_as_2x_output():
+    surfaces = (
+        _read(ROOT / "README.md"),
+        _read(ROOT / "docs/source/gallery.rst"),
+        _read(ROOT / "docs/source/case.rst"),
+        _read(ROOT / "docs/source/limitations.rst"),
+        _read(ROOT / "reproduce/README.md"),
+    )
+
+    for surface in surfaces:
+        normalized = " ".join(surface.split()).lower()
+        assert "1.x historical reproduction material" in normalized
+        assert "not current 2.0 output" in normalized
 
 
 def test_public_docs_route_to_package_owned_application_utilities():
@@ -279,11 +291,11 @@ def test_assignment_docs_match_route_specific_runtime_contract():
     )
 
     assert "The only public local-refinement option" in configuration
-    assert "sp-SVC defaults to ``0.2``" in configuration
-    assert "sc-SVC-sr defaults to ``0.0``" in configuration
+    assert "hST-SVC defaults to ``0.2``" in configuration
+    assert "sST-SVC defaults to ``0.0``" in configuration
     assert "uses only ``argmax(Q)``" in configuration
     assert "There are no policy" in configuration
-    assert "sp-SVC conditions each local OT cost with ``Q``" in architecture
+    assert "hST-SVC conditions each local OT cost with ``Q``" in architecture
     assert "does not reweight GraphCluster with ``Q``" in architecture
     assert "``route``, ``applied``, and ``strength``" in architecture
     assert "authoritative failure explanation" in architecture
@@ -486,6 +498,15 @@ def test_docs_state_minimal_manifest_and_publication_guarantees():
     assert "not reader-atomic or crash-atomic" in combined
     assert "caller must guarantee one writer per stable public target" in combined
     assert "violating that precondition is undefined" in combined
+    assert "values that are ``None`` are omitted" in combined
+    assert "does not invent sentinel values" in combined
+    assert "hST-SVC and sST-SVC store only ``schema_version`` and ``svc_type``" in combined
+    assert "iST-SVC mean also stores ``ist_mapping`` and ``expression_source``" in combined
+    assert (
+        "iST-SVC random additionally stores ``effective_seed``, ``donor_column``, "
+        "and ``donor_sha256``"
+    ) in combined
+    assert "mean assembly may retain explicit ``null`` values" in combined
 
 
 def test_public_data_and_repository_claims_are_precise():
@@ -555,7 +576,7 @@ def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():
     assert "needs: package" in tacco_job
     assert "actions/download-artifact@v4" in tacco_job
     assert "name: candidate-dist" in tacco_job
-    assert "revise_svc-0.1.0rc1-py3-none-any.whl" in tacco_job
+    assert "revise_svc-2.0.0rc1-py3-none-any.whl" in tacco_job
     assert "working-directory: ${{ runner.temp }}" in tacco_job
     assert 'python -m venv "${RUNNER_TEMP}/candidate-venv"' in tacco_job
     assert '"${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install' in tacco_job

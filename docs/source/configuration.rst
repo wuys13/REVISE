@@ -55,8 +55,9 @@ diagnostic request can therefore be written in a custom configuration:
      lr:
        solver: pot
 
-The ``application_sc`` profile defaults both stages to TACCO and reads the
-high-level annotation arguments from the profile itself:
+The internal ``application_sc`` profile used by public ``iST-SVC`` defaults
+both stages to TACCO and reads the high-level annotation arguments from the
+profile itself. ``application_sc`` is not a public selector:
 
 .. code-block:: yaml
 
@@ -94,17 +95,17 @@ The only public local-refinement option is:
    local_refinement:
      strength: 0.2
 
-sp-SVC defaults to ``0.2``. sc-SVC-sr defaults to ``0.0`` and accepts an
-explicit non-negative finite strength. Standard sc-SVC and imputation reject
-this option and omit ``local_refinement`` from resolved configuration. sp-SVC
-uses ``Q`` in local OT; sc-SVC-sr first projects ``Q`` to virtual cells;
-standard sc-SVC uses only ``argmax(Q)`` for cohort routing. There are no
+hST-SVC defaults to ``0.2``. sST-SVC defaults to ``0.0`` and accepts an
+explicit non-negative finite strength. iST-SVC and imputation reject this
+option and omit ``local_refinement`` from resolved configuration. hST-SVC uses
+``Q`` in local OT; sST-SVC first projects ``Q`` to virtual cells; iST-SVC uses
+only ``argmax(Q)`` for cohort routing. There are no
 policy, compatibility-mode, reference-mode, or one-hot-fallback settings.
 Application and benchmark entrypoints expose the same single override as
 ``--local-refinement-strength``.
 
 The manifest records exactly ``route``, ``applied``, and ``strength`` under
-``local_refinement``. Mandatory sc-SVC-sr expression allocation is recorded
+``local_refinement``. Mandatory sST-SVC expression allocation is recorded
 separately under ``sr_allocation``.
 
 POT parameter example
@@ -148,10 +149,11 @@ inputs and outputs through dedicated parameters. Common IO values are:
      sc_ref_file: sc_ref.h5ad
 
 The input resolver applies the same route-specific path rules in preflight and
-full execution. sp-SVC and sc-SVC-sr publish
-``<output-root>/<sample-name>/SVC.h5ad``. Standard sc-SVC publishes its pair
-under ``<output-root>/<sample-name>/sc-SVC/<cell-type>/``. The canonical run
-directory contains ``provenance.json`` and internal evidence.
+full execution. Every public route publishes the single public result file
+``<output-root>/<sample-name>/<svc-type>/SVC.h5ad``. In
+``provenance.json``, ``result`` contains exactly ``filename`` and ``type``.
+Only iST-SVC adds the top-level ``assembly`` record. The canonical run
+directory contains internal strategy evidence, but no second public carrier.
 
 Python API
 ----------
@@ -177,4 +179,5 @@ Programmatic callers use the same configuration-resolution and validation path:
 
 Direct API use returns an ``SVC`` carrier. Route-specific public result
 publication is a contract of ``reconstruct.py``/``revise-reconstruct``, not of
-every low-level pipeline call.
+every low-level pipeline call. The profile and route values shown above are
+internal IDs, not public ``--svc-type`` selectors.

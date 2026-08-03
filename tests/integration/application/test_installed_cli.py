@@ -48,7 +48,10 @@ def _write_inputs(data_root: Path) -> None:
     sc_ref = AnnData(
         X=sparse.csr_matrix(rng.poisson(3, size=(52, 52)) + 1),
         obs=pd.DataFrame(
-            {"Level1": ["A"] * 52, "Level2": ["A1"] * 52},
+            {
+                "Level1": ["A", "B"] * 26,
+                "Level2": ["A1", "B1"] * 26,
+            },
             index=[f"cell-{index}" for index in range(52)],
         ),
         var=pd.DataFrame(index=st.var_names.copy()),
@@ -142,7 +145,8 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
         metadata = archive.read(metadata_name).decode("utf-8")
         entry_points = archive.read(entry_points_name).decode("utf-8")
 
-    assert f"Version: {__version__}" in metadata
+    assert __version__ == "2.0.0rc1"
+    assert "Version: 2.0.0rc1" in metadata
     assert "Name: revise-svc" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
     assert "revise/application/cli.py" in names
@@ -194,29 +198,37 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
     assert help_result.returncode == 0, help_result.stderr
     assert "--ot-method" in help_result.stdout
     assert "--dry-run" in help_result.stdout
+    assert "--svc-type {hST-SVC,iST-SVC,sST-SVC}" in help_result.stdout
+    assert "--ist-mapping {mean,random}" in help_result.stdout
     assert "--set" not in help_result.stdout
+    assert "--select-ct" not in help_result.stdout
+    assert "--sc-mapping" not in help_result.stdout
 
-    removed_set = _run(
-        [
-            str(command),
-            "--svc-type",
-            "sp-SVC",
-            "--sample-name",
-            "sample",
-            "--st-file",
-            "st.h5ad",
-            "--sc-ref-file",
-            "sc.h5ad",
-            "--data-root",
-            "data",
-            "--set",
-            "graph.method=pca",
-        ],
-        cwd=installed_cli["root"],
-        env=env,
-    )
-    assert removed_set.returncode == 2
-    assert "unrecognized arguments: --set" in removed_set.stderr
+    for removed_option in (
+        ["--set", "graph.method=pca"],
+        ["--select-ct", "T"],
+        ["--sc-mapping", "mean"],
+    ):
+        removed = _run(
+            [
+                str(command),
+                "--svc-type",
+                "iST-SVC",
+                "--sample-name",
+                "sample",
+                "--st-file",
+                "st.h5ad",
+                "--sc-ref-file",
+                "sc.h5ad",
+                "--data-root",
+                "data",
+                *removed_option,
+            ],
+            cwd=installed_cli["root"],
+            env=env,
+        )
+        assert removed.returncode == 2
+        assert f"unrecognized arguments: {removed_option[0]}" in removed.stderr
 
     version = _run(
         [str(command), "--version"],
@@ -258,17 +270,36 @@ def test_installed_wheel_benchmark_module_and_refinement_option(installed_cli):
     assert str(installed_cli["root"] / "venv") in payload["module"]
 
 
-def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
+@pytest.mark.parametrize(
+    ("svc_type", "profile", "route", "mapping_args"),
+    (
+        ("hST-SVC", "application_sp", "sp_svc:bin2cell", []),
+        (
+            "iST-SVC",
+            "application_sc",
+            "sc_svc:segmentation",
+            ["--ist-mapping", "mean"],
+        ),
+        ("sST-SVC", "application_sc_sr", "sc_svc_sr:spot_size", []),
+    ),
+)
+def test_installed_cli_preflight_runs_outside_checkout(
+    installed_cli,
+    svc_type,
+    profile,
+    route,
+    mapping_args,
+):
     root = installed_cli["root"]
-    data_root = root / "dry-data"
+    data_root = root / f"dry-data-{svc_type}"
     data_root.mkdir()
     _write_inputs(data_root)
-    output_root = root / "dry-output"
+    output_root = root / f"dry-output-{svc_type}"
     result = _run(
         [
             installed_cli["command"],
             "--svc-type",
-            "sp-SVC",
+            svc_type,
             "--sample-name",
             "sample",
             "--st-file",
@@ -279,6 +310,9 @@ def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
             data_root,
             "--output-root",
             output_root,
+            "--ot-method",
+            "pot",
+            *mapping_args,
             "--dry-run",
         ],
         cwd=root,
@@ -288,8 +322,9 @@ def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["status"] == "ready"
-    assert payload["pipeline"]["profile"] == "application_sp"
-    assert payload["pipeline"]["route"] == "sp_svc:bin2cell"
+    assert payload["svc_type"] == svc_type
+    assert payload["pipeline"]["profile"] == profile
+    assert payload["pipeline"]["route"] == route
     assert not list(output_root.rglob("*.h5ad"))
 
 
@@ -325,7 +360,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     common = [
         "--svc-type",
-        "sp-SVC",
+        "hST-SVC",
         "--sample-name",
         "sample",
         "--st-file",
@@ -355,7 +390,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         )
         assert result.returncode == 0, result.stderr
         payload = json.loads(result.stdout)
-        public = output_root / "sample" / "SVC.h5ad"
+        public = output_root / "sample" / "hST-SVC" / "SVC.h5ad"
         assert public.is_file()
         assert Path(payload["output"]) == public
         manifest_path = next(output_root.rglob("provenance.json"))
@@ -363,13 +398,15 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         assert manifest["run"]["status"] == "succeeded"
         assert manifest["result"] == {
             "filename": "SVC.h5ad",
-            "type": "sp-SVC",
+            "type": "hST-SVC",
         }
         assert "result_hash" not in manifest
         assert manifest["stages"][3]["status"] == "succeeded"
+        # Each A/B fixture group has 26 observations, so the runner's existing
+        # <=50 rule skips local OT while still exercising full publication.
         assert manifest["local_refinement"] == {
             "route": "sp_svc:bin2cell",
-            "applied": True,
+            "applied": False,
             "strength": 0.2,
         }
         public_artifacts = [
@@ -384,8 +421,10 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
             public.read_bytes()
         ).hexdigest()
         published = read_h5ad(public)
-        backlink = published.uns["revise_reconstruction"]["run_manifest"]
-        assert (public.parent / backlink).resolve() == manifest_path.resolve()
+        assert published.uns["revise_reconstruction"] == {
+            "schema_version": 2,
+            "svc_type": "hST-SVC",
+        }
         assert "ot_events" not in manifest
         runs.append((payload, manifest))
 

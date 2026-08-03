@@ -108,7 +108,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "revise-compute-biological-metrics = revise.analysis.cli:main"
         in entry_points
     )
-    assert "Version: 0.1.0rc1" in metadata
+    assert "Version: 2.0.0rc1" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
     assert any(name.endswith("/LICENSE") for name in wheel_names)
     assert not any(name.startswith("tests/") for name in wheel_names)
@@ -245,7 +245,7 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
         env=env,
     )
     assert probe.returncode == 0, probe.stderr
-    assert "0.1.0rc1" in probe.stdout
+    assert "2.0.0rc1" in probe.stdout
     assert str(venv) in probe.stdout
     assert str(ROOT) not in probe.stdout
     version = _run(
@@ -254,7 +254,7 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
         env=env,
     )
     assert version.returncode == 0, version.stderr
-    assert "0.1.0rc1" in version.stdout
+    assert "2.0.0rc1" in version.stdout
     histology_help = _run(
         [venv / "bin" / "revise-build-histology-priors", "--help"],
         cwd=root,

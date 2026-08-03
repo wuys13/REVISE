@@ -1,9 +1,12 @@
 API
 ===
 
-The stable public entry point is ``REVISEPipeline``. It resolves
+``REVISEPipeline`` is the stable low-level orchestration entry point. It resolves
 ``revise/revise.yaml`` profiles, applies runtime and IO overrides, and routes
-each run to the appropriate backend strategy.
+each run to the appropriate backend strategy. Route-qualified 2.0 publication
+belongs to ``revise-reconstruct``/``python reconstruct.py``; a direct pipeline
+call returns an internal ``SVC`` carrier and does not promise
+``<output-root>/<sample-name>/<svc-type>/SVC.h5ad``.
 
 Start with :doc:`../quickstart` for runnable examples and :doc:`../architecture`
 for the full lifecycle. This page is the reference surface for classes and
@@ -32,6 +35,10 @@ extension points.
         },
     )
 
+``application_sc`` and ``sc_svc`` in this example are retained internal IDs,
+not public selectors. The application CLI maps the public selectors hST-SVC,
+iST-SVC, and sST-SVC onto those internal profiles and routes.
+
 Pipeline
 ~~~~~~~~
 
@@ -47,9 +54,9 @@ Pipeline
 Facade Helpers
 ~~~~~~~~~~~~~~
 
-The facade helpers are thin wrappers around ``REVISEPipeline.run`` for callers
-that want named sp-SVC or sc-SVC functions while still using the unified config
-surface.
+The facade helpers are thin wrappers around ``REVISEPipeline.run`` retained for
+low-level callers. Their historical function names are not 2.0 public
+``--svc-type`` values and do not add the application publisher.
 
 .. autosummary::
     :toctree: generated
@@ -109,8 +116,8 @@ Backend Compatibility Runners
 These classes are kept for notebooks, parity checks, and low-level debugging.
 New application and benchmark code should prefer ``REVISEPipeline`` or the
 application or benchmark entrypoints.
-Direct sp-SVC and sc-SVC-sr runner callers receive the resolved
-``local_refinement_strength`` value. Standard sc-SVC and imputation callers do
+Direct internal hST-SVC and sST-SVC runner paths receive the resolved
+``local_refinement_strength`` value. The iST-SVC and imputation paths do
 not provide it. Assignment ``Q`` is validated at the global-assignment boundary
 and is not synthesized or repaired inside a runner.
 

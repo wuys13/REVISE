@@ -1,78 +1,78 @@
 Reconstruction Types
 ====================
 
-The installed/source interface selects one public 1.x reconstruction type
-with ``--svc-type``. sp-SVC and sc-SVC-sr publish ``SVC.h5ad``; standard
-sc-SVC publishes separate spatial and reference-expression carriers.
+REVISE 2.0 exposes exactly three public selectors through ``--svc-type``.
+Every route publishes one route-qualified public H5AD:
+``<output-root>/<sample-name>/<svc-type>/SVC.h5ad``.
 
-sp-SVC
-------
+hST-SVC
+-------
 
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sp-SVC \
+     --svc-type hST-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output
 
-The manifest records ``result.type`` as ``sp-SVC``.
+The public result is ``output/sample/hST-SVC/SVC.h5ad`` and the manifest
+records ``result.type`` as ``hST-SVC``.
 
-sc-SVC
-------
-
-The internal strategy returns spatial and expression carriers. The application
-service validates and publishes both without merging their expression spaces:
+iST-SVC
+-------
 
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sc-SVC \
+     --svc-type iST-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output \
-     --select-ct T
+     --ist-mapping mean
 
-The outputs are ``output/sample/sc-SVC/T/sc_SVC_spatial.h5ad`` and
-``output/sample/sc-SVC/T/sc_SVC_expr.h5ad``. The manifest records both logical
-roles. This default route requires TACCO. Install the ``tacco`` extra from a
-published package with ``python -m pip install "revise-svc[tacco]"`` or from a
-source checkout with ``python -m pip install ".[tacco]"``. If a different
-algorithm is acceptable, append ``--ot-method pot`` explicitly; REVISE does
-not fall back automatically.
+``mean`` is the default. It preserves the spatial carrier's observations and
+coordinates, preserves the expression carrier's genes, and assigns each
+spatial row its cluster's mean expression. ``--ist-mapping random`` instead
+selects a donor row from the same cluster with the effective seed and records
+the donor IDs and hash. Both modes publish only
+``output/sample/iST-SVC/SVC.h5ad``. This default route requires TACCO; pass
+``--ot-method pot`` only when deliberately selecting a different algorithm.
 
-sc-SVC-sr
----------
+sST-SVC
+-------
 
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sc-SVC-sr \
+     --svc-type sST-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output
 
-The manifest records ``result.type`` as ``sc-SVC-sr``. Missing curated
+The public result is ``output/sample/sST-SVC/SVC.h5ad``. Missing curated
 spot-to-cell and PM-on-cell inputs use the quota and seeded random allocation
 described in :doc:`concepts`.
 
 Shared provenance
 -----------------
 
-Each public AnnData artifact links to the canonical run's ``provenance.json``.
-The manifest records requested, attempted, and completed stages. Inspect it
-rather than inferring success from directory existence.
+The canonical run's ``provenance.json`` records the public AnnData. Its
+``result`` contains exactly ``filename`` and ``type``. Only iST-SVC adds the
+top-level ``assembly`` evidence. Inspect the manifest rather than inferring
+success from directory existence.
 
-Paper notebook compatibility
-----------------------------
+Historical 1.x notebook compatibility
+--------------------------------------
 
-Historical notebooks may consume copies such as ``sp_SVC.h5ad``. Standard
-sc-SVC intentionally preserves the notebook-compatible
-``sc_SVC_expr.h5ad``/``sc_SVC_spatial.h5ad`` pair as its current public
-contract.
+The files under ``reproduce/case/`` are 1.x historical reproduction material,
+not current 2.0 output. Their carrier names, including ``sp_SVC.h5ad``,
+``sc_SVC_expr.h5ad``, and ``sc_SVC_spatial.h5ad``, remain unchanged so the
+historical notebooks can still describe their original workflows. New 2.0
+runs must not treat those names or paired carriers as public output contracts.

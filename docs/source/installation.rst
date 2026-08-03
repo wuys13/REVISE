@@ -40,9 +40,9 @@ installed only when needed:
    * - Capability
      - Source-checkout install
      - Purpose
-   * - Standard sc-SVC default solver
+   * - iST-SVC default solver
      - ``python -m pip install ".[tacco]"``
-     - Installs TACCO 0.5.0, required by the default standard sc-SVC route
+     - Installs TACCO 0.5.0, required by the default iST-SVC route
    * - Pathway analysis
      - ``python -m pip install ".[pathway]"``
      - Dependencies used by pathway notebooks

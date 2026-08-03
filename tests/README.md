@@ -21,22 +21,22 @@ environment variables documented in their modules and CI jobs.
 | `analysis/test_cli.py` | `revise/analysis/` | Biological-metrics console entry and delegation | Package/analysis edits | Static entry contract only |
 | `application/test_cli_contract.py` | `revise/application/service.py` | Canonical publication, rollback, and result manifest | Application edits | Synthetic AnnData only |
 | `application/test_cli_dry_run.py` | `revise/application/cli.py` | Source CLI preflight without reconstruction | Application/config edits | No scientific stages |
-| `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
-| `application/test_service.py` | `revise/application/service.py` | sc-SVC pair publication and rollback | Result-assembly edits | No kernels or real data |
-| `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
+| `application/test_public_contract.py` | `revise/application/` | 2.0 selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
+| `application/test_service.py` | `revise/application/service.py` | iST-SVC assembly and single-file publication/rollback | Result-assembly edits | No kernels or real data |
+| `backend/test_application_column_contract.py` | Internal hST-SVC/sST-SVC runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
 | `backend/test_local_refinement_conditioning.py` | `revise/backend/ops/assignment.py`, `posterior_conditioning.py` | Strict global posterior axes and fixed local OT cost conditioning | Assignment/local-refinement edits | Synthetic matrices only |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
 | `backend/test_graph_cluster_spatial_score.py` | `revise/backend/` graph code | Graph aggregation, clustering, and scale smoke | Graph/backend edits | Component scale, not full pipeline |
-| `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | sc-SVC LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
-| `backend/test_sc_graph_guidance.py` | sc-SVC graph route | Argmax cohort routing and ordinary GraphCluster invariance to soft-Q changes | Graph-route edits | Synthetic Graph and public-route proof only |
-| `backend/test_sc_imputation_guidance.py` | sc-SVC imputation route | Guidance-free imputation, solver routing, and panel/dropout behavior | Imputation-route edits | Synthetic imputation proof |
-| `backend/test_sc_sr_guidance.py` | sc-SVC-sr route | Mandatory allocation invariance, projected virtual Q, and conditioned local OT | SR-route edits | Synthetic SR proof |
+| `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | Internal iST-SVC LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
+| `backend/test_sc_graph_guidance.py` | Internal iST-SVC graph route | Argmax cohort routing and ordinary GraphCluster invariance to soft-Q changes | Graph-route edits | Synthetic Graph and public-route proof only |
+| `backend/test_sc_imputation_guidance.py` | Internal iST-SVC imputation route | Guidance-free imputation, solver routing, and panel/dropout behavior | Imputation-route edits | Synthetic imputation proof |
+| `backend/test_sc_sr_guidance.py` | Internal sST-SVC route | Mandatory allocation invariance, projected virtual Q, and conditioned local OT | SR-route edits | Synthetic SR proof |
 | `backend/test_scientific_contracts.py` | Backend kernels/ops and analysis formulas | Cross-cutting scientific invariants | Scientific implementation edits | Formula/array contracts only |
 | `backend/test_solver_routing.py` | `revise/backend/ops/` and route callers | Solver dispatch and caller coverage | OT edits | Mocked/synthetic solver boundaries |
 | `backend/test_spot_sr_assignment.py` | `revise/backend/kernels/spot_sr.py` | PM-on-cell and random cell-type allocation | Spot-SR edits | Assignment, not localization truth |
 | `backend/test_spot_sr_min_cells.py` | `revise/backend/adapters.py` | Spot-SR gene filtering and overlap checks | Spot-SR preprocessing edits | Synthetic matrices |
 | `backend/test_spot_sr_quota.py` | `revise/backend/kernels/spot_sr.py` | Rounded quota repair and large component smoke | Spot-SR allocation edits | Quota correctness only |
-| `backend/test_sp_assignment_guidance.py` | sp-SVC route | Neighbor/replacement OT posterior conditioning and public application/benchmark routes | sp-route edits | Synthetic local-problem proof |
+| `backend/test_sp_assignment_guidance.py` | Internal hST-SVC route | Neighbor/replacement OT posterior conditioning and public application/benchmark routes | sp-route edits | Synthetic local-problem proof |
 | `backend/test_tacco_global_freshness.py` | TACCO global anchoring | Freshness and failure behavior | TACCO edits | Synthetic solver interaction |
 | `benchmark/test_cli_contract.py` | `revise/benchmark/cli.py` | Public benchmark options produce typed algorithm configuration without a generic override flag; process-scoped seeds become explicit per-leaf seeds | Benchmark CLI/config edits | Argument, seed, and wrapper contract only |
 | `benchmark/test_local_refinement_cli.py` | `revise/benchmark/cli.py` | Unique strength flag, removed-flag migration error, and minimal leaf aggregation | Local-refinement CLI edits | Argument/report contract only |

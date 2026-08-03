@@ -11,11 +11,11 @@ Data and biology
   yet been rerun for the current source checkout.
 - No current gate proves biological validation, clinical validity, cell-level
   localization accuracy, or biological parity across OT implementations.
-- Historical notebook outputs are preserved material, not results reproduced
-  by the current checkout.
+- The notebooks and carrier filenames are 1.x historical reproduction
+  material, not current 2.0 output and not results reproduced by this checkout.
 - Route-specific assignment tests establish software behavior, not that posterior
   compatibility improves reconstruction, subtype recovery, or imputation.
-- Cost conditioning is the fixed product mechanism for sp-SVC and sc-SVC-sr
+- Cost conditioning is the fixed product mechanism for hST-SVC and sST-SVC
   because it is portable across supported local solvers; this is not evidence
   that it is scientifically superior to another biological model.
 - Paper data and reproduced results are available at
@@ -33,7 +33,7 @@ Spot super-resolution localization
 -----------------------------------
 
 When segmentation-derived centers are present in
-``uns["revise_cell_locations"]``, sc-SVC-sr uses those x/y coordinates. Other
+``uns["revise_cell_locations"]``, sST-SVC uses those x/y coordinates. Other
 virtual-cell rows share the source spot centroid. With no ``PM_on_cell.csv``
 matrix, proportions are converted with ``np.round``, repaired to an exact quota,
 and assigned to the existing virtual-cell rows by a seeded random permutation.
@@ -55,11 +55,17 @@ posterior.
 Publication
 -----------
 
-The 1.x single-file and paired publishers stage a same-directory temporary
-H5AD, reload it before replacement, and use best-effort caught-exception
-rollback. Paired outputs are not reader-atomic or crash-atomic. The caller must
-guarantee one writer per stable public target; violating that precondition is
-undefined.
+The 2.0 single-file publisher stages a same-directory temporary H5AD, reloads
+it before replacement, and uses best-effort caught-exception rollback. It is
+not reader-atomic or crash-atomic. The caller must guarantee one writer per
+stable public target; violating that precondition is undefined. H5AD writing
+omits inapplicable metadata values that are ``None`` and does not invent
+sentinel values. In ``uns["revise_reconstruction"]``, hST-SVC and sST-SVC store
+only ``schema_version`` and ``svc_type``. iST-SVC mean also stores
+``ist_mapping`` and ``expression_source``. iST-SVC random additionally stores
+``effective_seed``, ``donor_column``, and ``donor_sha256``. This H5AD rule is
+separate from the top-level manifest: mean assembly may retain explicit
+``null`` values.
 
 Metrics
 -------

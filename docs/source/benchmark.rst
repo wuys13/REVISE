@@ -37,7 +37,7 @@ Benchmark variants use named options rather than a generic key/value override.
 These options are applied after the selected profile or custom ``--config``:
 
 - ``--local-refinement-strength`` sets the non-negative finite OT conditioning
-  strength for sp-SVC and sc-SVC-sr routes;
+  strength for hST-SVC and sST-SVC routes;
 - ``--sr-refinement-preset confidence_anchor`` selects the controlled graph
   refinement used by ``batch_effect`` and ``spot_size`` runs, while ``none``
   disables that refinement.
@@ -45,7 +45,7 @@ These options are applied after the selected profile or custom ``--config``:
 Omitting the strength creates no CLI override; route defaults remain
 authoritative. Each result reports minimal ``local_refinement`` evidence with
 ``route``, ``applied``, and ``strength``. Removed policy and posterior flags are
-rejected with a migration message rather than translated. sc-SVC-sr always
+rejected with a migration message rather than translated. sST-SVC always
 performs composition, row assignment, and closed-form expression allocation;
 the strength controls only posterior-conditioned local OT.
 

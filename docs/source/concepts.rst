@@ -14,22 +14,37 @@ Routes and result types
 
    * - Public type
      - Input rows
-     - Public 1.x result type
-   * - ``sp-SVC``
+     - Public 2.0 result type
+   * - ``hST-SVC``
      - high-definition bins or pseudo-cells
-     - ``sp-SVC``
-   * - ``sc-SVC``
+     - ``hST-SVC``
+   * - ``iST-SVC``
      - segmented imaging-ST cells
-     - ``sc-SVC``
-   * - ``sc-SVC-sr``
+     - ``iST-SVC``
+   * - ``sST-SVC``
      - spot-level observations
-     - ``sc-SVC-sr``
+     - ``sST-SVC``
 
-sp-SVC and sc-SVC-sr publish ``<output-root>/<sample-name>/SVC.h5ad``.
-Standard sc-SVC publishes separate spatial and reference-expression H5AD files
-under ``<output-root>/<sample-name>/sc-SVC/<cell-type>/``. Its
-``provenance.json`` records both logical roles separately from the internal
-route.
+Every route publishes exactly
+``<output-root>/<sample-name>/<svc-type>/SVC.h5ad``. The manifest ``result``
+contains the filename and selected public type. Only iST-SVC adds top-level
+``assembly`` evidence for its result construction.
+
+The implementation retains internal IDs such as ``application_sp``,
+``application_sc``, ``application_sc_sr``, ``sp_svc``, ``sc_svc``, and
+``sc_svc_sr`` for profiles and backend routing. They are not public selectors.
+
+iST-SVC result ownership
+------------------------
+
+``--ist-mapping mean`` is the default. Observations and spatial mappings come
+from the spatial carrier; variables and variable mappings come from the
+expression carrier. The public ``X`` uses the expression carrier as-is when
+computing each matched cluster mean. ``random`` keeps that ownership but uses a
+seeded donor row from the same cluster and records donor identities. H5AD
+serialization omits inapplicable ``uns`` keys whose values are ``None``; it
+does not invent sentinel values. Applicable mapping and donor evidence is
+present exactly as described in :doc:`case`.
 
 Shared lifecycle
 ----------------
@@ -51,7 +66,7 @@ stages. ``--ot-method`` is the convenience control that sets both stages.
 Spot super-resolution cell locations and random assignment
 -----------------------------------------------------------
 
-A sc-SVC-sr route needs a count of virtual cells per spot. If a curated
+An sST-SVC route needs a count of virtual cells per spot. If a curated
 ``uns["all_cells_in_spot"]`` mapping is absent, the input adapter estimates
 counts from spot transcript totals and creates virtual-cell rows.
 

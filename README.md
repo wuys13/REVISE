@@ -49,7 +49,7 @@ The installed command is `revise-reconstruct`:
 
 ```bash
 revise-reconstruct \
-  --svc-type sp-SVC \
+  --svc-type hST-SVC \
   --sample-name sample \
   --data-root data \
   --st-file st.h5ad \
@@ -59,17 +59,10 @@ revise-reconstruct \
 
 This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`. Choose another
 `--svc-type` using the guidance below.
-`sp-SVC` and `sc-SVC-sr` publish:
+Every route publishes exactly one public reconstruction file:
 
 ```text
-output/sample/SVC.h5ad
-```
-
-Standard `sc-SVC` publishes its two reconstruction carriers separately:
-
-```text
-output/sample/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
-output/sample/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
+output/sample/hST-SVC/SVC.h5ad
 ```
 
 The associated `provenance.json` records the selected type, resolved route,
@@ -81,11 +74,11 @@ configuration, inputs, stages, and artifacts. In a source checkout,
 
 | Your ST data | Typical platform and input rows | `--svc-type` | What REVISE reconstructs |
 | --- | --- | --- | --- |
-| **hST-like** high-resolution sequencing data | Visium HD; each row is a bin or pseudo-cell | `sp-SVC` | Reference-annotated expression with spatial refinement for the retained high-resolution units |
-| **iST** imaging-based data | iST-like segmented-cell inputs, such as Xenium, CosMx, or MERFISH | `sc-SVC` | Segmented-cell positions combined with reference-informed cell-state refinement and gene completion |
-| **sST** spot-based data | Visium; each row is a multi-cell spot | `sc-SVC-sr` | Reference-informed virtual-cell expression and cell-type composition within each spot |
+| **hST-like** high-resolution sequencing data | Visium HD; each row is a bin or pseudo-cell | `hST-SVC` | Reference-annotated expression with spatial refinement for the retained high-resolution units |
+| **iST** imaging-based data | iST-like segmented-cell inputs, such as Xenium, CosMx, or MERFISH | `iST-SVC` | Segmented-cell positions combined with reference-informed cell-state refinement and gene completion |
+| **sST** spot-based data | Visium; each row is a multi-cell spot | `sST-SVC` | Reference-informed virtual-cell expression and cell-type composition within each spot |
 
-`sc-SVC-sr` does not by itself infer true sub-spot cell positions. When the ST
+`sST-SVC` does not by itself infer true sub-spot cell positions. When the ST
 H5AD contains segmentation-derived cell centers, REVISE uses them. Virtual
 cells without a supplied center remain at their source spot center.
 
@@ -111,9 +104,9 @@ data/
 - The ST input must contain finite two-dimensional coordinates in
   `obsm["spatial"]`.
 - Every route requires the configured broad annotation selected by
-  `--cell-type-col` (default `obs["Level1"]`). Only standard `sc-SVC` requires
+  `--cell-type-col` (default `obs["Level1"]`). Only `iST-SVC` requires
   the configured subtype annotation selected by `--sub-cell-type-col`
-  (default `obs["Level2"]`). `sc-SVC-sr` composition and expression allocation
+  (default `obs["Level2"]`). `sST-SVC` composition and expression allocation
   use the broad assignment and do not require a subtype column.
 - If the reference contains the default `Patient` column, at least one row must
   match `--sample-name`; use `--patient-key` to select another column.
@@ -137,17 +130,18 @@ data/
 
 - `--seed`: controls deterministic random choices; default `42`.
 - `--ot-method pot|tacco`: selects one OT implementation for both Global
-  Anchoring and Local Refinement. Standard `sc-SVC` defaults to TACCO and
+  Anchoring and Local Refinement. `iST-SVC` defaults to TACCO and
   therefore requires the `tacco` extra; the other application profiles retain
   their configured solver. If TACCO is unavailable and a different algorithm
   is acceptable, explicitly pass `--ot-method pot`. REVISE never falls back
   automatically.
-- `--select-ct`: required for `sc-SVC`; names the one concrete broad cell type
-  to reconstruct.
+- `--ist-mapping mean|random`: only for `iST-SVC`; the default `mean` assigns
+  each spatial row its cluster's mean expression, while `random` selects a
+  seeded, recorded donor row from the same cluster.
 - `--cell-type-col`: selects the broad reference annotation column for all
   three routes.
 - `--sub-cell-type-col`: selects the refined annotation required only by
-  standard `sc-SVC`; `sc-SVC-sr` does not require this column.
+  `iST-SVC`; `sST-SVC` does not require this column.
 
 For advanced algorithm configuration, copy `revise/revise.yaml`, edit the
 relevant profile, and pass it with `--config`.
@@ -173,7 +167,7 @@ needed:
 
 | Capability | Installation | Purpose |
 | --- | --- | --- |
-| Standard sc-SVC default solver | `pip install "revise-svc[tacco]"` | Installs TACCO 0.5.0, required by the default standard sc-SVC route |
+| iST-SVC default solver | `pip install "revise-svc[tacco]"` | Installs TACCO 0.5.0, required by the default iST-SVC route |
 | Pathway analysis | `pip install "revise-svc[pathway]"` | Dependencies used by pathway analysis notebooks |
 | Cell-cell interaction analysis | `pip install "revise-svc[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
 | Trajectory analysis | `pip install "revise-svc[trajectory]"` | Dependencies used by trajectory analysis notebooks |
@@ -206,31 +200,31 @@ platform types:
 
 <p align="center">Confounding factors that limit current spatial transcriptomics technologies</p>
 
-REVISE reconstructs three complementary SVC types:
+REVISE 2.0 reconstructs three complementary public SVC types:
 
-- `sp-SVC`: spatial refinement for high-resolution spatial transcriptomics.
-- `sc-SVC`: molecular completion and cell-state refinement for imaging-based
+- `hST-SVC`: spatial refinement for high-resolution spatial transcriptomics.
+- `iST-SVC`: molecular completion and cell-state refinement for imaging-based
   spatial transcriptomics.
-- `sc-SVC-sr`: spot-level super-resolution reconstruction.
+- `sST-SVC`: spot-level super-resolution reconstruction.
 
 ![REVISE overview](png/REVISE_overview.png)
 
 <p align="center">Overview of the REVISE framework</p>
 
-`sp-SVC` and `sc-SVC-sr` publish:
+All three public selectors publish exactly:
 
 ```text
-<output-root>/<sample-name>/SVC.h5ad
+<output-root>/<sample-name>/<svc-type>/SVC.h5ad
 ```
 
-`sc-SVC` publishes `sc_SVC_spatial.h5ad` and `sc_SVC_expr.h5ad` under
-`<output-root>/<sample-name>/sc-SVC/<cell-type>/`. The run's
-`provenance.json` records each result role together with the resolved route,
-configuration, inputs, stages, and artifacts.
+The run's `provenance.json` records `result={filename,type}` together with the
+resolved route, configuration, inputs, stages, and artifacts. Only `iST-SVC`
+adds top-level assembly evidence describing its `mean` or `random` ownership.
 
 ## Reproduce
 
-Paper datasets and reproduced results are available from
+The notebooks and their carrier filenames are **1.x historical reproduction
+material**, not current 2.0 output. Paper datasets and reproduced results are available from
 <https://zenodo.org/records/17705737>. The repository keeps benchmark launchers
 and curated notebooks under [`reproduce/`](reproduce/); see
 [`reproduce/README.md`](reproduce/README.md) for the entry-point map.
@@ -277,7 +271,8 @@ reference resources.
 <details>
 <summary><strong>Reproduction scope and validation status</strong></summary>
 
-The notebooks preserve the paper workflows, but their presence does not mean
+These notebooks are 1.x historical reproduction material, not current 2.0
+output. They preserve the paper workflows, but their presence does not mean
 that the current source checkout has rerun every real-data analysis. Real-data
 end-to-end validation remains a separate release step. Installation does not
 download the paper datasets, reproduced results, or external analysis
@@ -307,6 +302,11 @@ svc = pipeline.run(
     },
 )
 ```
+
+This low-level Python surface intentionally uses internal profile and route IDs
+such as `application_sc` and `sc_svc`. They are not public `--svc-type`
+selectors and do not publish the route-qualified 2.0 result; use
+`revise-reconstruct` or `python reconstruct.py` for that application contract.
 
 </details>
 

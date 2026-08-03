@@ -47,8 +47,8 @@ The resolved paths are ``data/sample_st.h5ad`` and ``data/sc_ref.h5ad``. Both
 inputs require non-empty ``X``, unique ``obs_names`` and unique ``var_names``.
 The ST input requires two spatial coordinate columns in ``obsm["spatial"]``.
 Every route requires the configured broad annotation in reference ``obs``
-(``Level1`` by default). Only standard sc-SVC requires the configured subtype
-annotation (``Level2`` by default). sc-SVC-sr composition and expression
+(``Level1`` by default). Only iST-SVC requires the configured subtype
+annotation (``Level2`` by default). sST-SVC composition and expression
 allocation use the broad assignment and do not require a subtype column. The
 inputs must share at least one gene.
 
@@ -61,26 +61,26 @@ Application command
 .. code-block:: bash
 
    python reconstruct.py \
-     --svc-type sp-SVC \
+     --svc-type hST-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
      --sc-ref-file sc_ref.h5ad \
      --output-root output
 
-Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
-sc-SVC-sr`` for spot super-resolution. ``--cell-type-col`` selects the broad
+Use ``--svc-type iST-SVC`` for molecular completion and ``--svc-type
+sST-SVC`` for spot super-resolution. ``--cell-type-col`` selects the broad
 reference annotation on every route. ``--sub-cell-type-col`` selects the
-refined annotation required only by standard sc-SVC. sc-SVC-sr uses the broad
-assignment for composition and expression allocation. sc-SVC requires
-``--select-ct`` naming one concrete broad cell type. Its application profile
-defaults to TACCO; install it with
+refined annotation required only by iST-SVC. sST-SVC uses the broad
+assignment for composition and expression allocation. iST-SVC accepts only
+``--ist-mapping mean|random`` for result assembly and defaults to ``mean``.
+Its application profile defaults to TACCO; install it with
 ``python -m pip install ".[tacco]"`` from source or ``python -m pip install
 "revise-svc[tacco]"`` from a published package. If TACCO is unavailable and a
 different algorithm is acceptable, explicitly add ``--ot-method pot``. REVISE
 never switches algorithms automatically.
 
-For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in
+For sST-SVC, optional segmentation-derived centers use a DataFrame in
 ``st_adata.uns["revise_cell_locations"]`` with a unique ``cell_id`` index and
 ``spot_name/x/y`` columns. Its assignments agree with
 ``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
@@ -100,7 +100,7 @@ After installation, the equivalent package command is:
 .. code-block:: bash
 
    revise-reconstruct \
-     --svc-type sp-SVC \
+     --svc-type hST-SVC \
      --sample-name sample \
      --data-root data \
      --st-file st.h5ad \
@@ -113,29 +113,25 @@ without running reconstruction.
 Application output
 ------------------
 
-``sp-SVC`` and ``sc-SVC-sr`` publish:
+Every public selector publishes exactly one file:
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/SVC.h5ad
+   <output-root>/<sample-name>/<svc-type>/SVC.h5ad
 
-Standard ``sc-SVC`` publishes:
-
-.. code-block:: text
-
-   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
-   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
-
-Each file links to the canonical run's ``provenance.json``. The manifest
-records the result role, route, stages, configuration, per-role input
-identities, software identity, and artifacts.
+The canonical run's ``provenance.json`` records
+``result={filename,type}``, the route, stages, configuration, per-role input
+identities, software identity, and artifacts. Only iST-SVC adds a top-level
+``assembly`` record. Its ``mean`` mode owns spatial ``obs``/coordinates and
+expression ``var`` while filling ``X`` with per-cluster means. ``random`` uses
+the same carrier ownership but records the seeded donor IDs and their hash.
 
 Paper reproduction notebooks
 ----------------------------
 
-Curated application notebooks are tracked under ``reproduce/case/``. Standard
-sc-SVC now preserves the notebook spatial and reference-expression carriers as
-separate public outputs.
+Curated application notebooks under ``reproduce/case/`` are 1.x historical
+reproduction material, not current 2.0 output. Their historical carrier
+filenames remain unchanged for reproduction only.
 
 Application utilities
 ---------------------
@@ -155,5 +151,5 @@ analysis layer:
 .. code-block:: bash
 
    revise-compute-biological-metrics \
-     --input-h5ad output/sample/SVC.h5ad \
+     --input-h5ad output/sample/hST-SVC/SVC.h5ad \
      --output-dir output/sample/biological_metrics

@@ -80,11 +80,11 @@ jobs:
           python -m pip install
           -c constraints/python-${{ matrix.python-version }}.txt
           pytest
-          "${RUNNER_TEMP}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl"
+          "${RUNNER_TEMP}/candidate/revise_svc-2.0.0rc1-py3-none-any.whl"
       - name: Test installed reconstruction CLI
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-          REVISE_WHEEL: ${{ runner.temp }}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl
+          REVISE_WHEEL: ${{ runner.temp }}/candidate/revise_svc-2.0.0rc1-py3-none-any.whl
         run: >-
           python -m pytest -p no:capture -q
           tests/integration/application/test_installed_cli.py
@@ -121,7 +121,7 @@ jobs:
             -c constraints/python-3.11.txt \
             pytest \
             POT==0.9.5 tacco==0.5.0 \
-            "${RUNNER_TEMP}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl"
+            "${RUNNER_TEMP}/candidate/revise_svc-2.0.0rc1-py3-none-any.whl"
       - name: Copy solver smoke tests outside checkout
         run: |
           smoke_root="${RUNNER_TEMP}/wheel-smoke-tests/tests/integration/solvers"

@@ -1,5 +1,9 @@
 # Reproducing REVISE analyses
 
+Everything under `reproduce/` is 1.x historical reproduction material, not
+current 2.0 output. Historical notebooks and carrier filenames remain unchanged;
+use the current CLI contract for new 2.0 reconstructions.
+
 The reproduction material has two entry points:
 
 | Workflow | Command entry | Notebook entry |

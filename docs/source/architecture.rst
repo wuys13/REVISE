@@ -54,16 +54,16 @@ Assignment boundary
 Global anchoring produces one validated posterior ``Q`` and its ``argmax(Q)``
 labels. Downstream ownership is explicit per route:
 
-- sp-SVC conditions each local OT cost with ``Q``;
-- sc-SVC-sr projects spot-level ``Q`` to virtual cells, then conditions local
+- hST-SVC conditions each local OT cost with ``Q``;
+- sST-SVC projects spot-level ``Q`` to virtual cells, then conditions local
   OT cost;
-- standard sc-SVC uses only ``argmax(Q)`` to split broad cohorts and does not
+- iST-SVC uses only ``argmax(Q)`` to split broad cohorts and does not
   reweight GraphCluster with ``Q``;
 - imputation does not expose assignment-based local refinement.
 
 There is no optional policy or fallback state machine. ``Q`` must already have
 the expected observation/category axes, finite non-negative values, and
-positive row mass. sc-SVC-sr composition and closed-form expression allocation
+positive row mass. sST-SVC composition and closed-form expression allocation
 remain mandatory algorithm steps independent of local OT conditioning.
 
 Run evidence
@@ -72,30 +72,33 @@ Run evidence
 A full run allocates a unique canonical directory beneath the route-specific
 output tree. It contains at least the merged configuration, logs, and
 ``provenance.json``; successful stages may add hashed artifacts and benchmark
-metric tables. The exact directory leaf is unique and should be discovered
-through the public result link or manifest rather than reconstructed from a
-hard-coded timestamp pattern.
+metric tables. The exact directory leaf is unique; locate its
+``provenance.json`` beneath the route-specific output tree rather than
+reconstructing a hard-coded timestamp pattern.
 
-The canonical CLI publishes stable-facing application results. sp-SVC and
-sc-SVC-sr use:
+The canonical CLI publishes one stable-facing application result for every
+public selector:
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/SVC.h5ad
+   <output-root>/<sample-name>/<svc-type>/SVC.h5ad
 
-Standard sc-SVC publishes ``sc_SVC_spatial.h5ad`` and ``sc_SVC_expr.h5ad``
-under a cell-type subdirectory. The manifest records each public result role
-and the internal route separately. Strategy artifacts remain in the canonical
-run but are not additional public output contracts.
+The manifest ``result`` contains exactly ``filename`` and ``type``. Only
+iST-SVC adds the top-level ``assembly`` record for mean/random construction.
+Strategy carriers and other artifacts remain in the canonical run but are not
+additional public output contracts.
 
-For both the single-file and paired 1.x outputs, the publisher writes a
-same-directory temporary H5AD, reloads it before replacement, and provides
-best-effort caught-exception rollback. The pair is not reader-atomic or
-crash-atomic. The caller must guarantee one writer per stable public target;
-violating that precondition is undefined.
+The single-file publisher writes a same-directory temporary H5AD, reloads it
+before replacement, and provides best-effort caught-exception rollback. It is
+not reader-atomic or crash-atomic. The caller must guarantee one writer per
+stable public target; violating that precondition is undefined.
+
+Inapplicable reconstruction metadata values that are ``None`` are omitted by
+H5AD serialization; it does not invent sentinel values. Applicable keys remain
+exact.
 
 ``provenance.json.local_refinement`` is the minimal route-level evidence:
-``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,
+``route``, ``applied``, and ``strength``. For iST-SVC and imputation,
 ``strength`` is ``null`` because those routes do not accept the option.
 ``sr_allocation`` remains adjacent durable evidence for mandatory SR
 allocation.

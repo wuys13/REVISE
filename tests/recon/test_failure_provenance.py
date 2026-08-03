@@ -359,7 +359,7 @@ def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
             return super()._write_final_metadata(ctx)
 
     output_root = tmp_path / "publication-rollback"
-    public_path = output_root / "callback-case" / "SVC.h5ad"
+    public_path = output_root / "callback-case" / "hST-SVC" / "SVC.h5ad"
     public_path.parent.mkdir(parents=True)
     public_path.write_bytes(b"previous-result")
     _write_framework_inputs(tmp_path, "callback-case")
@@ -372,7 +372,7 @@ def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
         artifact = completed_artifact("public_result", public_path)
         ctx.provenance["result"] = {
             "filename": "SVC.h5ad",
-            "type": "sp-SVC",
+            "type": "hST-SVC",
         }
         ctx.record_artifact(artifact)
 
