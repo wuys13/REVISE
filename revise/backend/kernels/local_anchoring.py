@@ -8,7 +8,6 @@ from anndata import AnnData
 
 from revise.backend.kernels.base import BaseKernel
 from revise.backend.kernels.global_anchoring import GlobalAnchoringKernel
-from revise.backend.ops.assignment import AssignmentState
 from revise.backend.ops.distance import bhattacharyya_distance
 from revise.backend.ops.local_ot import solve_local_ot
 from revise.config.runner_conf import ApplicationScConf
@@ -96,30 +95,3 @@ class LocalAnchoringKernel(BaseKernel):
             {np.nan: self.unknown_key}
         )
         return target
-
-    @staticmethod
-    def assignment_state(
-        annotated: AnnData,
-        key: str,
-    ) -> AssignmentState | None:
-        """Package this anchoring call's labeled soft output for policy validation."""
-        if key not in annotated.obsm:
-            return None
-        probabilities = annotated.obsm[key]
-        if not isinstance(probabilities, pd.DataFrame):
-            return None
-        return AssignmentState(
-            values=probabilities.to_numpy(dtype=np.float64),
-            observation_labels=probabilities.index,
-            category_labels=probabilities.columns,
-            source=f"local_anchoring:obsm[{key}]",
-            level=str(key),
-            value_semantics="soft",
-            lineage=[
-                {
-                    "operation": "local_anchoring",
-                    "container": "obsm",
-                    "key": str(key),
-                }
-            ],
-        )

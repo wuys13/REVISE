@@ -3,10 +3,7 @@ import scanpy as sc
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphClusterKernel as GraphCluster
 from revise.backend.kernels import LocalAnchoringKernel as LocalAnchoring
-from revise.backend.ops.assignment_guidance import (
-    NotApplicableReason,
-    assignment_guidance_mode,
-)
+from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.analysis.bio import get_degs
 from revise.analysis.bio import conclusions_write
 from revise.analysis.bio import plot_volcano
@@ -68,19 +65,10 @@ class ScSVC(ApplicationSVC):
         annotate_kwargs = dict(self.config.__dict__)
         annotate_kwargs["cell_type_col"] = sub_cell_type_col
         ct_adata_sp = self.local_annotate_method.run(ct_adata_sp, ct_adata_sc, **annotate_kwargs)
-        guidance_state = None
-        if assignment_guidance_mode(self.config) != "off":
-            guidance_state = self.local_annotate_method.assignment_state(
-                ct_adata_sp,
-                sub_cell_type_col,
-            )
         sc_SVC_adata, _merge_df, best_res = self.graph_cluster.run(
             ct_adata_sp,
             resolutions,
             sub_cell_type_col,
-            guidance_state=guidance_state,
-            problem_key=problem_key,
-            selected_resolution=select_res,
         )
         if select_res is None:
             self.logger.info(f"User does not input select_res, use best_res {best_res} based on spatial alignment score")

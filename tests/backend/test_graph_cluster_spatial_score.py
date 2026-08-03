@@ -9,8 +9,10 @@ import pytest
 from anndata import AnnData
 from scipy import sparse
 
-from revise.backend.ops.assignment import AssignmentState, AssignmentStateError
-from revise.backend.ops.assignment_guidance import AssignmentGuidanceCollector
+from revise.backend.ops.assignment_guidance import (
+    AssignmentGuidanceCollector,
+    NotApplicableReason,
+)
 
 
 ISOLATED_GRAPH_CLUSTER_MODULE_NAMES = (
@@ -33,7 +35,9 @@ def _snapshot_modules(module_names):
             continue
         parent = sys.modules.get(parent_name)
         parent_attributes[(parent_name, attribute)] = (
-            getattr(parent, attribute, _MISSING) if parent is not None else _MISSING
+            getattr(parent, attribute, _MISSING)
+            if parent is not None
+            else _MISSING
         )
     return modules, parent_attributes
 
@@ -54,16 +58,6 @@ def _restore_modules(snapshot) -> None:
                 delattr(parent, attribute)
         else:
             setattr(parent, attribute, value)
-    unrestored = [
-        module_name
-        for module_name, module in modules.items()
-        if (
-            (module is _MISSING and module_name in sys.modules)
-            or (module is not _MISSING and sys.modules.get(module_name) is not module)
-        )
-    ]
-    if unrestored:
-        raise AssertionError(f"failed to restore isolated modules: {unrestored}")
 
 
 @pytest.fixture
@@ -71,8 +65,14 @@ def graph_cluster_module():
     snapshot = _snapshot_modules(ISOLATED_GRAPH_CLUSTER_MODULE_NAMES)
     for module_name in ISOLATED_GRAPH_CLUSTER_MODULE_NAMES:
         sys.modules.pop(module_name, None)
-    sys.modules["scanpy"] = types.ModuleType("scanpy")
-    sys.modules["squidpy"] = types.ModuleType("squidpy")
+    scanpy = types.ModuleType("scanpy")
+    scanpy.pp = SimpleNamespace()
+    scanpy.tl = SimpleNamespace()
+    scanpy.pl = SimpleNamespace()
+    squidpy = types.ModuleType("squidpy")
+    squidpy.gr = SimpleNamespace()
+    sys.modules["scanpy"] = scanpy
+    sys.modules["squidpy"] = squidpy
     try:
         yield importlib.import_module("revise.backend.kernels.graph_cluster")
     finally:
@@ -84,9 +84,63 @@ def spatial_score(graph_cluster_module):
     return graph_cluster_module.get_spatial_score
 
 
-def _patch_graph_cluster_runtime(module, monkeypatch, captured):
-    gene_graph = sparse.csr_matrix([[0.0, 1.0], [1.0, 0.0]])
-    spatial_graph = sparse.csr_matrix([[1.0, 0.0], [0.0, 1.0]])
+def _config(collector=None):
+    return SimpleNamespace(
+        rec_random_state=11,
+        rec_graph_alpha=0.25,
+        rec_graph_method="joint",
+        plot_flag=False,
+        # Temporary compatibility fields are used only by
+        # record_not_applicable until U7 removes the old collector.
+        assignment_guidance_policy="off",
+        assignment_guidance_callback=(
+            None if collector is None else collector.callback
+        ),
+        assignment_guidance_route="sc_svc:segmentation",
+        posterior_conditioning_beta=1.0,
+        posterior_conditioning_min_affinity=0.05,
+        posterior_conditioning_cost_strength=0.2,
+    )
+
+
+def _adata(level1_q):
+    names = ["cell-1", "cell-2", "cell-3", "cell-4"]
+    adata = AnnData(
+        X=np.ones((4, 3), dtype=np.float64),
+        obs=pd.DataFrame(
+            {"Level1": ["A", "A", "B", "B"]}, index=names
+        ),
+        var=pd.DataFrame(index=["g1", "g2", "g3"]),
+    )
+    adata.obsm["Level1"] = pd.DataFrame(
+        level1_q, index=names, columns=["A", "B"]
+    )
+    adata.obsm["Level2"] = pd.DataFrame(
+        [[0.8, 0.2], [0.7, 0.3], [0.2, 0.8], [0.1, 0.9]],
+        index=names,
+        columns=["a1", "a2"],
+    )
+    return adata
+
+
+def _patch_graph_runtime(module, monkeypatch):
+    gene_graph = sparse.csr_matrix(
+        [
+            [0.0, 1.0, 0.5, 0.0],
+            [1.0, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 1.0],
+            [0.0, 0.5, 1.0, 0.0],
+        ]
+    )
+    spatial_graph = sparse.csr_matrix(
+        [
+            [0.0, 1.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]
+    )
+    captured = {"leiden": []}
 
     def highly_variable_genes(adata, **_kwargs):
         adata.var["highly_variable"] = True
@@ -97,10 +151,21 @@ def _patch_graph_cluster_runtime(module, monkeypatch, captured):
     def spatial_neighbors(adata):
         adata.obsp["spatial_connectivities"] = spatial_graph.copy()
 
-    def leiden(adata, *, adjacency, key_added, **_kwargs):
-        captured["leiden_adjacency"] = adjacency.copy()
-        captured.setdefault("leiden_adjacencies", []).append(adjacency.copy())
-        adata.obs[key_added] = ["0", "1"]
+    def leiden(adata, *, adjacency, resolution, key_added, random_state):
+        captured["leiden"].append(
+            {
+                "resolution": resolution,
+                "key_added": key_added,
+                "random_state": random_state,
+                "adjacency": adjacency.copy(),
+            }
+        )
+        labels = (
+            ["0", "1", "0", "1"]
+            if float(resolution) == 0.5
+            else ["0", "0", "1", "1"]
+        )
+        adata.obs[key_added] = pd.Categorical(labels)
 
     module.sc.pp = SimpleNamespace(
         normalize_total=lambda *_args, **_kwargs: None,
@@ -118,157 +183,172 @@ def _patch_graph_cluster_runtime(module, monkeypatch, captured):
     monkeypatch.setattr(
         coefficients,
         "get_weighted_align_score",
-        lambda *_args, **_kwargs: 1.0,
+        lambda _adata, *, res, label: 0.3 if float(res) == 0.5 else 0.9,
     )
-    return gene_graph
+    return gene_graph, spatial_graph, captured
 
 
-def _run_graph_cluster(
-    module,
-    monkeypatch,
-    *,
-    obsm,
-    guidance="prefer",
-    guidance_state=None,
-):
-    captured = {"warnings": []}
-    base_graph = _patch_graph_cluster_runtime(module, monkeypatch, captured)
-    obs_names = ["cell-1", "cell-2"]
-    matrices = {
-        key: pd.DataFrame(values, index=obs_names)
-        for key, values in obsm.items()
-    }
-    adata = AnnData(
-        X=np.ones((2, 2)),
-        obs=pd.DataFrame(index=obs_names),
-        var=pd.DataFrame(index=["g1", "g2"]),
-        obsm=matrices,
+def _run_kernel(module, monkeypatch, level1_q, *, collector=None):
+    gene_graph, spatial_graph, captured = _patch_graph_runtime(
+        module, monkeypatch
     )
-
-    def capture_compatibility(left, right, *, support, **_kwargs):
-        captured["left_state"] = left
-        captured["right_state"] = right
-        captured["support"] = support
-        return np.ones(len(support[0]), dtype=np.float64)
-
-    monkeypatch.setattr(module, "assignment_compatibility", capture_compatibility)
-    monkeypatch.setattr(
-        module,
-        "graph_guidance",
-        lambda weights, _affinity, _strength: weights * 3.0,
+    kernel = module.GraphClusterKernel(
+        _config(collector),
+        SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
     )
-    collector = AssignmentGuidanceCollector()
-    logger = SimpleNamespace(
-        info=lambda *_args, **_kwargs: None,
-        warning=lambda *args, **_kwargs: captured["warnings"].append(args),
-    )
-    config = SimpleNamespace(
-        rec_random_state=0,
-        rec_graph_alpha=0.5,
-        rec_graph_method="pca",
-        assignment_guidance_policy=guidance,
-        posterior_conditioning_enabled=guidance != "off",
-        posterior_conditioning_mode="cost",
-        posterior_conditioning_key="Level1",
-        posterior_conditioning_beta=1.0,
-        posterior_conditioning_min_affinity=0.0,
-        posterior_conditioning_strict=guidance == "require",
-        posterior_conditioning_cost_strength=1.0,
-        assignment_guidance_callback=collector.callback,
-        assignment_guidance_route="real2real:cellular",
-        plot_flag=False,
-    )
-    module.GraphClusterKernel(config, logger).run(
-        adata,
-        resolution=[0.5],
+    output, metrics, best_res = kernel.run(
+        _adata(level1_q),
+        resolution=[0.5, 1.0],
         label="Level2",
-        guidance_state=guidance_state,
-        problem_key="standard-sc:A",
     )
-    captured["events"] = collector.events
-    return captured, base_graph
+    return output, metrics, best_res, captured, gene_graph, spatial_graph
 
 
-def test_graph_cluster_uses_explicit_level2_state_not_global_level1_key(
-    graph_cluster_module,
-    monkeypatch,
+def test_same_argmax_different_ga_q_preserves_graph_edges_and_leiden(
+    graph_cluster_module, monkeypatch
 ):
-    module = graph_cluster_module
-    level1 = np.array([[0.9, 0.1], [0.2, 0.8]])
-    level2 = np.array([[0.1, 0.9], [0.8, 0.2]])
-    state = AssignmentState(
-        values=level2,
-        observation_labels=("cell-1", "cell-2"),
-        category_labels=("sub-a", "sub-b"),
-        source="local_anchoring:obsm[Level2]",
-        level="Level2",
-        value_semantics="soft",
-        lineage=[],
+    first_q = np.array(
+        [[0.9, 0.1], [0.6, 0.4], [0.2, 0.8], [0.1, 0.9]]
     )
-    captured, _ = _run_graph_cluster(
-        module,
-        monkeypatch,
-        obsm={
-            "Level1": level1,
-            "Level2": level2,
-        },
-        guidance_state=state,
+    second_q = np.array(
+        [[0.51, 0.49], [0.99, 0.01], [0.49, 0.51], [0.3, 0.7]]
     )
 
-    np.testing.assert_allclose(captured["left_state"].values, level2)
-    assert captured["left_state"].level == "Level2"
-    assert captured["right_state"].source == "local_anchoring:obsm[Level2]"
-    np.testing.assert_allclose(
-        captured["leiden_adjacency"].toarray(),
-        [[0.0, 3.0], [3.0, 0.0]],
-    )
-    assert captured["events"][0]["outcome"] == "applied"
+    first = _run_kernel(graph_cluster_module, monkeypatch, first_q)
+    second = _run_kernel(graph_cluster_module, monkeypatch, second_q)
+
+    (
+        first_output,
+        first_metrics,
+        first_best,
+        first_calls,
+        gene_graph,
+        spatial_graph,
+    ) = first
+    second_output, second_metrics, second_best, second_calls, *_ = second
+    assert first_best == second_best == 1.0
+    pd.testing.assert_frame_equal(first_metrics, second_metrics)
+    assert len(first_calls["leiden"]) == len(second_calls["leiden"]) == 2
+    for left, right in zip(first_calls["leiden"], second_calls["leiden"]):
+        assert left["resolution"] == right["resolution"]
+        assert left["key_added"] == right["key_added"]
+        assert left["random_state"] == right["random_state"] == 11
+        np.testing.assert_allclose(
+            left["adjacency"].toarray(), right["adjacency"].toarray()
+        )
+        np.testing.assert_allclose(
+            left["adjacency"].toarray(),
+            (0.75 * gene_graph + 0.25 * spatial_graph).toarray(),
+        )
+    assert first_output.obs["leiden_0.5"].tolist() == second_output.obs[
+        "leiden_0.5"
+    ].tolist()
+    assert first_output.obs["leiden_1.0"].tolist() == second_output.obs[
+        "leiden_1.0"
+    ].tolist()
+    assert "assignment_guided_connectivities" not in first_output.obsp
+    assert "assignment_guided_connectivities" not in second_output.obsp
 
 
-@pytest.mark.parametrize(
-    ("guidance", "expected_outcome", "raises"),
-    [
-        ("prefer", "fallback", False),
-        ("require", "failed", True),
-    ],
-)
-def test_graph_cluster_missing_level2_obeys_prefer_require_policy(
-    graph_cluster_module,
-    monkeypatch,
-    guidance,
-    expected_outcome,
-    raises,
+def test_temporary_not_applicable_event_does_not_change_clustering(
+    graph_cluster_module, monkeypatch
 ):
-    module = graph_cluster_module
-    if raises:
-        with pytest.raises(
-            AssignmentStateError,
-            match="assignment_state_unavailable",
-        ):
-            _run_graph_cluster(
-                module,
-                monkeypatch,
-                obsm={},
-                guidance=guidance,
-                guidance_state=None,
-            )
-        return
-
-    captured, base_graph = _run_graph_cluster(
-        module,
-        monkeypatch,
-        obsm={},
-        guidance=guidance,
-        guidance_state=None,
+    collector = AssignmentGuidanceCollector()
+    q = np.array(
+        [[0.9, 0.1], [0.6, 0.4], [0.2, 0.8], [0.1, 0.9]]
+    )
+    kernel = graph_cluster_module.GraphClusterKernel(
+        _config(collector),
+        SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+    )
+    kernel.record_not_applicable(
+        problem_key="standard-sc:skipped",
+        reason=NotApplicableReason.INSUFFICIENT_UNITS,
+        reason_details={"observed": 1, "required": 2},
+    )
+    _gene, _space, calls = _patch_graph_runtime(
+        graph_cluster_module, monkeypatch
+    )
+    output, _metrics, _best = kernel.run(
+        _adata(q), resolution=[0.5, 1.0], label="Level2"
     )
 
-    assert "left_state" not in captured
-    assert captured["events"][0]["outcome"] == expected_outcome
-    assert captured["events"][0]["reason"] == "assignment_missing"
-    np.testing.assert_allclose(
-        captured["leiden_adjacency"].toarray(),
-        base_graph.toarray(),
+    assert len(calls["leiden"]) == 2
+    assert output.obs["leiden_1.0"].tolist() == ["0", "0", "1", "1"]
+    [event] = collector.events
+    assert event["outcome"] == "not_applicable"
+
+
+def test_graph_clustering_needs_no_assignment_policy_config(
+    graph_cluster_module, monkeypatch
+):
+    q = np.array(
+        [[0.9, 0.1], [0.6, 0.4], [0.2, 0.8], [0.1, 0.9]]
     )
+    _gene, _space, calls = _patch_graph_runtime(
+        graph_cluster_module, monkeypatch
+    )
+    kernel = graph_cluster_module.GraphClusterKernel(
+        SimpleNamespace(
+            rec_random_state=11,
+            rec_graph_alpha=0.25,
+            rec_graph_method="joint",
+            plot_flag=False,
+        ),
+        SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    output, _metrics, best_res = kernel.run(
+        _adata(q), resolution=[0.5, 1.0], label="Level2"
+    )
+
+    assert best_res == 1.0
+    assert len(calls["leiden"]) == 2
+    assert output.obs["leiden_1.0"].tolist() == ["0", "0", "1", "1"]
+
+
+def test_first_resolution_leiden_failure_propagates_without_continuing(
+    graph_cluster_module, monkeypatch
+):
+    q = np.array(
+        [[0.9, 0.1], [0.6, 0.4], [0.2, 0.8], [0.1, 0.9]]
+    )
+    _gene, _space, _captured = _patch_graph_runtime(
+        graph_cluster_module, monkeypatch
+    )
+    calls = []
+
+    def fail_first_leiden(*_args, **kwargs):
+        calls.append(float(kwargs["resolution"]))
+        raise RuntimeError("base Leiden failed")
+
+    graph_cluster_module.sc.tl.leiden = fail_first_leiden
+    kernel = graph_cluster_module.GraphClusterKernel(
+        SimpleNamespace(
+            rec_random_state=11,
+            rec_graph_alpha=0.25,
+            rec_graph_method="joint",
+            plot_flag=False,
+        ),
+        SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="base Leiden failed"):
+        kernel.run(_adata(q), resolution=[0.5, 1.0], label="Level2")
+
+    assert calls == [0.5]
 
 
 def _dense_source_row_oracle(graph, labels):
@@ -289,7 +369,9 @@ def test_spatial_score_matches_dense_source_row_oracle_without_mutating_graph(
     labels = np.array(["a", "a", "b", "b", "c", "a"])
     graph = sparse.coo_matrix(
         (
-            np.array([1.5, 2.0, -0.5, 4.0, 3.0, 1.25, -2.0, 0.0, 1.0, 2.0, -1.0]),
+            np.array(
+                [1.5, 2.0, -0.5, 4.0, 3.0, 1.25, -2.0, 0.0, 1.0, 2.0, -1.0]
+            ),
             (
                 np.array([0, 0, 1, 1, 2, 3, 3, 5, 5, 5, 2]),
                 np.array([0, 1, 0, 2, 3, 2, 5, 0, 1, 1, 2]),
@@ -308,7 +390,9 @@ def test_spatial_score_matches_dense_source_row_oracle_without_mutating_graph(
     result = spatial_score(adata, res=0.5)
 
     assert result is adata
-    np.testing.assert_allclose(adata.obs["spatial_score_0.5"].to_numpy(), expected)
+    np.testing.assert_allclose(
+        adata.obs["spatial_score_0.5"].to_numpy(), expected
+    )
     after = _graph_snapshot(graph)
     for actual, original in zip(after, before):
         np.testing.assert_array_equal(actual, original)
@@ -321,8 +405,13 @@ class _BroadcastGuardLabels(np.ndarray):
     def __eq__(self, other):
         other_shape = getattr(other, "shape", ())
         if self.ndim == 2 and len(other_shape) == 2:
-            if np.broadcast_shapes(self.shape, other_shape) == (self.size, self.size):
-                raise AssertionError("dense n_obs by n_obs label comparison is forbidden")
+            if np.broadcast_shapes(self.shape, other_shape) == (
+                self.size,
+                self.size,
+            ):
+                raise AssertionError(
+                    "dense n_obs by n_obs label comparison is forbidden"
+                )
         return super().__eq__(other)
 
 
@@ -347,10 +436,14 @@ def test_spatial_score_compares_only_sparse_edges(spatial_score):
 
     spatial_score(adata, res=1)
 
-    np.testing.assert_allclose(adata.obs["spatial_score_1"], [2.0, 0.0, 3.0, 0.0, -1.0])
+    np.testing.assert_allclose(
+        adata.obs["spatial_score_1"], [2.0, 0.0, 3.0, 0.0, -1.0]
+    )
 
 
-def test_spatial_score_preserves_sparse_duplicate_reduction_semantics(spatial_score):
+def test_spatial_score_preserves_sparse_duplicate_reduction_semantics(
+    spatial_score,
+):
     graph = sparse.coo_matrix(
         (
             np.array([1e10, 1.0, -1e10], dtype=np.float32),
@@ -369,7 +462,9 @@ def test_spatial_score_preserves_sparse_duplicate_reduction_semantics(spatial_sc
     spatial_score(adata, res=1.5)
 
     np.testing.assert_array_equal(expected, [0.0])
-    np.testing.assert_array_equal(adata.obs["spatial_score_1.5"].to_numpy(), expected)
+    np.testing.assert_array_equal(
+        adata.obs["spatial_score_1.5"].to_numpy(), expected
+    )
     after = _graph_snapshot(graph)
     for actual, original in zip(after, before):
         np.testing.assert_array_equal(actual, original)
@@ -381,7 +476,9 @@ def test_spatial_score_handles_large_sparse_ring_without_dense_label_broadcast(
     n_obs = 50_000
     rows = np.arange(n_obs)
     cols = (rows + 1) % n_obs
-    graph = sparse.csr_matrix((np.ones(n_obs), (rows, cols)), shape=(n_obs, n_obs))
+    graph = sparse.csr_matrix(
+        (np.ones(n_obs), (rows, cols)), shape=(n_obs, n_obs)
+    )
     labels = _BroadcastGuardLabels(rows % 2)
     adata = SimpleNamespace(
         obsp={"spatial_connectivities": graph},

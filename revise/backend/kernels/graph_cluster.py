@@ -8,20 +8,9 @@ from sklearn.metrics.cluster import adjusted_rand_score, normalized_mutual_info_
 from tqdm import tqdm
 
 from revise.backend.kernels.base import BaseKernel
-from revise.backend.ops.assignment import (
-    AssignmentState,
-    AssignmentStateError,
-    align_assignment_observations,
-)
 from revise.backend.ops.assignment_guidance import (
     NotApplicableReason,
     assignment_guidance_mode,
-    assignment_compatibility,
-    graph_guidance,
-    resolve_assignment_guidance,
-)
-from revise.backend.ops.posterior_conditioning import (
-    posterior_conditioning_mode,
 )
 
 
@@ -40,10 +29,6 @@ class GraphClusterKernel(BaseKernel):
         adata: AnnData,
         resolution,
         label,
-        *,
-        guidance_state: AssignmentState | None = None,
-        problem_key: str = "standard-sc:graph",
-        selected_resolution=None,
     ):
         """
         Perform graph-based clustering and evaluate at multiple resolutions.
@@ -53,12 +38,6 @@ class GraphClusterKernel(BaseKernel):
             resolution: List of resolution values for Leiden clustering
             label: Column name in adata.obsm containing soft cell type labels
                 (used for computing alignment scores)
-            guidance_state: Explicit Assignment State used only after base-graph
-                resolution selection.
-            problem_key: Stable provenance identity for this local graph problem.
-            selected_resolution: Optional user-fixed resolution for the final
-                guided clustering pass.
-                
         Returns:
             tuple: (adata, merge_df, best_res)
                 - adata: AnnData with clustering results in obs
@@ -69,11 +48,6 @@ class GraphClusterKernel(BaseKernel):
         - Spatial score: Number of spatial neighbors with same cluster label
         - Alignment score: Agreement between clusters and cell type labels
         """
-        if posterior_conditioning_mode(self.config) == "reference":
-            raise ValueError(
-                "graph_edge local refinement does not support reference "
-                "compatibility; use compatibility mode 'cost'"
-            )
         adata = adata.copy()
         adata_raw = adata.copy()
         # Keep graph construction and Leiden partitioning deterministic so
@@ -106,15 +80,6 @@ class GraphClusterKernel(BaseKernel):
             print(f"{name}: nnz={nnz} abs_sum={abs_sum} max_abs={max_abs}")
 
         if adata.n_obs < 2:
-            self.record_not_applicable(
-                problem_key=problem_key,
-                reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                reason_details={
-                    "unit": "spatial_cell",
-                    "observed": int(adata.n_obs),
-                    "required": 2,
-                },
-            )
             raise ValueError("Graph clustering requires at least two spatial cells")
 
         sc.pp.normalize_total(adata)
@@ -147,8 +112,6 @@ class GraphClusterKernel(BaseKernel):
             adjacency_graph = joint_graph
         else:
             raise ValueError("neighbors_method must be pca or spatial")
-
-        resolved_state = None
 
         print(
             "Graph config: method=%s alpha=%s resolutions=%s random_state=%s"
@@ -207,130 +170,7 @@ class GraphClusterKernel(BaseKernel):
         best_res = merge_df[merge_df["align_score"] == merge_df["align_score"].max()]["resolution"].values[-1]
         print(f"Best resolution: {best_res}")
         merge_df.reset_index(drop=True, inplace=True)
-        fixed_resolution = (
-            best_res
-            if selected_resolution is None
-            else selected_resolution
-        )
-        mode = self._guidance_mode()
-        callback = self._start_guidance_event(
-            problem_key=problem_key,
-            applicability="applicable",
-        )
-        if mode == "off":
-            if callback is not None:
-                callback(
-                    "terminal",
-                    problem_key=problem_key,
-                    outcome="off",
-                )
-        else:
-            try:
-                resolution_result = resolve_assignment_guidance(
-                    mode,
-                    lambda: (
-                        None
-                        if guidance_state is None
-                        else align_assignment_observations(
-                            guidance_state,
-                            adata.obs_names,
-                        )
-                    ),
-                )
-            except (AssignmentStateError, KeyError):
-                if callback is not None:
-                    callback(
-                        "terminal",
-                        problem_key=problem_key,
-                        outcome="failed",
-                        availability="unavailable",
-                    )
-                raise
-            if resolution_result.availability != "available":
-                if callback is not None:
-                    fields = {
-                        "outcome": resolution_result.outcome,
-                        "availability": resolution_result.availability,
-                    }
-                    if resolution_result.outcome == "fallback":
-                        fields.update(
-                            {
-                                "reason": resolution_result.reason,
-                                "reason_details": (
-                                    resolution_result.reason_details
-                                ),
-                            }
-                        )
-                    callback("terminal", problem_key=problem_key, **fields)
-            else:
-                resolved_state = resolution_result.state
-                if callback is not None:
-                    callback(
-                        "attempt",
-                        problem_key=problem_key,
-                        availability="available",
-                        left_assignment=resolved_state,
-                        right_assignment=resolved_state,
-                    )
-        if resolved_state is not None:
-            try:
-                guided_graph = self._guided_graph(
-                    adjacency_graph,
-                    resolved_state,
-                )
-            except KeyboardInterrupt:
-                if callback is not None:
-                    callback(
-                        "terminal",
-                        problem_key=problem_key,
-                        outcome="interrupted",
-                    )
-                raise
-            except Exception:
-                if callback is not None:
-                    callback(
-                        "terminal",
-                        problem_key=problem_key,
-                        outcome="failed",
-                    )
-                raise
-            adata.obsp["assignment_guided_connectivities"] = guided_graph
-            try:
-                sc.tl.leiden(
-                    adata,
-                    adjacency=guided_graph,
-                    resolution=fixed_resolution,
-                    key_added=f"leiden_{fixed_resolution}",
-                    random_state=random_state,
-                )
-                adata = get_spatial_score(adata, res=fixed_resolution)
-            except KeyboardInterrupt:
-                if callback is not None:
-                    callback(
-                        "terminal",
-                        problem_key=problem_key,
-                        outcome="interrupted",
-                    )
-                raise
-            except Exception:
-                if callback is not None:
-                    callback(
-                        "terminal",
-                        problem_key=problem_key,
-                        outcome="failed",
-                    )
-                raise
-            if callback is not None:
-                callback(
-                    "terminal",
-                    problem_key=problem_key,
-                    outcome="applied",
-                )
         adata_raw.obs = adata.obs.copy()
-        if "assignment_guided_connectivities" in adata.obsp:
-            adata_raw.obsp["assignment_guided_connectivities"] = adata.obsp[
-                "assignment_guided_connectivities"
-            ].copy()
         return adata_raw, merge_df, best_res
 
     def _guidance_mode(self) -> str:
@@ -391,6 +231,8 @@ class GraphClusterKernel(BaseKernel):
         reason: NotApplicableReason,
         reason_details=None,
     ):
+        # Temporary adapter compatibility only. U7 removes this old evidence
+        # outlet together with its two adapter callers; clustering never calls it.
         callback = self._start_guidance_event(
             problem_key=problem_key,
             applicability="not_applicable",
@@ -403,40 +245,6 @@ class GraphClusterKernel(BaseKernel):
                 reason=reason,
                 reason_details=reason_details or {},
             )
-
-    def _guided_graph(
-        self,
-        adjacency_graph,
-        state: AssignmentState,
-    ):
-        edges = adjacency_graph.tocoo(copy=True)
-        edges.sum_duplicates()
-        affinity = assignment_compatibility(
-            state,
-            state,
-            beta=getattr(
-                self.config,
-                "posterior_conditioning_beta",
-                1.0,
-            ),
-            min_affinity=getattr(
-                self.config,
-                "posterior_conditioning_min_affinity",
-                0.05,
-            ),
-            support=(edges.row, edges.col),
-        )
-        edges.data = graph_guidance(
-            edges.data,
-            affinity,
-            getattr(
-                self.config,
-                "posterior_conditioning_cost_strength",
-                0.2,
-            ),
-        )
-        return edges.tocsr()
-
 
 def get_spatial_score(adata, res):
 
