@@ -121,13 +121,14 @@ data/
   `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
   index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
   `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
-  scale as `obsm["spatial"]`. Missing centers fall back to the spot center. A
-  `PM_on_cell.csv` must cover every current virtual-cell ID and requested
-  normalized cell type; extra Patient/case rows and class columns are allowed,
-  and REVISE strictly subsets and reorders the active case matrix before use.
-  Without that file, these coordinates are retained while cell types are
-  assigned to the existing rows by a seeded random permutation of each spot's
-  inferred quota.
+  scale as `obsm["spatial"]`. Missing centers fall back to the spot center. The
+  optional sample-local probability prior is derived from the resolved ST
+  path as `<st-parent>/<st-stem>_PM_on_cell.csv`. Its axes must exactly equal
+  the active virtual-cell IDs and normalized cell types; values must be finite
+  probabilities whose rows sum to one. REVISE reorders exact axes but does not
+  clip or normalize PM. Without that file, these coordinates are retained while
+  cell types are assigned to the existing rows by a seeded random permutation
+  of each spot's inferred quota.
 
 </details>
 

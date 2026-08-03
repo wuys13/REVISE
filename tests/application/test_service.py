@@ -113,6 +113,52 @@ def test_sc_svc_publication_preserves_the_notebook_spatial_and_expression_pair(
     assert "ot_events" not in published_spatial.uns["revise_reconstruction"]
 
 
+def test_single_file_publication_reloads_staged_h5ad_before_replace(
+    monkeypatch,
+    tmp_path,
+):
+    from revise.application import service
+
+    output = AnnData(
+        X=np.ones((1, 1)),
+        obs=pd.DataFrame(index=["cell-1"]),
+        var=pd.DataFrame(index=["g1"]),
+    )
+    output_path = tmp_path / "out" / "sample" / "SVC.h5ad"
+    output_path.parent.mkdir(parents=True)
+    output_path.write_bytes(b"previous-valid-result")
+    ctx = PublicationContext(
+        svc=SVC(
+            expr=output,
+            spatial=output,
+            svc_kind="sp",
+            artifacts={"outputs": {"sp_svc": output}},
+        ),
+        run_dir=tmp_path / "run",
+        merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
+        provenance={},
+        record_artifact=lambda artifact: None,
+    )
+    args = SimpleNamespace(
+        svc_type="sp-SVC",
+        output_root=str(tmp_path / "out"),
+        sample_name="sample",
+        seed=17,
+        ot_method="pot",
+    )
+
+    def corrupt_write(self, path, *args, **kwargs):
+        Path(path).write_bytes(b"not-an-h5ad")
+
+    monkeypatch.setattr(AnnData, "write_h5ad", corrupt_write)
+
+    with pytest.raises(OSError):
+        service._build_public_result(args, "application_sp", "sp_svc", ctx)
+
+    assert output_path.read_bytes() == b"previous-valid-result"
+    assert list(output_path.parent.iterdir()) == [output_path]
+
+
 def test_sc_pair_publication_rolls_back_both_existing_files_on_replace_failure(
     monkeypatch,
     tmp_path,

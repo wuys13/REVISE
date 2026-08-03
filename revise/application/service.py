@@ -189,6 +189,12 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
         ) as handle:
             temporary_path = Path(handle.name)
         result.write_h5ad(temporary_path)
+        _validate_written_sc_result(
+            temporary_path,
+            result,
+            require_spatial=False,
+            require_cluster=False,
+        )
         artifact = completed_artifact("public_result", temporary_path)
         artifact["path"] = str(output_path)
         result_record = {
@@ -272,7 +278,13 @@ def _validate_sc_pair_source(spatial, expression) -> None:
         raise KeyError("spatial SVC is missing required obsm['spatial'] coordinates")
 
 
-def _validate_written_sc_result(path: Path, source, *, require_spatial: bool) -> None:
+def _validate_written_sc_result(
+    path: Path,
+    source,
+    *,
+    require_spatial: bool,
+    require_cluster: bool = True,
+) -> None:
     from anndata import read_h5ad
 
     written = read_h5ad(path, backed="r")
@@ -286,7 +298,10 @@ def _validate_written_sc_result(path: Path, source, *, require_spatial: bool) ->
             raise ValueError("Published H5AD observation names do not match the source")
         if not written.var_names.equals(source.var_names):
             raise ValueError("Published H5AD variable names do not match the source")
-        if "SVC_cluster" not in written.obs or written.obs["SVC_cluster"].isna().any():
+        if require_cluster and (
+            "SVC_cluster" not in written.obs
+            or written.obs["SVC_cluster"].isna().any()
+        ):
             raise ValueError("Published H5AD must contain non-null SVC_cluster labels")
         if require_spatial and "spatial" not in written.obsm:
             raise ValueError("Published spatial H5AD is missing obsm['spatial']")

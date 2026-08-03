@@ -88,6 +88,12 @@ under a cell-type subdirectory. The manifest records each public result role
 and the internal route separately. Strategy artifacts remain in the canonical
 run but are not additional public output contracts.
 
+For both the single-file and paired 1.x outputs, the publisher writes a
+same-directory temporary H5AD, reloads it before replacement, and provides
+best-effort caught-exception rollback. The pair is not reader-atomic or
+crash-atomic. The caller must guarantee one writer per stable public target;
+violating that precondition is undefined.
+
 ``provenance.json.local_refinement`` is the minimal route-level evidence:
 ``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,
 ``strength`` is ``null`` because those routes do not accept the option.
@@ -98,15 +104,16 @@ Failure model
 -------------
 
 Run status is limited to ``running``, ``succeeded``, and ``failed``. Captured
-SIGTERM, KeyboardInterrupt, and stage exceptions are recorded as failed while
-preserving their error evidence; later stages are skipped because of upstream
-failure. Dry-run marks non-validation stages skipped. Abrupt process death can
-leave a running state, which is evidence that the run did not complete—not
-permission to infer success.
+SIGTERM and KeyboardInterrupt become failed with their error evidence, as do
+captured stage exceptions; later stages are skipped because of upstream
+failure. Dry-run marks non-validation stages skipped. An uncatchable
+termination leaves the last manifest running, which is evidence that the run
+did not complete—not permission to infer success.
 
-The manifest retains the resolved ``ot_config`` and the minimal
-``local_refinement`` evidence; it does not maintain separate solver event
-telemetry.
+``input_identities`` records one content identity per external role; there is
+no aggregate data fingerprint. Software identity is collected once per run.
+The manifest retains the resolved ``ot_config`` and minimal
+``local_refinement`` evidence, but has no OT or Assignment event state machine.
 
 The ``local_refinement.applied`` flag changes to true only after a local OT
 conditioning call succeeds. Failure and interruption continue through the

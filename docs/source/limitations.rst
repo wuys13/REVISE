@@ -46,6 +46,21 @@ This proves quota composition and same-seed repeatability. The random assignment
 is not a nucleus or cell-localization result and does not establish sub-spot
 morphology or which inferred cell type belongs to a supplied center.
 
+When a PM prior is present, REVISE requires exact active axes, numeric finite
+values in ``[0, 1]``, and row sums within an absolute tolerance of ``1e-6``. It
+does not clip, normalize, or interpret this software contract as biological
+validation. PM is not a case table, cohort registry, or generic assignment
+posterior.
+
+Publication
+-----------
+
+The 1.x single-file and paired publishers stage a same-directory temporary
+H5AD, reload it before replacement, and use best-effort caught-exception
+rollback. Paired outputs are not reader-atomic or crash-atomic. The caller must
+guarantee one writer per stable public target; violating that precondition is
+undefined.
+
 Metrics
 -------
 

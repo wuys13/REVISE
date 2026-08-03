@@ -66,15 +66,19 @@ coordinate; REVISE does not invent a sub-spot coordinate for them.
 
 The LR contribution proportions are converted with ``np.round`` and then
 repaired in stable order until each spot has an exact quota equal to its virtual
-cell count. For an application route, the only resolved score-matrix location
-is the case-sensitive ``<data-root>/PM_on_cell.csv``; there is no CLI path override.
-Its rows must cover every current virtual-cell ID and its columns must cover
-every requested normalized cell-type label. Extra Patient/case rows and extra
-class columns are permitted; REVISE strictly subsets and reorders the matrix to
-the current case before requiring the active values to be finite numbers. A
-score-maximizing assignment then places the quota slots. If that file is
-missing, one seeded random permutation assigns those slots to the existing
-virtual-cell rows inside each spot.
+cell count. The optional ``PM_on_cell.csv`` is a sample-local probability prior
+for assigning those quota slots in the current sample. Its case-sensitive path
+is derived from the resolved ST input as
+``<st-parent>/<st-stem>_PM_on_cell.csv``; there is no CLI path override.
+Its rows must exactly equal the active virtual-cell IDs and its columns must
+exactly equal the active normalized cell-type labels. After exact set equality,
+REVISE only reindexes them into active order. Values must be numeric and finite
+within ``[0, 1]``, and every row must sum to one with zero relative tolerance
+and an absolute tolerance of ``1e-6``. REVISE never clips or normalizes PM.
+PM is the assignment's prior score matrix, not a case table, cohort registry,
+or generic assignment posterior. If the file is missing, one seeded random
+permutation assigns the quota slots to the existing virtual-cell rows inside
+each spot.
 
 The tested invariant is exact per-spot composition, plus repeatability for the
 same seed. Which virtual-cell row receives a type can change with the seed.

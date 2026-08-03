@@ -84,11 +84,15 @@ For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in
 ``spot_name/x/y`` columns. Its assignments agree with
 ``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
 and scale as ``obsm["spatial"]``; rows without centers remain at the spot center.
-When ``PM_on_cell.csv`` is present, it must cover every current virtual-cell ID
-and requested normalized cell type. Extra Patient/case rows and class columns
-are allowed; REVISE strictly subsets and reorders the active case matrix.
-Without that file, those coordinates are retained while inferred cell types are
-assigned to the existing rows by a seeded random permutation.
+The optional sample-local probability prior is resolved from the prepared ST
+path as ``<st-parent>/<st-stem>_PM_on_cell.csv``. Its rows must exactly equal
+the active virtual-cell IDs and its columns must exactly equal the active
+normalized cell-type labels. Values must be numeric and finite within
+``[0, 1]``; every row must sum to one with zero relative tolerance and an
+absolute tolerance of ``1e-6``. REVISE only reorders exact axes and never clips
+or normalizes PM. It is not a case table, cohort registry, or generic assignment
+posterior. Without that file, those coordinates are retained while inferred
+cell types are assigned to the existing rows by a seeded random permutation.
 
 After installation, the equivalent package command is:
 
@@ -122,7 +126,8 @@ Standard ``sc-SVC`` publishes:
    <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
 
 Each file links to the canonical run's ``provenance.json``. The manifest
-records the result role, route, stages, configuration, inputs, and artifacts.
+records the result role, route, stages, configuration, per-role input
+identities, software identity, and artifacts.
 
 Paper reproduction notebooks
 ----------------------------

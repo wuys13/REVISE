@@ -415,9 +415,10 @@ def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
     assert "n_cells = 200_000" in quota_scale
 
 
-def test_application_pm_on_cell_contract_names_location_and_subset_semantics():
+def test_application_pm_on_cell_contract_names_location_and_probability_semantics():
     concepts = _read(ROOT / "docs/source/concepts.rst")
-    normalized = " ".join(concepts.split())
+    quickstart = _read(ROOT / "docs/source/quickstart.rst")
+    normalized = " ".join(f"{concepts}\n{quickstart}".split())
     runner_contract = runpy.run_path(ROOT / "revise/config/runner_conf.py")
     config = runner_contract["ApplicationScSrConf"](
         raw_data_path="data",
@@ -430,15 +431,65 @@ def test_application_pm_on_cell_contract_names_location_and_subset_semantics():
         sc_ref_file="sc_ref.h5ad",
     )
 
-    assert config.pm_on_cell_file == "data/PM_on_cell.csv"
-    assert "<data-root>/PM_on_cell.csv" in concepts
+    assert config.pm_on_cell_file == "data/sample_st_PM_on_cell.csv"
+    assert "<st-parent>/<st-stem>_PM_on_cell.csv" in normalized
     assert "case-sensitive" in concepts
     assert "no CLI path override" in concepts
-    assert "rows must cover every current virtual-cell ID" in normalized
-    assert "columns must cover every requested normalized cell-type label" in normalized
-    assert "Extra Patient/case rows and extra class columns are permitted" in normalized
-    assert "strictly subsets and reorders the matrix to the current case" in normalized
-    assert "active values to be finite numbers" in normalized
+    assert "sample-local probability prior" in normalized
+    assert "rows must exactly equal the active virtual-cell IDs" in normalized
+    assert "columns must exactly equal the active normalized cell-type labels" in normalized
+    assert "numeric and finite within ``[0, 1]``" in normalized
+    assert "absolute tolerance of ``1e-6``" in normalized
+    assert "never clips or normalizes" in normalized
+    assert "not a case table, cohort registry, or generic assignment posterior" in normalized
+    assert "seeded random" in normalized
+
+    notebook = json.loads(
+        _read(ROOT / "reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb")
+    )
+    source = "\n".join(
+        line for cell in notebook["cells"] for line in cell.get("source", [])
+    )
+    outputs = "\n".join(
+        str(value)
+        for cell in notebook["cells"]
+        for output in cell.get("outputs", [])
+        for value in (
+            output.get("text", [])
+            + output.get("data", {}).get("text/plain", [])
+            + output.get("data", {}).get("text/html", [])
+        )
+    )
+    expected_pm = (
+        "raw_data/visium_mouse_brain/"
+        "REVISEVisiumMouseBrain_Xenium_PM_on_cell.csv"
+    )
+    assert (
+        'PM_ON_CELL_PATH = PREPARED_ST_PATH.with_name('
+        'f"{PREPARED_ST_PATH.stem}_PM_on_cell.csv")'
+    ) in source
+    assert expected_pm in outputs
+    assert "raw_data/visium_mouse_brain/PM_on_cell.csv" not in outputs
+
+
+def test_docs_state_minimal_manifest_and_publication_guarantees():
+    architecture = " ".join(_read(ROOT / "docs/source/architecture.rst").split())
+    limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").split())
+    combined = f"{architecture} {limitations}"
+
+    assert "``running``, ``succeeded``, and ``failed``" in architecture
+    assert "Captured SIGTERM and KeyboardInterrupt become failed" in architecture
+    assert "uncatchable termination leaves the last manifest running" in architecture
+    assert "``input_identities`` records one content identity per external role" in architecture
+    assert "no aggregate data fingerprint" in architecture
+    assert "no OT or Assignment event state machine" in architecture
+    assert "Software identity is collected once per run" in architecture
+    assert "same-directory temporary H5AD" in combined
+    assert "reloads it before replacement" in combined
+    assert "best-effort caught-exception rollback" in combined
+    assert "not reader-atomic or crash-atomic" in combined
+    assert "caller must guarantee one writer per stable public target" in combined
+    assert "violating that precondition is undefined" in combined
 
 
 def test_public_data_and_repository_claims_are_precise():
