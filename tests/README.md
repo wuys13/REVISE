@@ -32,7 +32,7 @@ environment variables documented in their modules and CI jobs.
 | `backend/test_sc_imputation_guidance.py` | sc-SVC imputation route | Guidance-free imputation, solver routing, and panel/dropout behavior | Imputation-route edits | Synthetic imputation proof |
 | `backend/test_sc_sr_guidance.py` | sc-SVC-sr route | Mandatory allocation invariance, projected virtual Q, and conditioned local OT | SR-route edits | Synthetic SR proof |
 | `backend/test_scientific_contracts.py` | Backend kernels/ops and analysis formulas | Cross-cutting scientific invariants | Scientific implementation edits | Formula/array contracts only |
-| `backend/test_solver_routing.py` | `revise/backend/ops/` and route callers | Solver dispatch, event recording, and caller coverage | OT edits | Mocked/synthetic solver boundaries |
+| `backend/test_solver_routing.py` | `revise/backend/ops/` and route callers | Solver dispatch and caller coverage | OT edits | Mocked/synthetic solver boundaries |
 | `backend/test_spot_sr_assignment.py` | `revise/backend/kernels/spot_sr.py` | PM-on-cell and random cell-type allocation | Spot-SR edits | Assignment, not localization truth |
 | `backend/test_spot_sr_min_cells.py` | `revise/backend/adapters.py` | Spot-SR gene filtering and overlap checks | Spot-SR preprocessing edits | Synthetic matrices |
 | `backend/test_spot_sr_quota.py` | `revise/backend/kernels/spot_sr.py` | Rounded quota repair and large component smoke | Spot-SR allocation edits | Quota correctness only |
@@ -43,7 +43,9 @@ environment variables documented in their modules and CI jobs.
 | `benchmark/test_launcher.py` | `reproduce/benchmark_main.sh`, `revise/benchmark/launcher.py` | Bounded parallel launch and failure propagation | Benchmark launcher edits | Fake worker processes |
 | `config/test_local_refinement_contract.py` | `revise/config/loader.py` | Route defaults, sc/imputation rejection, bounds, and removed YAML grammar | Local-refinement config edits | Resolved config only |
 | `config/test_ot_config.py` | `revise/config/` plus OT application wiring | Schema, profiles, locked algorithm parameters, and solver mapping | Config/OT edits | Resolved configuration, not real runs |
+| `config/test_pm_on_cell_path.py` | `revise/config/runner_conf.py` | PM sidecar identity follows the resolved ST path | Spot-SR input-path edits | Path resolution only |
 | `io/test_h5ad_preflight.py` | `revise/io/` and input resolution | H5AD roles, axes, labels, overlap, and dependency preflight | Input-contract edits | Metadata and bounded synthetic values |
+| `io/test_pm_on_cell_snapshot.py` | PM snapshot loading and provenance | One byte snapshot, probability validation, and per-role identity | Spot-SR PM input edits | Synthetic CSV contract only |
 | `preprocess/test_cli.py` | `revise/preprocess/` | Histology-prior console entry | Preprocess packaging edits | Static entry contract only |
 | `preprocess/test_histology_priors.py` | `revise/preprocess/histology_priors.py`, `revise/backend/ops/meta.py` | Segmentation centers persist in the standard cell-location table and missing centers use spot coordinates | Histology/SR input edits | Synthetic coordinates only |
 | `recon/test_cross_process_determinism.py` | `revise/recon/` and deterministic utilities | Same-seed identities across processes | Determinism edits | Synthetic components |

@@ -1001,8 +1001,8 @@ def test_pipeline_preflight_failure_persists_terminal_run_truth(tmp_path):
     )
     assert manifest["artifacts"] == []
     expected_inputs = [
-        InputSpec("st", str(tmp_path / "missing-case_Xenium.h5ad")),
         InputSpec("sc_ref", str(tmp_path / "adata_sc_all_reanno.h5ad")),
+        InputSpec("st", str(tmp_path / "missing-case_Xenium.h5ad")),
     ]
     assert manifest["input_identities"] == input_identities(expected_inputs)
     assert "data_fingerprint" not in manifest
