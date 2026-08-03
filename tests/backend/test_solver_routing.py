@@ -310,19 +310,25 @@ def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
     np.testing.assert_array_equal(result, [[3.0, 7.0]])
 
 
-def test_sp_benchmark_insufficient_units_short_circuit_before_assignment_validation():
+def test_sp_benchmark_validates_ga_before_insufficient_units_short_circuit():
+    assignment_loaded = {"value": False}
+
+    def load_assignment(_adata, *, key, expected_categories):
+        assert key == "major_type"
+        assert expected_categories.equals(pd.Index(["A"]))
+        assignment_loaded["value"] = True
+
     local_refinement = _load_runner_method(
         "revise/backend/runners/sp_svc_benchmark.py",
         "SpSVC",
         "local_refinement",
         {
             "np": np,
+            "pd": pd,
             "scipy": SimpleNamespace(sparse=sparse),
             "sc": SimpleNamespace(concat=anndata_concat),
             "tqdm": lambda values, **_kwargs: values,
-            "posterior_conditioning_mode": lambda _config: pytest.fail(
-                "insufficient units have no local problem to validate"
-            ),
+            "global_assignment_from_adata": load_assignment,
         },
     )
     st = AnnData(
@@ -334,6 +340,10 @@ def test_sp_benchmark_insufficient_units_short_circuit_before_assignment_validat
     )
     runner = SimpleNamespace(
         st_adata=st,
+        sc_ref_adata=AnnData(
+            X=sparse.csr_matrix(np.ones((1, 2))),
+            obs=pd.DataFrame({"major_type": ["A"]}, index=["ref-1"]),
+        ),
         config=SimpleNamespace(cell_type_col="major_type"),
         logger=SimpleNamespace(
             info=lambda *_args, **_kwargs: None,
@@ -342,8 +352,10 @@ def test_sp_benchmark_insufficient_units_short_circuit_before_assignment_validat
         svc={},
     )
 
-    types.MethodType(local_refinement, runner)()
+    applied = types.MethodType(local_refinement, runner)()
 
+    assert assignment_loaded["value"] is True
+    assert applied is False
     assert runner.svc["sp_svc"].n_obs == 2
 
 

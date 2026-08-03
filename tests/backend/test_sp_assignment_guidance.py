@@ -5,7 +5,6 @@ import logging
 import sys
 import types
 from contextlib import contextmanager
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,12 +13,7 @@ import pytest
 from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
-from revise.backend.ops.assignment import AssignmentStateError
-from revise.backend.ops.assignment_guidance import (
-    AssignmentGuidanceCollector,
-    FallbackReason,
-    NotApplicableReason,
-)
+from revise.backend.ops.assignment import GlobalAssignmentContractError
 
 
 ISOLATED_MODULE_NAMES = (
@@ -38,7 +32,7 @@ ISOLATED_MODULE_NAMES = (
     "revise.backend.runners.benchmark_svc",
     "revise.backend.runners.base_svc",
     "revise.backend.runners.base_svc_anchor",
-    "revise.backend.runners.sp_svc_assignment_guidance",
+    "revise.backend.runners.sp_svc_assignment",
     "revise.backend.runners.sp_svc_application",
     "revise.backend.runners.sp_svc_benchmark",
 )
@@ -251,17 +245,10 @@ def sp_modules():
         yield modules
 
 
-def _config(
-    collector: AssignmentGuidanceCollector,
-    *,
-    guidance: str = "prefer",
-    compatibility_mode: str = "cost",
-    solver: str = "pot",
-):
+def _config(*, solver="pot", strength=0.2, callback=None):
     return SimpleNamespace(
         plot_flag=False,
         cell_type_col="major_type",
-        assignment_guidance_policy=guidance,
         rec_graph_method="pca",
         rec_graph_alpha=0.0,
         rec_graph_exp_neighbor_num=1,
@@ -272,46 +259,28 @@ def _config(
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="kl",
         rec_alpha=1.0,
-        posterior_conditioning_enabled=guidance != "off",
-        posterior_conditioning_mode=compatibility_mode,
-        posterior_conditioning_key="major_type",
-        posterior_conditioning_strict=guidance == "require",
-        posterior_conditioning_beta=1.0,
-        posterior_conditioning_min_affinity=0.1,
-        posterior_conditioning_cost_strength=2.0,
-        assignment_guidance_callback=collector.callback,
+        posterior_conditioning_cost_strength=strength,
+        assignment_guidance_callback=callback,
         ot_event_callback=None,
     )
 
 
-@pytest.mark.parametrize(
-    ("canonical", "legacy", "expected"),
-    [("require", "off", "require"), ("off", "require", "off")],
-)
-def test_sp_route_prefers_canonical_guidance_over_conflicting_legacy_fields(
-    sp_modules,
-    canonical,
-    legacy,
-    expected,
-):
-    _application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    config = _config(collector, guidance=legacy)
-    config.assignment_guidance_policy = canonical
-    guidance = importlib.import_module(
-        "revise.backend.runners.sp_svc_assignment_guidance"
+def _posterior(obs_names, probabilities):
+    return pd.DataFrame(
+        probabilities,
+        index=obs_names,
+        columns=["A", "B"],
     )
-
-    assert guidance.guidance_mode(config) == expected
 
 
 def _application_runner(
     module,
-    collector,
     *,
-    n_obs: int = 51,
-    posterior: pd.DataFrame | np.ndarray | None = None,
-    guidance: str = "prefer",
+    n_obs=51,
+    probabilities=None,
+    solver="pot",
+    strength=0.2,
+    callback=None,
 ):
     obs_names = [f"spot-{index}" for index in range(n_obs)]
     st = AnnData(
@@ -319,8 +288,8 @@ def _application_runner(
         obs=pd.DataFrame({"major_type": ["A"] * n_obs}, index=obs_names),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
-    if posterior is not None:
-        st.obsm["major_type"] = posterior
+    if probabilities is not None:
+        st.obsm["major_type"] = _posterior(obs_names, probabilities)
     reference = AnnData(
         X=sparse.csr_matrix(np.ones((2, 2))),
         obs=pd.DataFrame(
@@ -332,8 +301,12 @@ def _application_runner(
     runner = module.SpSVC.__new__(module.SpSVC)
     runner.st_adata = st
     runner.sc_ref_adata = reference
-    runner.config = _config(collector, guidance=guidance)
-    runner.logger = logging.getLogger("test-sp-application-guidance")
+    runner.config = _config(
+        solver=solver,
+        strength=strength,
+        callback=callback,
+    )
+    runner.logger = logging.getLogger("test-sp-application-strict-ga")
     runner.graph_aggregate = SimpleNamespace(
         run=lambda *, adata, **_kwargs: adata
     )
@@ -341,7 +314,7 @@ def _application_runner(
     return runner
 
 
-def _patch_application_problem(module, monkeypatch, captured):
+def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
     monkeypatch.setattr(
         module,
         "trim_sp_adata",
@@ -352,15 +325,17 @@ def _patch_application_problem(module, monkeypatch, captured):
         "get_adjacency_graph",
         lambda adata, **_kwargs: sparse.eye(adata.n_obs, format="csr"),
     )
-    neighbor_idx = np.roll(np.arange(51), -1)[:, None].astype(np.int32)
+    neighbor_idx = np.column_stack(
+        [np.roll(np.arange(51), -offset) for offset in range(1, n_slots + 1)]
+    ).astype(np.int32)
     monkeypatch.setattr(
         module,
         "_compute_topk_expression",
         lambda **_kwargs: (
-            np.ones((51, 1)),
-            np.ones(1),
+            np.ones((51, n_slots)),
+            np.full(n_slots, 102.0 / n_slots),
             neighbor_idx,
-            np.ones((51, 1), dtype=bool),
+            np.ones((51, n_slots), dtype=bool),
             0,
         ),
     )
@@ -368,9 +343,9 @@ def _patch_application_problem(module, monkeypatch, captured):
         module,
         "stabilize_local_ot_support",
         lambda *_args, **_kwargs: (
-            np.array([0]),
+            np.arange(n_slots),
             np.arange(51),
-            np.ones((1, 51), dtype=bool),
+            np.ones((n_slots, 51), dtype=bool),
         ),
     )
     monkeypatch.setattr(
@@ -379,281 +354,276 @@ def _patch_application_problem(module, monkeypatch, captured):
         lambda similarities, _mask: np.zeros_like(similarities),
     )
 
-    def solve(_nu, _mu, cost, **kwargs):
-        captured["cost"] = np.asarray(cost).copy()
-        captured["reference_measure"] = kwargs["reference_measure"]
-        return np.ones((1, 51), dtype=np.float64)
+    def solve(nu, mu, cost, **kwargs):
+        captured.update(
+            nu=np.asarray(nu).copy(),
+            mu=np.asarray(mu).copy(),
+            cost=np.asarray(cost).copy(),
+            kwargs=kwargs.copy(),
+        )
+        return np.ones((n_slots, 51), dtype=np.float64)
 
     monkeypatch.setattr(module, "solve_local_ot", solve)
 
 
-def test_application_soft_level1_applies_cost_guidance_and_records_both_axes(
+def test_strict_sp_assignment_requires_soft_q_without_one_hot_fallback(
     sp_modules,
-    monkeypatch,
 ):
     application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    obs_names = [f"spot-{index}" for index in range(51)]
-    posterior = pd.DataFrame(
-        [[0.9, 0.1] if index % 2 == 0 else [0.1, 0.9] for index in range(51)],
-        index=obs_names,
-        columns=["A", "B"],
-    )
-    runner = _application_runner(application, collector, posterior=posterior)
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-
-    runner.local_refinement()
-
-    assert np.all(captured["cost"] > 0.0)
-    assert captured["reference_measure"] is None
-    [event] = collector.events
-    assert event["route"] == "sp_svc_application"
-    assert event["operator"] == "neighbor_ot"
-    assert event["attempted"] is True
-    assert event["outcome"] == "applied"
-    assert event["left_assignment"]["level"] == "major_type"
-    assert event["right_assignment"]["level"] == "major_type"
-    assert event["left_assignment"]["observation_axis"]["count"] == 51
-    assert event["right_assignment"]["observation_axis"]["count"] == 51
-
-
-def test_application_off_does_not_construct_compatibility_and_keeps_base_cost(
-    sp_modules,
-    monkeypatch,
-):
-    application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _application_runner(application, collector, guidance="off")
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-    guidance = importlib.import_module(
-        "revise.backend.runners.sp_svc_assignment_guidance"
-    )
-    monkeypatch.setattr(
-        guidance,
-        "assignment_compatibility",
-        lambda *_args, **_kwargs: pytest.fail(
-            "off guidance must not construct compatibility"
-        ),
+    runner = _application_runner(application)
+    assignment = importlib.import_module(
+        "revise.backend.runners.sp_svc_assignment"
     )
 
-    runner.local_refinement()
+    with pytest.raises(
+        GlobalAssignmentContractError,
+        match=r"obsm\[major_type\]",
+    ):
+        assignment.global_assignment_from_adata(
+            runner.st_adata,
+            key="major_type",
+            expected_categories=pd.Index(["A", "B"]),
+        )
 
-    np.testing.assert_array_equal(captured["cost"], np.zeros((1, 51)))
-    [event] = collector.events
-    assert event["availability"] == "not_checked"
-    assert event["attempted"] is False
-    assert event["outcome"] == "off"
-    assert event["reason"] is None
 
-
-def test_application_argmax_only_is_one_hot_guidance(
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("permuted", "observation axis"),
+        ("negative", "non-negative"),
+        ("argmax", "argmax"),
+    ],
+)
+def test_strict_sp_assignment_rejects_invalid_q(
     sp_modules,
-    monkeypatch,
+    mutation,
+    message,
 ):
     application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _application_runner(application, collector)
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-
-    runner.local_refinement()
-
-    [event] = collector.events
-    assert event["attempted"] is True
-    assert event["outcome"] == "applied"
-    assert event["left_assignment"]["value_semantics"] == "one_hot"
-    assert event["right_assignment"]["value_semantics"] == "one_hot"
-
-
-def test_application_invalid_soft_assignment_prefer_falls_back_to_base_cost(
-    sp_modules,
-    monkeypatch,
-):
-    application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    obs_names = [f"spot-{index}" for index in range(51)]
-    posterior = pd.DataFrame(
-        np.vstack(([-1.0, 2.0], np.ones((50, 2)))),
-        index=obs_names,
-        columns=["A", "B"],
-    )
-    runner = _application_runner(application, collector, posterior=posterior)
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-
-    runner.local_refinement()
-
-    np.testing.assert_array_equal(captured["cost"], np.zeros((1, 51)))
-    [event] = collector.events
-    assert event["availability"] == "unavailable"
-    assert event["attempted"] is False
-    assert event["outcome"] == "fallback"
-    assert event["reason"] == FallbackReason.ASSIGNMENT_INVALID.value
-    assert event["reason_details"] == {"cause": "values_negative"}
-
-
-def test_application_invalid_soft_assignment_require_fails_before_solver(
-    sp_modules,
-    monkeypatch,
-):
-    application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    posterior = np.ones((51, 2))
     runner = _application_runner(
         application,
-        collector,
-        posterior=posterior,
-        guidance="require",
+        probabilities=[[0.9, 0.1]] * 51,
     )
-    runner.sc_ref_adata = runner.sc_ref_adata[["ref-a"], :].copy()
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-    monkeypatch.setattr(
-        application,
-        "solve_local_ot",
-        lambda *_args, **_kwargs: pytest.fail(
-            "require must fail before the solver"
-        ),
-    )
-
-    with pytest.raises(AssignmentStateError):
-        runner.local_refinement()
-
-    [event] = collector.events
-    assert event["availability"] == "unavailable"
-    assert event["attempted"] is False
-    assert event["outcome"] == "failed"
-    assert event["reason"] is None
-
-
-def test_application_insufficient_observations_is_not_applicable(
-    sp_modules,
-):
-    application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _application_runner(application, collector, n_obs=2)
-    application.trim_sp_adata = lambda adata, *_args, **_kwargs: (
-        adata.copy(),
-        {},
-    )
-
-    runner.local_refinement()
-
-    [event] = collector.events
-    assert event["applicability"] == "not_applicable"
-    assert event["availability"] == "not_checked"
-    assert event["attempted"] is False
-    assert event["outcome"] == "not_applicable"
-    assert event["reason"] == NotApplicableReason.INSUFFICIENT_UNITS.value
-    assert event["reason_details"] == {
-        "unit": "observation",
-        "observed": 2,
-        "required": 51,
-    }
-
-
-def test_application_empty_active_support_is_not_applicable_before_solver(
-    sp_modules,
-    monkeypatch,
-):
-    application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _application_runner(application, collector)
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-    monkeypatch.setattr(
-        application,
-        "stabilize_local_ot_support",
-        lambda *_args, **_kwargs: (
-            np.array([], dtype=np.int64),
-            np.array([], dtype=np.int64),
-            np.zeros((0, 0), dtype=bool),
-        ),
-    )
-    monkeypatch.setattr(
-        application,
-        "solve_local_ot",
-        lambda *_args, **_kwargs: pytest.fail(
-            "empty support must not call the solver"
-        ),
-    )
-
-    runner.local_refinement()
-
-    [event] = collector.events
-    assert event["applicability"] == "not_applicable"
-    assert event["availability"] == "not_checked"
-    assert event["attempted"] is False
-    assert event["outcome"] == "not_applicable"
-    assert event["reason"] == NotApplicableReason.EMPTY_SUPPORT.value
-    assert event["reason_details"] == {"support": "active"}
-
-
-def test_application_post_solver_update_failure_is_terminal_and_reraised(
-    sp_modules,
-    monkeypatch,
-):
-    application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _application_runner(application, collector)
-    captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
-    runner.graph_aggregate = SimpleNamespace(
-        run=lambda **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("application update exploded")
+    if mutation == "permuted":
+        runner.st_adata.obsm["major_type"].index = (
+            runner.st_adata.obs_names[::-1]
         )
+    elif mutation == "negative":
+        runner.st_adata.obsm["major_type"].iloc[0] = [-0.1, 1.1]
+    else:
+        runner.st_adata.obs["major_type"] = "B"
+    assignment = importlib.import_module(
+        "revise.backend.runners.sp_svc_assignment"
     )
 
-    with pytest.raises(RuntimeError, match="application update exploded"):
+    with pytest.raises(GlobalAssignmentContractError, match=message):
+        assignment.global_assignment_from_adata(
+            runner.st_adata,
+            key="major_type",
+            expected_categories=pd.Index(["A", "B"]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("columns", "probabilities"),
+    [
+        (["A"], [1.0]),
+        (["A", "B", "C"], [0.8, 0.1, 0.1]),
+        (["B", "A"], [0.1, 0.9]),
+    ],
+)
+def test_application_rejects_q_category_axis_that_differs_from_reference(
+    sp_modules,
+    monkeypatch,
+    columns,
+    probabilities,
+):
+    application, _benchmark = sp_modules
+    runner = _application_runner(
+        application,
+        probabilities=[[0.9, 0.1]] * 51,
+    )
+    runner.st_adata.obsm["major_type"] = pd.DataFrame(
+        [probabilities] * 51,
+        index=runner.st_adata.obs_names,
+        columns=columns,
+    )
+    monkeypatch.setattr(
+        application,
+        "trim_sp_adata",
+        lambda adata, *_args, **_kwargs: (adata.copy(), {}),
+    )
+    monkeypatch.setattr(
+        application,
+        "solve_local_ot",
+        lambda *_args, **_kwargs: pytest.fail(
+            "category mismatch must fail before solve"
+        ),
+    )
+
+    with pytest.raises(GlobalAssignmentContractError, match="category axis"):
         runner.local_refinement()
 
-    assert "cost" in captured
-    [event] = collector.events
-    assert event["availability"] == "available"
-    assert event["attempted"] is True
-    assert event["outcome"] == "failed"
-    assert event["reason"] is None
+
+@pytest.mark.parametrize("solver", ["pot", "tacco"])
+def test_application_conditions_cost_for_cost_capable_solver(
+    sp_modules,
+    monkeypatch,
+    solver,
+):
+    application, _benchmark = sp_modules
+    runner = _application_runner(
+        application,
+        probabilities=[[0.9, 0.1]] * 51,
+        solver=solver,
+        callback=lambda *_args, **_kwargs: pytest.fail(
+            "strict sp route must not call legacy guidance callback"
+        ),
+    )
+    captured = {}
+    _patch_application_problem(application, monkeypatch, captured)
+
+    assert runner.local_refinement() is True
+    assert np.all(captured["cost"] > 0.0)
+    assert captured["kwargs"]["method"] == solver
+    assert captured["kwargs"]["reference_measure"] is None
 
 
-def test_application_solver_failure_uses_exception_not_reason(
+def test_application_validates_full_ga_once_before_group_conditioning(
     sp_modules,
     monkeypatch,
 ):
     application, _benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _application_runner(application, collector)
+    assignment_module = importlib.import_module(
+        "revise.backend.runners.sp_svc_assignment"
+    )
+    real_validate = assignment_module.validate_global_assignment
+    validation_calls = []
+
+    def count_validation(*args, **kwargs):
+        validation_calls.append(args[0])
+        return real_validate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        assignment_module,
+        "validate_global_assignment",
+        count_validation,
+    )
+    runner = _application_runner(
+        application,
+        probabilities=[[0.9, 0.1]] * 51,
+    )
     captured = {}
     _patch_application_problem(application, monkeypatch, captured)
-    monkeypatch.setattr(
-        application,
-        "solve_local_ot",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("application solver exploded")
-        ),
-    )
 
-    with pytest.raises(RuntimeError, match="application solver exploded"):
+    runner.local_refinement()
+
+    assert len(validation_calls) == 1
+
+
+def test_same_hard_labels_with_different_soft_q_change_solver_coupling(
+    sp_modules,
+    monkeypatch,
+):
+    application, _benchmark = sp_modules
+    solutions = []
+    posterior_variants = (
+        [[0.95, 0.05] if i % 2 == 0 else [0.55, 0.45] for i in range(51)],
+        [[0.95, 0.05] if i % 3 == 0 else [0.55, 0.45] for i in range(51)],
+    )
+    for probabilities in posterior_variants:
+        runner = _application_runner(
+            application,
+            probabilities=probabilities,
+        )
+        runner.config.rec_graph_n_neighbors = 2
+        captured = {}
+        _patch_application_problem(
+            application,
+            monkeypatch,
+            captured,
+            n_slots=2,
+        )
+
+        def solve(nu, mu, cost, **_kwargs):
+            nu = np.asarray(nu, dtype=np.float64)
+            mu = np.asarray(mu, dtype=np.float64)
+            kernel = np.exp(-np.asarray(cost, dtype=np.float64))
+            column_scale = np.ones_like(mu)
+            for _ in range(1000):
+                row_scale = nu / (kernel @ column_scale)
+                column_scale = mu / (kernel.T @ row_scale)
+            coupling = (
+                row_scale[:, None] * kernel * column_scale[None, :]
+            )
+            solutions.append(
+                (coupling.copy(), nu, mu)
+            )
+            return coupling
+
+        monkeypatch.setattr(application, "solve_local_ot", solve)
         runner.local_refinement()
 
-    [event] = collector.events
-    assert event["attempted"] is True
-    assert event["outcome"] == "failed"
-    assert event["reason"] is None
+    for coupling, nu, mu in solutions:
+        np.testing.assert_allclose(
+            coupling.sum(axis=1), nu, rtol=1e-6, atol=1e-8
+        )
+        np.testing.assert_allclose(
+            coupling.sum(axis=0), mu, rtol=1e-6, atol=1e-8
+        )
+    assert not np.allclose(
+        solutions[0][0], solutions[1][0], rtol=1e-6, atol=1e-8
+    )
 
 
-def _benchmark_runner(
-    module,
-    collector,
-    *,
-    guidance: str = "prefer",
-    compatibility_mode: str = "cost",
-    solver: str = "pot",
-    donor_count: int = 2,
-    route: str | None = None,
+def test_application_zero_strength_keeps_baseline_solver_inputs(
+    sp_modules,
+    monkeypatch,
 ):
+    application, _benchmark = sp_modules
+    runner = _application_runner(
+        application,
+        probabilities=[[0.9, 0.1]] * 51,
+        strength=0.0,
+    )
+    captured = {}
+    _patch_application_problem(application, monkeypatch, captured)
+
+    assert runner.local_refinement() is False
+    np.testing.assert_allclose(
+        captured["cost"],
+        np.zeros((1, 51)),
+        rtol=1e-6,
+        atol=1e-8,
+    )
+    assert captured["kwargs"]["reference_measure"] is None
+
+
+def test_application_all_skipped_reports_not_applied(
+    sp_modules,
+    monkeypatch,
+):
+    application, _benchmark = sp_modules
+    runner = _application_runner(
+        application,
+        n_obs=2,
+        probabilities=[[0.9, 0.1]] * 2,
+        callback=lambda *_args, **_kwargs: pytest.fail(
+            "strict sp route must not call legacy guidance callback"
+        ),
+    )
+    monkeypatch.setattr(
+        application,
+        "trim_sp_adata",
+        lambda adata, *_args, **_kwargs: (adata.copy(), {}),
+    )
+
+    assert runner.local_refinement() is False
+
+
+def _benchmark_runner(module, *, solver="tacco", strength=0.2, callback=None):
     replace_count = 50
+    donor_count = 2
     total = replace_count + donor_count
     obs_names = [f"cell-{index}" for index in range(total)]
     st = AnnData(
@@ -667,11 +637,9 @@ def _benchmark_runner(
         ),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
-    st.obsm["major_type"] = pd.DataFrame(
-        [[0.9, 0.1] if index < replace_count else [0.1, 0.9]
-         for index in range(total)],
-        index=obs_names,
-        columns=["A", "B"],
+    st.obsm["major_type"] = _posterior(
+        obs_names,
+        [[0.9, 0.1]] * replace_count + [[0.6, 0.4]] * donor_count,
     )
     runner = module.SpSVC.__new__(module.SpSVC)
     runner.st_adata = st
@@ -684,17 +652,12 @@ def _benchmark_runner(
         var=pd.DataFrame(index=["g1", "g2"]),
     )
     runner.config = _config(
-        collector,
-        guidance=guidance,
-        compatibility_mode=compatibility_mode,
         solver=solver,
+        strength=strength,
+        callback=callback,
     )
-    if route is not None:
-        runner.config.assignment_guidance_route = route
-    runner.logger = logging.getLogger("test-sp-benchmark-guidance")
-    runner.seg_evaluate = SimpleNamespace(
-        run=lambda adata, _logger: adata
-    )
+    runner.logger = logging.getLogger("test-sp-benchmark-strict-ga")
+    runner.seg_evaluate = SimpleNamespace(run=lambda adata, _logger: adata)
     runner.svc = {}
     return runner
 
@@ -722,376 +685,72 @@ def _patch_benchmark_problem(module, monkeypatch, captured):
         lambda similarities, _mask: np.zeros_like(similarities),
     )
 
-    def solve(_nu, _mu, cost, **kwargs):
-        captured["cost"] = np.asarray(cost).copy()
-        captured["reference_measure"] = kwargs["reference_measure"]
+    def solve(nu, mu, cost, **kwargs):
+        captured.update(
+            nu=np.asarray(nu).copy(),
+            mu=np.asarray(mu).copy(),
+            cost=np.asarray(cost).copy(),
+            kwargs=kwargs.copy(),
+        )
         return np.ones((1, 50), dtype=np.float64)
 
     monkeypatch.setattr(module, "solve_local_ot", solve)
 
 
-def test_benchmark_off_keeps_base_cost_and_does_not_read_assignment(
-    sp_modules,
-    monkeypatch,
-):
+def test_benchmark_conditions_replace_to_donor_q(sp_modules, monkeypatch):
     _application, benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _benchmark_runner(benchmark, collector, guidance="off")
-    captured = {}
-    _patch_benchmark_problem(benchmark, monkeypatch, captured)
-    guidance = importlib.import_module(
-        "revise.backend.runners.sp_svc_assignment_guidance"
-    )
-    monkeypatch.setattr(
-        guidance,
-        "assignment_state_from_adata",
-        lambda *_args, **_kwargs: pytest.fail(
-            "off guidance must not read assignment state"
-        ),
-    )
-
-    runner.local_refinement()
-
-    np.testing.assert_array_equal(captured["cost"], np.zeros((1, 50)))
-    assert captured["reference_measure"] is None
-    [event] = collector.events
-    assert event["availability"] == "not_checked"
-    assert event["attempted"] is False
-    assert event["outcome"] == "off"
-    assert event["reason"] is None
-
-
-@pytest.mark.parametrize(
-    ("mode", "mismatch_side", "axis", "outcome", "solver_called"),
-    [
-        (
-            "prefer",
-            "replace",
-            "observation",
-            "fallback",
-            True,
-        ),
-        (
-            "require",
-            "donor",
-            "category",
-            "failed",
-            False,
-        ),
-    ],
-)
-def test_benchmark_axis_mismatch_obeys_pre_solver_policy(
-    sp_modules,
-    monkeypatch,
-    mode,
-    mismatch_side,
-    axis,
-    outcome,
-    solver_called,
-):
-    _application, benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _benchmark_runner(benchmark, collector, guidance=mode)
-    captured = {}
-    _patch_benchmark_problem(benchmark, monkeypatch, captured)
-    guidance = importlib.import_module(
-        "revise.backend.runners.sp_svc_assignment_guidance"
-    )
-    real_loader = guidance.assignment_state_from_adata
-
-    def mismatched_loader(adata, **kwargs):
-        if mismatch_side == "replace" and adata.n_obs == 50:
-            raise AssignmentStateError("observation_labels_mismatch")
-        if mismatch_side == "donor" and adata.n_obs == 2:
-            raise AssignmentStateError("category_labels_mismatch")
-        return real_loader(adata, **kwargs)
-
-    monkeypatch.setattr(
-        guidance,
-        "assignment_state_from_adata",
-        mismatched_loader,
-    )
-
-    if mode == "require":
-        with pytest.raises(AssignmentStateError):
-            runner.local_refinement()
-    else:
-        runner.local_refinement()
-
-    assert ("cost" in captured) is solver_called
-    if solver_called:
-        np.testing.assert_array_equal(captured["cost"], np.zeros((1, 50)))
-        assert runner.svc["sp_svc"].n_obs == 52
-    [event] = collector.events
-    assert event["availability"] == "unavailable"
-    assert event["attempted"] is False
-    assert event["outcome"] == outcome
-    if mode == "prefer":
-        assert event["reason"] == FallbackReason.ASSIGNMENT_MISALIGNED.value
-        assert event["reason_details"]["axis"] == axis
-    else:
-        assert event["reason"] is None
-        assert event["reason_details"] == {}
-
-
-def test_benchmark_post_solver_update_failure_is_terminal_and_reraised(
-    sp_modules,
-    monkeypatch,
-):
-    _application, benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _benchmark_runner(benchmark, collector)
-    captured = {}
-    _patch_benchmark_problem(benchmark, monkeypatch, captured)
-    monkeypatch.setattr(
-        benchmark.scipy.sparse,
-        "lil_matrix",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("benchmark update exploded")
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="benchmark update exploded"):
-        runner.local_refinement()
-
-    assert "cost" in captured
-    [event] = collector.events
-    assert event["availability"] == "available"
-    assert event["attempted"] is True
-    assert event["outcome"] == "failed"
-    assert event["reason"] is None
-
-
-@pytest.mark.parametrize(
-    "route",
-    ["sp_svc:segmentation", "sp_svc:bin2cell"],
-)
-def test_benchmark_public_routes_use_replace_and_donor_assignment_axes(
-    sp_modules,
-    monkeypatch,
-    route,
-):
-    _application, benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
     runner = _benchmark_runner(
         benchmark,
-        collector,
-        compatibility_mode="reference",
-        route=route,
+        callback=lambda *_args, **_kwargs: pytest.fail(
+            "strict sp route must not call legacy guidance callback"
+        ),
     )
     captured = {}
     _patch_benchmark_problem(benchmark, monkeypatch, captured)
 
-    runner.local_refinement()
-
-    np.testing.assert_array_equal(captured["cost"], np.zeros((1, 50)))
-    assert captured["reference_measure"] is not None
-    assert captured["reference_measure"].shape == (1, 50)
-    [event] = collector.events
-    assert event["route"] == route
-    assert event["operator"] == "replacement_ot"
-    assert event["outcome"] == "applied"
-    assert event["left_assignment"]["observation_axis"]["count"] == 50
-    assert event["right_assignment"]["observation_axis"]["count"] == 2
-
-
-def test_benchmark_cost_guidance_reaches_tacco_with_no_reference_measure(
-    sp_modules,
-    monkeypatch,
-):
-    _application, benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _benchmark_runner(
-        benchmark,
-        collector,
-        compatibility_mode="cost",
-        solver="tacco",
-    )
-    captured = {}
-    _patch_benchmark_problem(benchmark, monkeypatch, captured)
-
-    runner.local_refinement()
-
+    assert runner.local_refinement() is True
     assert np.all(captured["cost"] > 0.0)
-    assert captured["reference_measure"] is None
-    [event] = collector.events
-    assert event["solver"] == "tacco"
-    assert event["outcome"] == "applied"
+    assert captured["kwargs"]["reference_measure"] is None
 
 
-@pytest.mark.parametrize(
-    ("profile", "expected_route"),
-    [
-        ("benchmark_seg", "sim2real:segmentation"),
-        ("benchmark_bin2cell", "sim2real:bin2cell"),
-    ],
-)
-def test_public_benchmark_routes_resolve_default_and_emit_contextual_outcome(
+def test_benchmark_zero_strength_matches_unconditioned_solver_call(
     sp_modules,
     monkeypatch,
-    tmp_path,
-    profile,
-    expected_route,
 ):
     _application, benchmark = sp_modules
-    from revise.backend import adapters
-    from revise.config import load_raw_config, merge_unified_config
+    real_condition = benchmark.condition_sp_local_ot_cost
 
-    config_path = Path(__file__).resolve().parents[2] / "revise" / "revise.yaml"
-    merged = merge_unified_config(
-        raw_config=load_raw_config(config_path),
-        profile=profile,
-        runtime_overrides={},
-        io_overrides={
-            "data_root": str(tmp_path),
-            "output_root": str(tmp_path),
-            "sample_name": "sample",
-        },
-        algorithm_overrides={"graph": {"n_neighbors": 1}},
-    )
-    assert merged["runtime"]["strategy"] == "SpSvcBenchmarkSegStrategy"
-    assert merged["local_refinement"] == {
-        "guidance": "prefer",
-        "compatibility": {
-            "mode": "cost",
-            "beta": 1.0,
-            "min_affinity": 0.05,
-            "strength": 0.2,
-        },
-    }
-    route_key = (
-        f"{merged['runtime']['platform']}:{merged['runtime']['confounding']}"
-    )
-    assert route_key == expected_route
-
-    seed_collector = AssignmentGuidanceCollector()
-    seed = _benchmark_runner(benchmark, seed_collector)
-    st = seed.st_adata.copy()
-    st.obs["Level1"] = st.obs["major_type"].copy()
-    st.obsm["Level1"] = st.obsm["major_type"].copy()
-    reference = seed.sc_ref_adata.copy()
-    reference.obs["Level1"] = reference.obs["major_type"].copy()
-    ground_truth = st.copy()
-
-    class InputService:
-        def read_st_adata(self, _path):
-            return st.copy()
-
-        def read_real_adata(self, _path):
-            return ground_truth.copy()
-
-        def read_sc_ref_adata(self, _path):
-            return reference.copy()
-
+    baseline = {}
     monkeypatch.setattr(
-        adapters,
-        "_input_service",
-        lambda _ctx: InputService(),
+        benchmark,
+        "condition_sp_local_ot_cost",
+        lambda cost, **_kwargs: cost,
     )
-    collector = AssignmentGuidanceCollector()
-    ctx = SimpleNamespace(
-        merged_config=merged,
-        runtime=merged["runtime"],
-        io=merged["io"],
-        columns=merged["columns"],
-        route_key=route_key,
-        run_dir=tmp_path,
-        input_specs=[],
-        compatibility_mode=True,
-        assignment_guidance_callback=collector.callback,
-        logger=logging.getLogger(f"test-public-{profile}"),
+    _patch_benchmark_problem(benchmark, monkeypatch, baseline)
+    baseline_runner = _benchmark_runner(benchmark, strength=0.0)
+    assert baseline_runner.local_refinement() is False
+
+    zero_strength = {}
+    monkeypatch.setattr(
+        benchmark,
+        "condition_sp_local_ot_cost",
+        real_condition,
     )
-    strategy = adapters.SpSvcBenchmarkSegStrategy()
-    strategy.prepare_context(ctx)
-    assert ctx.runner_config.posterior_conditioning_enabled is True
-    assert ctx.runner_config.posterior_conditioning_strict is False
-    assert ctx.runner_config.posterior_conditioning_mode == "cost"
+    _patch_benchmark_problem(benchmark, monkeypatch, zero_strength)
+    zero_runner = _benchmark_runner(benchmark, strength=0.0)
+    assert zero_runner.local_refinement() is False
 
-    captured = {}
-    _patch_benchmark_problem(benchmark, monkeypatch, captured)
-    strategy.solve_ot(ctx)
-
-    assert np.all(captured["cost"] > 0.0)
-    [event] = collector.events
-    assert event["route"] == expected_route
-    assert event["mode"] == "prefer"
-    assert event["operator"] == "replacement_ot"
-    assert event["outcome"] == "applied"
-
-
-@pytest.mark.parametrize(
-    ("profile", "lr_solver", "expected_error"),
-    [
-        ("application_sp", "pot", "application"),
-        ("benchmark_seg", "tacco", "TACCO"),
-    ],
-)
-def test_public_sp_routes_reject_unsupported_reference_capability(
-    profile,
-    lr_solver,
-    expected_error,
-):
-    from revise.backend.policies import ModeValidationPolicy
-    from revise.config import load_raw_config, merge_unified_config
-
-    config_path = Path(__file__).resolve().parents[2] / "revise" / "revise.yaml"
-    merged = merge_unified_config(
-        raw_config=load_raw_config(config_path),
-        profile=profile,
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={
-            "local_refinement": {
-                "guidance": "prefer",
-                "compatibility": {"mode": "reference"},
-            },
-            "ot": {"lr": {"solver": lr_solver}},
-        },
-    )
-    ctx = SimpleNamespace(
-        merged_config=merged,
-        runtime=merged["runtime"],
-    )
-
-    with pytest.raises(ValueError, match=expected_error):
-        ModeValidationPolicy._validate_solver_compatibility(ctx)
-
-
-def test_public_benchmark_pot_reference_capability_is_allowed():
-    from revise.backend.policies import ModeValidationPolicy
-    from revise.config import load_raw_config, merge_unified_config
-
-    config_path = Path(__file__).resolve().parents[2] / "revise" / "revise.yaml"
-    merged = merge_unified_config(
-        raw_config=load_raw_config(config_path),
-        profile="benchmark_seg",
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={
-            "local_refinement": {
-                "guidance": "prefer",
-                "compatibility": {"mode": "reference"},
-            }
-        },
-    )
-
-    ModeValidationPolicy._validate_solver_compatibility(
-        SimpleNamespace(
-            merged_config=merged,
-            runtime=merged["runtime"],
+    for field in ("nu", "mu", "cost"):
+        np.testing.assert_allclose(
+            zero_strength[field],
+            baseline[field],
+            rtol=1e-6,
+            atol=1e-8,
         )
-    )
-
-
-def test_benchmark_missing_donors_is_not_applicable(sp_modules):
-    _application, benchmark = sp_modules
-    collector = AssignmentGuidanceCollector()
-    runner = _benchmark_runner(benchmark, collector, donor_count=0)
-
-    runner.local_refinement()
-
-    [event] = collector.events
-    assert event["applicability"] == "not_applicable"
-    assert event["outcome"] == "not_applicable"
-    assert event["reason"] == NotApplicableReason.REFERENCE_UNAVAILABLE.value
-    assert event["reason_details"] == {"role": "donor"}
+    assert zero_strength["kwargs"].keys() == baseline["kwargs"].keys()
+    for field, expected in baseline["kwargs"].items():
+        actual = zero_strength["kwargs"][field]
+        if isinstance(expected, np.ndarray):
+            np.testing.assert_array_equal(actual, expected)
+        else:
+            assert actual == expected

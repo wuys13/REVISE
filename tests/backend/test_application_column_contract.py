@@ -422,20 +422,13 @@ def test_sp_local_refinement_trims_by_the_configured_cell_type(monkeypatch):
         runner.local_refinement()
 
 
-def test_sp_argmax_without_soft_posterior_uses_one_hot_assignment_guidance(
+def test_sp_argmax_without_soft_posterior_fails_before_local_solver(
     monkeypatch,
     load_runner,
 ):
     module = load_runner("sp_svc_application")
-    from revise.backend.ops.assignment_guidance import (
-        AssignmentGuidanceCollector,
-    )
-    from revise.backend.runners import sp_svc_assignment_guidance as guidance
 
     runner = _sp_argmax_runner(module)
-    collector = AssignmentGuidanceCollector()
-    runner.config.assignment_guidance_callback = collector.callback
-    captured = {"compatibility_constructed": False}
     monkeypatch.setattr(
         module,
         "trim_sp_adata",
@@ -467,36 +460,16 @@ def test_sp_argmax_without_soft_posterior_uses_one_hot_assignment_guidance(
         ),
     )
 
-    real_assignment_compatibility = guidance.assignment_compatibility
-
-    def capture_compatibility(left, right, **kwargs):
-        captured["compatibility_constructed"] = True
-        assert left.value_semantics == "one_hot"
-        assert right.value_semantics == "one_hot"
-        return real_assignment_compatibility(left, right, **kwargs)
-
-    def capture_solve(_nu, _mu, _cost, **kwargs):
-        captured["reference_measure"] = kwargs["reference_measure"]
-        return np.ones((1, 51), dtype=np.float64)
-
     monkeypatch.setattr(
-        guidance,
-        "assignment_compatibility",
-        capture_compatibility,
+        module,
+        "solve_local_ot",
+        lambda *_args, **_kwargs: pytest.fail(
+            "missing soft Q must fail before local solve"
+        ),
     )
-    monkeypatch.setattr(module, "solve_local_ot", capture_solve)
 
-    runner.local_refinement()
-
-    assert captured == {
-        "compatibility_constructed": True,
-        "reference_measure": None,
-    }
-    [event] = collector.events
-    assert event["attempted"] is True
-    assert event["outcome"] == "applied"
-    assert event["left_assignment"]["value_semantics"] == "one_hot"
-    assert runner.svc["sp_svc"].n_obs == 51
+    with pytest.raises(ValueError, match=r"obsm\[major_type\]"):
+        runner.local_refinement()
 
 
 def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):

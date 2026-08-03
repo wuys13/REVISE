@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import scanpy as sc
 import scipy
 from tqdm import tqdm
@@ -6,14 +7,10 @@ from tqdm import tqdm
 from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import SegEvaluateKernel as SegEvaluate
 from revise.backend.ops.distance import similarity_to_distance
-from revise.backend.ops.assignment_guidance import NotApplicableReason
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
-from revise.backend.runners.sp_svc_assignment_guidance import (
-    assignment_categories,
-    guidance_mode,
-    prepare_assignment_guidance,
-    record_guidance_terminal,
-    record_not_applicable,
+from revise.backend.runners.sp_svc_assignment import (
+    condition_sp_local_ot_cost,
+    global_assignment_from_adata,
 )
 from revise.backend.ops.topology import get_adjacency_graph
 
@@ -46,58 +43,36 @@ class SpSVC(BenchmarkSVC):
             self.st_adata = self.seg_evaluate.run(self.st_adata, self.logger)
         else:
             self.logger.warning("No 'seg_error' not in st_adata.obs, evaluation skip.")
+        assignment_categories = pd.Index(
+            pd.unique(
+                self.sc_ref_adata.obs[self.config.cell_type_col]
+            )
+        )
+        assignment = global_assignment_from_adata(
+            self.st_adata,
+            key=self.config.cell_type_col,
+            expected_categories=assignment_categories,
+        )
+        conditioning_strength = getattr(
+            self.config,
+            "posterior_conditioning_cost_strength",
+            0.2,
+        )
+        conditioning_applied = False
         cell_type_adata_list = []
         for cell_type in tqdm(self.st_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstruting"):
-            guidance_problem_key = f"sp_svc_benchmark:{cell_type}"
             svc_adata_cell_type = self.st_adata[self.st_adata.obs[self.config.cell_type_col] == cell_type]
             svc_replace_adata = svc_adata_cell_type[~svc_adata_cell_type.obs["no_effect"]]
             svc_candidate_adata = svc_adata_cell_type[svc_adata_cell_type.obs["no_effect"]]
             if svc_replace_adata.shape[0] < 50:
                 self.logger.info(f"cell type: {cell_type} has too few spots, skip OT smoothing")
-                if getattr(
-                    self.config,
-                    "assignment_guidance_callback",
-                    None,
-                ) is not None:
-                    record_not_applicable(
-                        self.config,
-                        route="sp_svc_benchmark",
-                        operator="replacement_ot",
-                        problem_key=guidance_problem_key,
-                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                        reason_details={
-                            "unit": "observation",
-                            "observed": int(svc_replace_adata.shape[0]),
-                            "required": 50,
-                        },
-                    )
                 svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                 cell_type_adata_list.append(svc_replace_adata)
             elif svc_candidate_adata.shape[0] == 0:
                 self.logger.info(f"cell type: {cell_type} has no candidate cells, skip OT smoothing")
-                if getattr(
-                    self.config,
-                    "assignment_guidance_callback",
-                    None,
-                ) is not None:
-                    record_not_applicable(
-                        self.config,
-                        route="sp_svc_benchmark",
-                        operator="replacement_ot",
-                        problem_key=guidance_problem_key,
-                        reason=NotApplicableReason.REFERENCE_UNAVAILABLE,
-                        reason_details={"role": "donor"},
-                    )
                 svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                 cell_type_adata_list.append(svc_replace_adata)
             else:
-                assignment_category_labels = []
-                if guidance_mode(self.config) != "off":
-                    assignment_category_labels = assignment_categories(
-                        self.sc_ref_adata,
-                        self.st_adata,
-                        key=self.config.cell_type_col,
-                    )
                 # Build adjacency on ordered data to align replace and candidate partitions
                 svc_ordered = sc.concat([svc_replace_adata, svc_candidate_adata])
                 adjacent_matrix_all = get_adjacency_graph(
@@ -164,19 +139,6 @@ class SpSVC(BenchmarkSVC):
                     self.logger.info(
                         f"cell type: {cell_type}, skip OT smoothing due to empty active support"
                     )
-                    if getattr(
-                        self.config,
-                        "assignment_guidance_callback",
-                        None,
-                    ) is not None:
-                        record_not_applicable(
-                            self.config,
-                            route="sp_svc_benchmark",
-                            operator="replacement_ot",
-                            problem_key=guidance_problem_key,
-                            reason=NotApplicableReason.EMPTY_SUPPORT,
-                            reason_details={"support": "active"},
-                        )
                     svc_replace_adata.layers["ot_smooth"] = svc_replace_adata.X.copy()
                     cell_type_adata_list.append(svc_replace_adata)
                     continue
@@ -187,98 +149,67 @@ class SpSVC(BenchmarkSVC):
                     similarity_matrix,
                     valid_neighbor_mask,
                 )
-                (
+                distance_matrix = condition_sp_local_ot_cost(
                     distance_matrix,
-                    reference_measure,
-                    guidance_attempted,
-                ) = prepare_assignment_guidance(
-                    self.config,
-                    route="sp_svc_benchmark",
-                    operator="replacement_ot",
-                    problem_key=guidance_problem_key,
-                    left_adata=svc_replace_adata,
-                    right_adata=svc_candidate_adata,
-                    category_labels=assignment_category_labels,
-                    support=neighbor_idx_matrix,
-                    distance_matrix=distance_matrix,
-                    source_mass=nu,
-                    target_mass=mu,
+                    assignment=assignment,
+                    left_observations=svc_replace_adata.obs_names,
+                    right_observations=svc_candidate_adata.obs_names,
+                    neighbor_indices=neighbor_idx_matrix,
+                    strength=conditioning_strength,
                 )
                 distance_matrix[~valid_neighbor_mask] = np.inf
-                try:
-                    T_transform = solve_local_ot(
-                        nu,
-                        mu,
-                        distance_matrix.T,
-                        method=self.config.rec_ot_method,
-                        pot_reg=self.config.rec_pot_reg,
-                        pot_reg_m=self.config.rec_pot_reg_m,
-                        pot_reg_type=self.config.rec_pot_reg_type,
-                        pot_verbose=True,
-                        pot_num_iter_max=5000,
-                        reference_measure=reference_measure,
-                        valid_support_mask=valid_neighbor_mask.T,
-                        event_callback=getattr(self.config, "ot_event_callback", None),
-                    )
-                except Exception:
-                    record_guidance_terminal(
-                        self.config,
-                        problem_key=guidance_problem_key,
-                        attempted=guidance_attempted,
-                        outcome="failed",
-                    )
-                    raise
-                try:
-                    alpha = float(self.config.rec_alpha)
-                    smoothed = scipy.sparse.lil_matrix(
-                        recon_X_csr.shape,
-                        dtype=recon_X_csr.dtype,
-                    )
-
-                    for i in range(n_recon):
-                        idx = neighbor_idx_matrix[i]
-                        valid_mask = valid_neighbor_mask[i]
-                        if not np.any(valid_mask):
-                            smoothed[i] = recon_X_csr.getrow(i)
-                            continue
-
-                        idx = idx[valid_mask]
-                        w = T_transform[valid_mask, i]
-                        w_sum = w.sum()
-                        if w_sum <= 0:
-                            smoothed[i] = recon_X_csr.getrow(i)
-                            continue
-                        w = w / w_sum
-
-                        neigh_expr = cand_X_csr[idx]
-                        weighted = neigh_expr.T @ w
-                        weighted = np.asarray(weighted).ravel()
-
-                        base = recon_X_csr.getrow(i).toarray().ravel()
-                        new_vec = (1.0 - alpha) * base + alpha * weighted
-
-                        smoothed[i] = scipy.sparse.csr_matrix(new_vec)
-                    svc_replace_adata.layers["ot_smooth"] = (
-                        smoothed.tocsr().copy()
-                    )
-                    cell_type_adata_list.append(svc_replace_adata)
-                except Exception:
-                    record_guidance_terminal(
-                        self.config,
-                        problem_key=guidance_problem_key,
-                        attempted=guidance_attempted,
-                        outcome="failed",
-                    )
-                    raise
-                record_guidance_terminal(
-                    self.config,
-                    problem_key=guidance_problem_key,
-                    attempted=guidance_attempted,
-                    outcome="applied",
+                T_transform = solve_local_ot(
+                    nu,
+                    mu,
+                    distance_matrix.T,
+                    method=self.config.rec_ot_method,
+                    pot_reg=self.config.rec_pot_reg,
+                    pot_reg_m=self.config.rec_pot_reg_m,
+                    pot_reg_type=self.config.rec_pot_reg_type,
+                    pot_verbose=True,
+                    pot_num_iter_max=5000,
+                    reference_measure=None,
+                    valid_support_mask=valid_neighbor_mask.T,
+                    event_callback=getattr(self.config, "ot_event_callback", None),
                 )
+                conditioning_applied = conditioning_applied or conditioning_strength != 0
+                alpha = float(self.config.rec_alpha)
+                smoothed = scipy.sparse.lil_matrix(
+                    recon_X_csr.shape,
+                    dtype=recon_X_csr.dtype,
+                )
+
+                for i in range(n_recon):
+                    idx = neighbor_idx_matrix[i]
+                    valid_mask = valid_neighbor_mask[i]
+                    if not np.any(valid_mask):
+                        smoothed[i] = recon_X_csr.getrow(i)
+                        continue
+
+                    idx = idx[valid_mask]
+                    w = T_transform[valid_mask, i]
+                    w_sum = w.sum()
+                    if w_sum <= 0:
+                        smoothed[i] = recon_X_csr.getrow(i)
+                        continue
+                    w = w / w_sum
+
+                    neigh_expr = cand_X_csr[idx]
+                    weighted = neigh_expr.T @ w
+                    weighted = np.asarray(weighted).ravel()
+
+                    base = recon_X_csr.getrow(i).toarray().ravel()
+                    new_vec = (1.0 - alpha) * base + alpha * weighted
+
+                    smoothed[i] = scipy.sparse.csr_matrix(new_vec)
+                svc_replace_adata.layers["ot_smooth"] = (
+                    smoothed.tocsr().copy()
+                )
+                cell_type_adata_list.append(svc_replace_adata)
 
         svc_recon_adata = sc.concat(cell_type_adata_list)
         svc_recon_adata.X = svc_recon_adata.layers["ot_smooth"].copy()
 
         svc_no_effect = self.st_adata[self.st_adata.obs["no_effect"]]
         self.svc["sp_svc"] = sc.concat([svc_recon_adata, svc_no_effect])
+        return conditioning_applied

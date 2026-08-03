@@ -2,6 +2,7 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scanpy as sc
 from scipy import sparse
 from tqdm import tqdm
@@ -9,13 +10,9 @@ from tqdm import tqdm
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.ops.distance import similarity_to_distance
-from revise.backend.ops.assignment_guidance import NotApplicableReason
-from revise.backend.runners.sp_svc_assignment_guidance import (
-    assignment_categories,
-    guidance_mode,
-    prepare_assignment_guidance,
-    record_guidance_terminal,
-    record_not_applicable,
+from revise.backend.runners.sp_svc_assignment import (
+    condition_sp_local_ot_cost,
+    global_assignment_from_adata,
 )
 from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.shaver import trim_sp_adata
@@ -202,16 +199,24 @@ class SpSVC(ApplicationSVC):
         self.logger.info(f"after trim: {svc_recon_adata.X.data.shape}")
 
         svc_recon_adata.obsm = self.st_adata.obsm.copy()
-        assignment_category_labels = []
-        if guidance_mode(self.config) != "off":
-            assignment_category_labels = assignment_categories(
-                self.sc_ref_adata,
-                svc_recon_adata,
-                key=self.config.cell_type_col,
+        assignment_categories = pd.Index(
+            pd.unique(
+                self.sc_ref_adata.obs[self.config.cell_type_col]
             )
+        )
+        assignment = global_assignment_from_adata(
+            svc_recon_adata,
+            key=self.config.cell_type_col,
+            expected_categories=assignment_categories,
+        )
+        conditioning_strength = getattr(
+            self.config,
+            "posterior_conditioning_cost_strength",
+            0.2,
+        )
+        conditioning_applied = False
         cell_type_adata_list = []
         for cell_type in tqdm(svc_recon_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstructing"):
-            guidance_problem_key = f"sp_svc_application:{cell_type}"
             svc_recon_adata_cell_type = svc_recon_adata[svc_recon_adata.obs[self.config.cell_type_col] == cell_type]
             raw_st_adata_cell_type = svc_recon_adata_cell_type.copy()
             self.logger.info(f"begin OT smoothing for cell type: {cell_type}, adata shape: {svc_recon_adata_cell_type.shape}")
@@ -220,25 +225,6 @@ class SpSVC(ApplicationSVC):
             # established no-smoothing fallback instead of failing in PCA.
             if svc_recon_adata_cell_type.shape[0] <= 50:
                 self.logger.info(f"cell type: {cell_type}, has too few spots, skip OT smoothing")
-                if getattr(
-                    self.config,
-                    "assignment_guidance_callback",
-                    None,
-                ) is not None:
-                    record_not_applicable(
-                        self.config,
-                        route="sp_svc_application",
-                        operator="neighbor_ot",
-                        problem_key=guidance_problem_key,
-                        reason=NotApplicableReason.INSUFFICIENT_UNITS,
-                        reason_details={
-                            "unit": "observation",
-                            "observed": int(
-                                svc_recon_adata_cell_type.shape[0]
-                            ),
-                            "required": 51,
-                        },
-                    )
                 cell_type_adata_list.append(svc_recon_adata_cell_type)
             else:
                 adjacent_matrix = get_adjacency_graph(
@@ -282,19 +268,6 @@ class SpSVC(ApplicationSVC):
                     self.logger.info(
                         f"cell type: {cell_type}, skip OT smoothing due to empty active support"
                     )
-                    if getattr(
-                        self.config,
-                        "assignment_guidance_callback",
-                        None,
-                    ) is not None:
-                        record_not_applicable(
-                            self.config,
-                            route="sp_svc_application",
-                            operator="neighbor_ot",
-                            problem_key=guidance_problem_key,
-                            reason=NotApplicableReason.EMPTY_SUPPORT,
-                            reason_details={"support": "active"},
-                        )
                     cell_type_adata_list.append(svc_recon_adata_cell_type)
                     continue
                 stable_support = np.zeros(valid_neighbor_mask.T.shape, dtype=bool)
@@ -304,81 +277,50 @@ class SpSVC(ApplicationSVC):
                     similarity_matrix,
                     valid_neighbor_mask,
                 )
-                (
+                distance_matrix = condition_sp_local_ot_cost(
                     distance_matrix,
-                    reference_measure,
-                    guidance_attempted,
-                ) = prepare_assignment_guidance(
-                    self.config,
-                    route="sp_svc_application",
-                    operator="neighbor_ot",
-                    problem_key=guidance_problem_key,
-                    left_adata=svc_recon_adata_cell_type,
-                    right_adata=svc_recon_adata_cell_type,
-                    category_labels=assignment_category_labels,
-                    support=neighbor_idx_matrix,
-                    distance_matrix=distance_matrix,
-                    source_mass=nu,
-                    target_mass=mu,
+                    assignment=assignment,
+                    left_observations=svc_recon_adata_cell_type.obs_names,
+                    right_observations=svc_recon_adata_cell_type.obs_names,
+                    neighbor_indices=neighbor_idx_matrix,
+                    strength=conditioning_strength,
                 )
                 distance_matrix[~valid_neighbor_mask] = np.inf
-                try:
-                    T_transform = solve_local_ot(
-                        nu,
-                        mu,
-                        distance_matrix.T,
-                        method=self.config.rec_ot_method,
-                        pot_reg=self.config.rec_pot_reg,
-                        pot_reg_m=self.config.rec_pot_reg_m,
-                        pot_reg_type=self.config.rec_pot_reg_type,
-                        pot_verbose=True,
-                        pot_num_iter_max=5000,
-                        reference_measure=reference_measure,
-                        valid_support_mask=valid_neighbor_mask.T,
-                        event_callback=getattr(self.config, "ot_event_callback", None),
-                    )
-                except Exception:
-                    record_guidance_terminal(
-                        self.config,
-                        problem_key=guidance_problem_key,
-                        attempted=guidance_attempted,
-                        outcome="failed",
-                    )
-                    raise
-                try:
-                    # Ensure expressions are unchanged before aggregation
-                    _validate_expression_unchanged(
-                        svc_recon_adata_cell_type.X,
-                        raw_st_adata_cell_type.X,
-                        cell_type=cell_type,
-                    )
-                    svc_recon_adata_cell_type = self.graph_aggregate.run(
-                        adata=svc_recon_adata_cell_type,
-                        neighbor_idx_matrix=neighbor_idx_matrix,
-                        coupling_matrix=T_transform,
-                        valid_neighbor_mask=valid_neighbor_mask,
-                    )
-                    cell_type_adata_list.append(svc_recon_adata_cell_type)
-                except Exception:
-                    record_guidance_terminal(
-                        self.config,
-                        problem_key=guidance_problem_key,
-                        attempted=guidance_attempted,
-                        outcome="failed",
-                    )
-                    raise
-                record_guidance_terminal(
-                    self.config,
-                    problem_key=guidance_problem_key,
-                    attempted=guidance_attempted,
-                    outcome="applied",
+                T_transform = solve_local_ot(
+                    nu,
+                    mu,
+                    distance_matrix.T,
+                    method=self.config.rec_ot_method,
+                    pot_reg=self.config.rec_pot_reg,
+                    pot_reg_m=self.config.rec_pot_reg_m,
+                    pot_reg_type=self.config.rec_pot_reg_type,
+                    pot_verbose=True,
+                    pot_num_iter_max=5000,
+                    reference_measure=None,
+                    valid_support_mask=valid_neighbor_mask.T,
+                    event_callback=getattr(self.config, "ot_event_callback", None),
                 )
+                conditioning_applied = conditioning_applied or conditioning_strength != 0
+                # Ensure expressions are unchanged before aggregation
+                _validate_expression_unchanged(
+                    svc_recon_adata_cell_type.X,
+                    raw_st_adata_cell_type.X,
+                    cell_type=cell_type,
+                )
+                svc_recon_adata_cell_type = self.graph_aggregate.run(
+                    adata=svc_recon_adata_cell_type,
+                    neighbor_idx_matrix=neighbor_idx_matrix,
+                    coupling_matrix=T_transform,
+                    valid_neighbor_mask=valid_neighbor_mask,
+                )
+                cell_type_adata_list.append(svc_recon_adata_cell_type)
         self.svc["sp_svc"] = sc.concat(cell_type_adata_list)
         self.svc["sp_svc"].X = sparse.csr_matrix(self.svc["sp_svc"].X)
 
         if self.config.plot_flag:
             self.logger.info("Plotting spSVC...")
             self._umap_plot(self.svc["sp_svc"], prefix="sp_SVC")
+        return conditioning_applied
 
     def _umap_plot(self, adata, prefix):
         """
