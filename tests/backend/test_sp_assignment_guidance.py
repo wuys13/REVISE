@@ -586,7 +586,7 @@ def test_application_zero_strength_keeps_baseline_solver_inputs(
     captured = {}
     _patch_application_problem(application, monkeypatch, captured)
 
-    assert runner.local_refinement() is False
+    assert runner.local_refinement() is True
     np.testing.assert_allclose(
         captured["cost"],
         np.zeros((1, 51)),
@@ -714,7 +714,7 @@ def test_benchmark_zero_strength_matches_unconditioned_solver_call(
     )
     _patch_benchmark_problem(benchmark, monkeypatch, baseline)
     baseline_runner = _benchmark_runner(benchmark, strength=0.0)
-    assert baseline_runner.local_refinement() is False
+    assert baseline_runner.local_refinement() is True
 
     zero_strength = {}
     monkeypatch.setattr(
@@ -724,7 +724,7 @@ def test_benchmark_zero_strength_matches_unconditioned_solver_call(
     )
     _patch_benchmark_problem(benchmark, monkeypatch, zero_strength)
     zero_runner = _benchmark_runner(benchmark, strength=0.0)
-    assert zero_runner.local_refinement() is False
+    assert zero_runner.local_refinement() is True
 
     for field in ("nu", "mu", "cost"):
         np.testing.assert_allclose(

@@ -165,7 +165,7 @@ class ScSVCSr(ApplicationSVC):
             "local_refinement_strength",
             0.0,
         )
-        conditioning_applied = False
+        refinement_applied = False
 
         n_cells = SVC_X.shape[0]
         if n_cells > 1:
@@ -272,21 +272,20 @@ class ScSVCSr(ApplicationSVC):
                         reference_measure=None,
                         valid_support_mask=valid_neighbor_mask.T,
                     )
-                    if conditioning_strength != 0:
-                        callback = getattr(
-                            self.config,
-                            "local_refinement_applied_callback",
-                            None,
-                        )
-                        if callback is not None:
-                            callback()
-                        conditioning_applied = True
                     adata_cell = self.graph_aggregate.run(
                         adata=adata_cell,
                         neighbor_idx_matrix=neighbor_idx_matrix,
                         coupling_matrix=T_transform,
                         valid_neighbor_mask=valid_neighbor_mask,
                     )
+                    callback = getattr(
+                        self.config,
+                        "local_refinement_applied_callback",
+                        None,
+                    )
+                    if callback is not None:
+                        callback()
+                    refinement_applied = True
                     SVC_X_smoothed[idx] = np.asarray(adata_cell.X)
                 else:
                     self.logger.info(f"cell type: {cell_type}, skip OT smoothing due to empty marginals")
@@ -314,4 +313,4 @@ class ScSVCSr(ApplicationSVC):
         svc_adata = sc.AnnData(SVC_X, obs=svc_obs)
         svc_adata.var_names = st_adata_common.var_names
         self.svc["sc_svc_dec"] = svc_adata
-        return conditioning_applied
+        return refinement_applied

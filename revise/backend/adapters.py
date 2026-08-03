@@ -468,10 +468,7 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
         # centrally managed under revise.backend.kernels.
         from revise.backend.kernels import build_kernel
 
-        if (
-            ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}
-            and ctx.local_refinement_record["strength"] != 0
-        ):
+        if ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}:
             ctx.runner_config.local_refinement_applied_callback = (
                 lambda: ctx.record_local_refinement(True)
             )
@@ -701,6 +698,7 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
                     resolutions,
                     select_res=select_res,
                 )
+                ctx.record_local_refinement(True)
                 spatial_parts.append(_prefix_svc_cluster_labels(sc_svc_spatial_part, candidate))
                 expr_parts.append(_prefix_svc_cluster_labels(sc_svc_expr_part, candidate))
                 selected_cell_types.append(str(candidate))
@@ -726,6 +724,7 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
                 resolutions,
                 select_res=select_res,
             )
+            ctx.record_local_refinement(True)
         ctx.artifacts["outputs"] = {
             "sc_svc_spatial": sc_svc_spatial,
             "sc_svc_expr": sc_svc_expr,
@@ -794,6 +793,7 @@ class ScSvcHyperApplicationStrategy(ScSvcApplicationStrategy):
             resolutions,
             select_res=select_res,
         )
+        ctx.record_local_refinement(True)
         ctx.artifacts["outputs"] = {
             "sc_svc_spatial": sc_svc_spatial,
             "sc_svc_expr": sc_svc_expr,

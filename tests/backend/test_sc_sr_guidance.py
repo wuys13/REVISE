@@ -439,7 +439,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
         )
 
     baseline, conditioned = snapshots
-    assert baseline["applied"] is False
+    assert baseline["applied"] is True
     assert conditioned["applied"] is True
     assert len(baseline["calls"]) == len(conditioned["calls"]) == 2
     assert {call["method"] for call in conditioned["calls"]} == {solver}

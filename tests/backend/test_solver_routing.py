@@ -424,11 +424,11 @@ def test_runner_strategy_records_completed_conditioning_before_later_failure(
 
 
 @pytest.mark.parametrize(
-    ("task", "strength"),
-    [("sp_svc", 0.0), ("sc_svc", None), ("impute", None)],
+    ("task", "strength", "callback_expected"),
+    [("sp_svc", 0.0, True), ("sc_svc", None, False), ("impute", None, False)],
 )
-def test_unconditioned_routes_do_not_install_refinement_callback(
-    monkeypatch, tmp_path, task, strength
+def test_refinement_callback_is_independent_of_strength(
+    monkeypatch, tmp_path, task, strength, callback_expected
 ):
     import revise.backend.kernels as kernels
     from revise.backend.adapters import RunnerBackedStrategy
@@ -456,7 +456,7 @@ def test_unconditioned_routes_do_not_install_refinement_callback(
 
     ConcreteStrategy().global_anchoring(ctx)
 
-    assert not hasattr(ctx.runner_config, "local_refinement_applied_callback")
+    assert hasattr(ctx.runner_config, "local_refinement_applied_callback") is callback_expected
     assert ctx.local_refinement_record["applied"] is False
 
 

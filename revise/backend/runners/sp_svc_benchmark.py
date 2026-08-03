@@ -58,7 +58,7 @@ class SpSVC(BenchmarkSVC):
             "local_refinement_strength",
             0.2,
         )
-        conditioning_applied = False
+        refinement_applied = False
         cell_type_adata_list = []
         for cell_type in tqdm(self.st_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstruting"):
             svc_adata_cell_type = self.st_adata[self.st_adata.obs[self.config.cell_type_col] == cell_type]
@@ -171,15 +171,6 @@ class SpSVC(BenchmarkSVC):
                     reference_measure=None,
                     valid_support_mask=valid_neighbor_mask.T,
                 )
-                if conditioning_strength != 0:
-                    callback = getattr(
-                        self.config,
-                        "local_refinement_applied_callback",
-                        None,
-                    )
-                    if callback is not None:
-                        callback()
-                    conditioning_applied = True
                 alpha = float(self.config.rec_alpha)
                 smoothed = scipy.sparse.lil_matrix(
                     recon_X_csr.shape,
@@ -212,6 +203,14 @@ class SpSVC(BenchmarkSVC):
                 svc_replace_adata.layers["ot_smooth"] = (
                     smoothed.tocsr().copy()
                 )
+                callback = getattr(
+                    self.config,
+                    "local_refinement_applied_callback",
+                    None,
+                )
+                if callback is not None:
+                    callback()
+                refinement_applied = True
                 cell_type_adata_list.append(svc_replace_adata)
 
         svc_recon_adata = sc.concat(cell_type_adata_list)
@@ -219,4 +218,4 @@ class SpSVC(BenchmarkSVC):
 
         svc_no_effect = self.st_adata[self.st_adata.obs["no_effect"]]
         self.svc["sp_svc"] = sc.concat([svc_recon_adata, svc_no_effect])
-        return conditioning_applied
+        return refinement_applied

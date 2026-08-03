@@ -214,7 +214,7 @@ class SpSVC(ApplicationSVC):
             "local_refinement_strength",
             0.2,
         )
-        conditioning_applied = False
+        refinement_applied = False
         cell_type_adata_list = []
         for cell_type in tqdm(svc_recon_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstructing"):
             svc_recon_adata_cell_type = svc_recon_adata[svc_recon_adata.obs[self.config.cell_type_col] == cell_type]
@@ -299,15 +299,6 @@ class SpSVC(ApplicationSVC):
                     reference_measure=None,
                     valid_support_mask=valid_neighbor_mask.T,
                 )
-                if conditioning_strength != 0:
-                    callback = getattr(
-                        self.config,
-                        "local_refinement_applied_callback",
-                        None,
-                    )
-                    if callback is not None:
-                        callback()
-                    conditioning_applied = True
                 # Ensure expressions are unchanged before aggregation
                 _validate_expression_unchanged(
                     svc_recon_adata_cell_type.X,
@@ -320,6 +311,14 @@ class SpSVC(ApplicationSVC):
                     coupling_matrix=T_transform,
                     valid_neighbor_mask=valid_neighbor_mask,
                 )
+                callback = getattr(
+                    self.config,
+                    "local_refinement_applied_callback",
+                    None,
+                )
+                if callback is not None:
+                    callback()
+                refinement_applied = True
                 cell_type_adata_list.append(svc_recon_adata_cell_type)
         self.svc["sp_svc"] = sc.concat(cell_type_adata_list)
         self.svc["sp_svc"].X = sparse.csr_matrix(self.svc["sp_svc"].X)
@@ -327,7 +326,7 @@ class SpSVC(ApplicationSVC):
         if self.config.plot_flag:
             self.logger.info("Plotting spSVC...")
             self._umap_plot(self.svc["sp_svc"], prefix="sp_SVC")
-        return conditioning_applied
+        return refinement_applied
 
     def _umap_plot(self, adata, prefix):
         """

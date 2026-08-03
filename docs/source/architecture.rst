@@ -115,8 +115,10 @@ no aggregate data fingerprint. Software identity is collected once per run.
 The manifest retains the resolved ``ot_config`` and minimal
 ``local_refinement`` evidence, but has no OT or Assignment event state machine.
 
-The ``local_refinement.applied`` flag changes to true only after a local OT
-conditioning call succeeds. Failure and interruption continue through the
+The ``local_refinement.applied`` flag changes to true only after at least one
+route-owned local refinement unit completes successfully. It is independent of
+posterior conditioning and its strength: a completed local OT refinement with
+strength zero is still applied. Failure and interruption continue through the
 normal stage error and publication rollback; stage/run errors remain the
 authoritative failure explanation.
 

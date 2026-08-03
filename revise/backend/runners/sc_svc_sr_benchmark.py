@@ -187,7 +187,7 @@ class ScSVCSr(BenchmarkSVC):
             "local_refinement_strength",
             0.0,
         )
-        self._conditioning_applied = False
+        self._refinement_applied = False
         self._graphagg_posterior_source = f"project(obsm[{key_type}])"
 
         SVC_X_raw = np.asarray(SVC_X, dtype=np.float64)
@@ -240,7 +240,7 @@ class ScSVCSr(BenchmarkSVC):
                         "n_total": int(alpha_vals.shape[0]),
                         "alpha_quantiles": {str(q): float(v) for q, v in zip(q_points, q_vals)},
                     }
-        return self._conditioning_applied
+        return self._refinement_applied
 
     def _build_svc_adata(self, X, var_names):
         svc_obs = self.svc_obs.copy()
@@ -701,15 +701,6 @@ class ScSVCSr(BenchmarkSVC):
                 reference_measure=None,
                 valid_support_mask=valid_neighbor_mask.T,
             )
-            if self._conditioning_strength != 0:
-                callback = getattr(
-                    self.config,
-                    "local_refinement_applied_callback",
-                    None,
-                )
-                if callback is not None:
-                    callback()
-                self._conditioning_applied = True
             adata_cell = self.graph_aggregate.run(
                 adata=adata_cell,
                 neighbor_idx_matrix=neighbor_idx_matrix,
@@ -717,6 +708,14 @@ class ScSVCSr(BenchmarkSVC):
                 alpha_override=alpha_local,
                 valid_neighbor_mask=valid_neighbor_mask,
             )
+            callback = getattr(
+                self.config,
+                "local_refinement_applied_callback",
+                None,
+            )
+            if callback is not None:
+                callback()
+            self._refinement_applied = True
             smoothed_block = np.asarray(adata_cell.X)
             if target_local is None:
                 SVC_X_smoothed[idx] = smoothed_block
