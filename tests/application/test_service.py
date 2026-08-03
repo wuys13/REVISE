@@ -119,7 +119,6 @@ def _publish(tmp_path, *, sparse_x=False, mapping="mean", seed=None):
     ctx = _context(tmp_path, spatial, expression)
     result, path = _build_public_result(
         _args(tmp_path, mapping=mapping, seed=seed),
-        "application_sc",
         None,
         ctx,
     )
@@ -174,7 +173,6 @@ def test_ist_random_is_invariant_to_expression_row_order_and_records_donors(
     reordered = expression[["cell-3", "cell-1", "cell-4", "cell-2"], :].copy()
     second, _ = _build_public_result(
         _args(tmp_path / "second", mapping="random", seed=731),
-        "application_sc",
         None,
         _context(tmp_path / "second", spatial, reordered),
     )
@@ -243,16 +241,20 @@ def test_ist_metadata_uses_the_minimal_2x_contract(tmp_path, mapping):
     result, _, ctx, _, _ = _publish(tmp_path, mapping=mapping)
 
     metadata = result.uns["revise_reconstruction"]
-    assert metadata == {
+    expected = {
         "spatial_note": "keep",
         "schema_version": 2,
         "svc_type": "iST-SVC",
         "ist_mapping": mapping,
-        "effective_seed": 17 if mapping == "random" else None,
         "expression_source": "expression_carrier.X_as_is",
-        "donor_column": "revise_ist_donor_id" if mapping == "random" else None,
-        "donor_sha256": metadata["donor_sha256"] if mapping == "random" else None,
     }
+    if mapping == "random":
+        expected.update(
+            effective_seed=17,
+            donor_column="revise_ist_donor_id",
+            donor_sha256=metadata["donor_sha256"],
+        )
+    assert metadata == expected
     assert ctx.provenance["result"] == {
         "filename": "SVC.h5ad",
         "type": "iST-SVC",
@@ -274,6 +276,31 @@ def test_ist_metadata_uses_the_minimal_2x_contract(tmp_path, mapping):
             "donor_sha256": None,
             "donor_count": None,
         }
+
+
+@pytest.mark.parametrize(
+    ("metadata", "contract"),
+    (
+        (
+            {"effective_seed": 17},
+            {
+                "schema_version": 2,
+                "svc_type": "iST-SVC",
+                "ist_mapping": "mean",
+                "expression_source": "expression_carrier.X_as_is",
+            },
+        ),
+        (
+            {"ist_mapping": "random"},
+            {"schema_version": 2, "svc_type": "hST-SVC"},
+        ),
+    ),
+)
+def test_inapplicable_reconstruction_metadata_is_rejected(metadata, contract):
+    from revise.application.service import _merge_contract_metadata
+
+    with pytest.raises(ValueError, match="inapplicable contract keys"):
+        _merge_contract_metadata(metadata, contract)
 
 
 @pytest.mark.parametrize(
@@ -337,7 +364,6 @@ def test_ist_validation_fails_before_replacing_the_public_result(
     with pytest.raises((KeyError, ValueError), match=message):
         _build_public_result(
             _args(tmp_path, mapping="random"),
-            "application_sc",
             None,
             _context(tmp_path, spatial, expression),
         )
@@ -358,7 +384,6 @@ def test_ist_missing_carrier_fails_before_replacing_the_public_result(tmp_path):
     with pytest.raises(RuntimeError, match="sc_svc_expr"):
         _build_public_result(
             _args(tmp_path),
-            "application_sc",
             None,
             ctx,
         )
@@ -378,7 +403,6 @@ def test_contract_metadata_conflict_fails_without_silent_overwrite(tmp_path):
     with pytest.raises(ValueError, match="schema_version"):
         _build_public_result(
             _args(tmp_path),
-            "application_sc",
             None,
             _context(tmp_path, spatial, expression),
         )
@@ -440,7 +464,6 @@ def test_single_file_publication_reloads_staged_h5ad_before_replace(
     with pytest.raises(OSError):
         service._build_public_result(
             _args(tmp_path),
-            "application_sc",
             None,
             _context(tmp_path, spatial, expression),
         )
@@ -449,8 +472,9 @@ def test_single_file_publication_reloads_staged_h5ad_before_replace(
     assert list(path.parent.iterdir()) == [path]
 
 
-def test_written_result_matches_the_returned_result(tmp_path):
-    result, path, _, _, _ = _publish(tmp_path, mapping="random")
+@pytest.mark.parametrize("mapping", ("mean", "random"))
+def test_written_result_matches_the_returned_result(tmp_path, mapping):
+    result, path, _, _, _ = _publish(tmp_path, mapping=mapping)
 
     written = read_h5ad(path)
     assert written.obs_names.equals(result.obs_names)

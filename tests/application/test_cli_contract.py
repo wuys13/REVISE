@@ -198,12 +198,11 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
 
 
 @pytest.mark.parametrize(
-    ("svc_type", "profile", "svc_kind", "output_key", "expected_type"),
+    ("svc_type", "svc_kind", "output_key", "expected_type"),
     [
-        ("hST-SVC", "application_sp", "sp", "sp_svc", "hST-SVC"),
+        ("hST-SVC", "sp", "sp_svc", "hST-SVC"),
         (
             "sST-SVC",
-            "application_sc_sr",
             "sc",
             "sc_svc_dec",
             "sST-SVC",
@@ -213,7 +212,6 @@ def test_canonical_cli_passes_publication_into_pipeline_finalize(monkeypatch, tm
 def test_public_result_links_to_manifest_and_registers_artifact(
     tmp_path,
     svc_type,
-    profile,
     svc_kind,
     output_key,
     expected_type,
@@ -248,7 +246,6 @@ def test_public_result_links_to_manifest_and_registers_artifact(
 
     result, path = service._build_public_result(
         args,
-        profile,
         output_key,
         ctx,
     )
@@ -257,16 +254,10 @@ def test_public_result_links_to_manifest_and_registers_artifact(
     assert result.uns["revise_reconstruction"] == {
         "schema_version": 2,
         "svc_type": expected_type,
-        "ist_mapping": None,
-        "effective_seed": None,
-        "expression_source": None,
-        "donor_column": None,
-        "donor_sha256": None,
     }
-    assert published.uns["revise_reconstruction"] == {
-        "schema_version": 2,
-        "svc_type": expected_type,
-    }
+    assert published.uns["revise_reconstruction"] == result.uns[
+        "revise_reconstruction"
+    ]
     assert path == tmp_path / "out" / "sample" / expected_type / "SVC.h5ad"
     assert ctx.provenance["result"] == {
         "filename": "SVC.h5ad",
@@ -317,7 +308,7 @@ def test_public_result_write_failure_preserves_previous_result(
     monkeypatch.setattr(AnnData, "write_h5ad", partial_write)
 
     with pytest.raises(OSError, match="simulated H5AD failure"):
-        service._build_public_result(args, "application_sp", "sp_svc", ctx)
+        service._build_public_result(args, "sp_svc", ctx)
 
     assert output_path.read_bytes() == b"previous-valid-result"
     assert list(output_path.parent.iterdir()) == [output_path]
@@ -361,7 +352,7 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
     )
 
     with pytest.raises(OSError, match="simulated manifest failure"):
-        service._build_public_result(args, "application_sp", "sp_svc", ctx)
+        service._build_public_result(args, "sp_svc", ctx)
 
     assert output_path.read_bytes() == b"previous-valid-result"
     assert "result" not in ctx.provenance
@@ -402,6 +393,6 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
         ValueError,
         match="SVC type 'hST-SVC' requires internal kind 'sp'",
     ):
-        service._build_public_result(args, "application_sp", "sp_svc", ctx)
+        service._build_public_result(args, "sp_svc", ctx)
 
     assert not output_root.exists()

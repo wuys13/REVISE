@@ -113,9 +113,9 @@ def test_ist_mapping_accepts_both_public_modes(mapping):
 def test_ot_method_help_explains_tacco_default_and_explicit_pot():
     from revise.application.cli import build_parser
 
-    help_text = build_parser().format_help()
+    help_text = " ".join(build_parser().format_help().split())
 
-    assert "standard sc-SVC defaults to TACCO" in help_text
+    assert "iST-SVC defaults to TACCO" in help_text
     assert "'pot' explicitly selects a different algorithm" in help_text
 
 
@@ -168,7 +168,7 @@ def test_parser_rejects_removed_set_option():
     from revise.application.cli import parse_args
 
     with pytest.raises(SystemExit) as exc_info:
-        parse_args(_required_args("sp-SVC") + ["--set", "graph.method=pca"])
+        parse_args(_required_args("hST-SVC") + ["--set", "graph.method=pca"])
 
     assert exc_info.value.code == 2
 

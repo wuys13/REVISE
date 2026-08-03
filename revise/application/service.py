@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -49,6 +47,15 @@ APPLICATION_ROUTES = {
 }
 
 REVISEPipeline = None
+RECONSTRUCTION_CONTRACT_KEYS = {
+    "schema_version",
+    "svc_type",
+    "ist_mapping",
+    "effective_seed",
+    "expression_source",
+    "donor_column",
+    "donor_sha256",
+}
 
 
 def _cluster_labels(adata, cluster_col: str, source: str):
@@ -169,6 +176,12 @@ def _merge_contract_metadata(existing, contract: dict) -> dict:
         raise ValueError("revise_reconstruction namespace must be a mapping")
     else:
         merged = copy.deepcopy(existing)
+    inapplicable = (merged.keys() & RECONSTRUCTION_CONTRACT_KEYS) - contract.keys()
+    if inapplicable:
+        raise ValueError(
+            "revise_reconstruction contains inapplicable contract keys "
+            f"{sorted(inapplicable)}"
+        )
     for key, value in contract.items():
         if key in merged and merged[key] != value:
             raise ValueError(
@@ -179,38 +192,22 @@ def _merge_contract_metadata(existing, contract: dict) -> dict:
     return merged
 
 
-def _donor_hash(donor_ids: list[str]) -> str:
-    payload = json.dumps(
-        donor_ids,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def _ist_contract(mapping: str, seed: int, donor_ids: list[str] | None) -> dict:
-    random_mapping = mapping == "random"
-    return {
+    contract = {
         "schema_version": 2,
         "svc_type": "iST-SVC",
         "ist_mapping": mapping,
-        "effective_seed": seed if random_mapping else None,
         "expression_source": "expression_carrier.X_as_is",
-        "donor_column": "revise_ist_donor_id" if random_mapping else None,
-        "donor_sha256": _donor_hash(donor_ids) if donor_ids is not None else None,
     }
+    if donor_ids is not None:
+        from revise.utils import hash_jsonable
 
-
-def _direct_contract(svc_type: str) -> dict:
-    return {
-        "schema_version": 2,
-        "svc_type": svc_type,
-        "ist_mapping": None,
-        "effective_seed": None,
-        "expression_source": None,
-        "donor_column": None,
-        "donor_sha256": None,
-    }
+        contract.update(
+            effective_seed=seed,
+            donor_column="revise_ist_donor_id",
+            donor_sha256=hash_jsonable(donor_ids),
+        )
+    return contract
 
 
 def _validate_ist_carriers(spatial, expression, *, random_mapping: bool):
@@ -345,7 +342,7 @@ def _build_result(args, output_key, ctx, seed: int):
     result = outputs[output_key].copy()
     result.uns["revise_reconstruction"] = _merge_contract_metadata(
         result.uns.get("revise_reconstruction"),
-        _direct_contract(args.svc_type),
+        {"schema_version": 2, "svc_type": args.svc_type},
     )
     if not _is_finite(result.X):
         raise ValueError(f"{args.svc_type} output X must contain only finite values")
@@ -366,15 +363,27 @@ def _validate_written_result(path: Path, source) -> None:
             raise ValueError("Published H5AD observation names do not match the source")
         if not written.var_names.equals(source.var_names):
             raise ValueError("Published H5AD variable names do not match the source")
+        source_metadata = source.uns["revise_reconstruction"]
+        written_metadata = written.uns.get("revise_reconstruction", {})
+        expected = {
+            key: value
+            for key, value in source_metadata.items()
+            if key in RECONSTRUCTION_CONTRACT_KEYS
+        }
+        actual = {
+            key: value
+            for key, value in written_metadata.items()
+            if key in RECONSTRUCTION_CONTRACT_KEYS
+        }
+        if actual != expected:
+            raise ValueError("Published H5AD reconstruction metadata is incomplete")
     finally:
         written.file.close()
 
 
-def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]:
+def _build_public_result(args, output_key, ctx) -> tuple[AnnData, Path]:
     from revise.utils import completed_artifact
 
-    del profile
-    _validate_ist_mapping(args)
     route = APPLICATION_ROUTES[args.svc_type]
     if ctx.svc.svc_kind != route.svc_kind:
         raise ValueError(
@@ -396,8 +405,8 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
         assembly_record = {
             "ist_mapping": args.ist_mapping,
             "effective_seed": seed if random_mapping else None,
-            "donor_column": metadata["donor_column"],
-            "donor_sha256": metadata["donor_sha256"],
+            "donor_column": metadata.get("donor_column"),
+            "donor_sha256": metadata.get("donor_sha256"),
             "donor_count": result.n_obs if random_mapping else None,
         }
 
@@ -488,14 +497,12 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
 
 
 def reconstruct(args: argparse.Namespace):
-    _validate_ist_mapping(args)
     route = APPLICATION_ROUTES[args.svc_type]
     published = {}
 
     def publish(ctx):
         published["result"], published["path"] = _build_public_result(
             args,
-            route.profile,
             route.output_key,
             ctx,
         )
