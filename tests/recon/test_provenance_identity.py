@@ -392,7 +392,7 @@ def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
     assert not output_root.exists()
 
 
-def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
+def test_manifest_preserves_result_and_ist_assembly(tmp_path):
     config = _config(tmp_path)
     ctx = PipelineContext(
         merged_config=config,
@@ -406,17 +406,14 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     )
     ctx.provenance["result"] = {
         "filename": "SVC.h5ad",
-        "type": "sp-SVC",
+        "type": "iST-SVC",
     }
-    ctx.provenance["results"] = {
-        "spatial": {
-            "filename": "sc_SVC_spatial.h5ad",
-            "type": "sc-SVC",
-        },
-        "expression": {
-            "filename": "sc_SVC_expr.h5ad",
-            "type": "sc-SVC",
-        },
+    ctx.provenance["assembly"] = {
+        "ist_mapping": "random",
+        "effective_seed": 17,
+        "donor_column": "revise_ist_donor_id",
+        "donor_sha256": "a" * 64,
+        "donor_count": 2,
     }
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
@@ -424,18 +421,15 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     assert manifest["schema_version"] == 2
     assert manifest["result"] == {
         "filename": "SVC.h5ad",
-        "type": "sp-SVC",
+        "type": "iST-SVC",
     }
-    assert manifest["results"] == {
-        "spatial": {
-            "filename": "sc_SVC_spatial.h5ad",
-            "type": "sc-SVC",
-        },
-        "expression": {
-            "filename": "sc_SVC_expr.h5ad",
-            "type": "sc-SVC",
-        },
+    assert manifest["assembly"] == {
+        "ist_mapping": "random",
+        "effective_seed": 17,
+        "donor_column": "revise_ist_donor_id",
+        "donor_sha256": "a" * 64,
+        "donor_count": 2,
     }
-    assert ctx.provenance["results"] == manifest["results"]
+    assert ctx.provenance["assembly"] == manifest["assembly"]
     assert manifest["input_identities"] == []
     assert "data_fingerprint" not in manifest
