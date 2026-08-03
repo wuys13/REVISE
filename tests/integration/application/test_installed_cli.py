@@ -386,18 +386,7 @@ def test_source_and_installed_minimal_pot_runs_match(installed_cli):
         published = read_h5ad(public)
         backlink = published.uns["revise_reconstruction"]["run_manifest"]
         assert (public.parent / backlink).resolve() == manifest_path.resolve()
-        assert any(
-            event["phase"] == "ga"
-            and event["solver"] == "pot"
-            and event["status"] == "completed"
-            for event in manifest["ot_events"]
-        )
-        assert any(
-            event["phase"] == "lr"
-            and event["solver"] == "pot"
-            and event["status"] == "completed"
-            for event in manifest["ot_events"]
-        )
+        assert "ot_events" not in manifest
         runs.append((payload, manifest))
 
     assert runs[0][0]["shape"] == runs[1][0]["shape"] == [52, 52]

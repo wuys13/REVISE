@@ -298,9 +298,16 @@ class SpSVC(ApplicationSVC):
                     pot_num_iter_max=5000,
                     reference_measure=None,
                     valid_support_mask=valid_neighbor_mask.T,
-                    event_callback=getattr(self.config, "ot_event_callback", None),
                 )
-                conditioning_applied = conditioning_applied or conditioning_strength != 0
+                if conditioning_strength != 0:
+                    callback = getattr(
+                        self.config,
+                        "local_refinement_applied_callback",
+                        None,
+                    )
+                    if callback is not None:
+                        callback()
+                    conditioning_applied = True
                 # Ensure expressions are unchanged before aggregation
                 _validate_expression_unchanged(
                     svc_recon_adata_cell_type.X,

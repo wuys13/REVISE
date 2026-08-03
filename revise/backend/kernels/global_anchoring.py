@@ -20,19 +20,11 @@ from revise.config.runner_conf import ApplicationScConf
 class GlobalAnchoringKernel(BaseKernel):
     """Backend-native global anchoring kernel (POT/TACCO)."""
 
-    def __init__(self, config, logger, *, event_phase: str = "ga"):
+    def __init__(self, config, logger):
         super().__init__(config, logger)
-        if event_phase not in {"ga", "lr"}:
-            raise ValueError("event_phase must be one of ['ga', 'lr']")
         self.mode = self.config.annotate_mode
         self.cell_type_col = self.config.cell_type_col
         self.confidence_col = self.config.confidence_col
-        self.event_callback = getattr(self.config, "ot_event_callback", None)
-        self.event_phase = event_phase
-
-    def _record_event(self, status: str) -> None:
-        if self.event_callback is not None:
-            self.event_callback(self.event_phase, self.mode, status)
 
     @staticmethod
     def _reference_categories(reference_labels) -> pd.Index:
@@ -139,7 +131,6 @@ class GlobalAnchoringKernel(BaseKernel):
                 kwargs["annotate_pot_reg_m"],
                 kwargs["annotate_pot_reg_type"],
             )
-            self._record_event("attempted")
             import ot
 
             t_transform = ot.unbalanced.sinkhorn_unbalanced(
@@ -168,11 +159,9 @@ class GlobalAnchoringKernel(BaseKernel):
                 expected_categories=expected_categories,
             )
             st_adata = self._publish_assignment(assignment, st_adata)
-            self._record_event("completed")
             return st_adata
 
         if self.mode == "tacco":
-            self._record_event("attempted")
             tc = require_tacco()
 
             overlap_genes = st_adata.var_names.intersection(sc_ref_adata.var_names)
@@ -226,7 +215,6 @@ class GlobalAnchoringKernel(BaseKernel):
             del st_adata_raw.obsm[result_key]
             st_adata.obsm = st_adata_raw.obsm.copy()
             st_adata = self._publish_assignment(assignment, st_adata)
-            self._record_event("completed")
             return st_adata
 
         raise NotImplementedError(f"Unsupported annotate_mode={self.mode}")

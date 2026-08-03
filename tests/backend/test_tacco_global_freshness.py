@@ -29,13 +29,12 @@ def _inputs():
     return target, reference
 
 
-def _config(mode, callback=None):
+def _config(mode):
     return SimpleNamespace(
         annotate_mode=mode,
         cell_type_col="Level1",
         confidence_col="Confidence",
         unknown_key="Unknown",
-        ot_event_callback=callback,
     )
 
 
@@ -112,9 +111,8 @@ def test_tacco_uses_unique_result_key_then_promotes_only_fresh_output(monkeypatc
         return adata, ref
 
     _install_tacco(monkeypatch, annotate)
-    events = []
     kernel = GlobalAnchoringKernel(
-        _config("tacco", lambda *event: events.append(event)),
+        _config("tacco"),
         logging.getLogger("test"),
     )
 
@@ -124,10 +122,6 @@ def test_tacco_uses_unique_result_key_then_promotes_only_fresh_output(monkeypatc
     assert seen[0] not in result.obsm
     pd.testing.assert_frame_equal(result.obsm["Level1"], _valid_result(result))
     assert result.obs["Level1"].tolist() == ["A", "B"]
-    assert events == [
-        ("ga", "tacco", "attempted"),
-        ("ga", "tacco", "completed"),
-    ]
 
 
 def test_tacco_rejects_all_nan_rows_without_reference_prior_repair(
@@ -191,16 +185,13 @@ def test_tacco_rejects_all_nan_rows_without_reference_prior_repair(
         return adata, processed_reference
 
     _install_tacco(monkeypatch, annotate)
-    events = []
-
     with pytest.raises(ValueError, match="finite"):
         GlobalAnchoringKernel(
-            _config("tacco", lambda *event: events.append(event)),
+            _config("tacco"),
             logging.getLogger("test"),
         ).run(target, reference)
 
     assert "tacco_side_effect" not in reference.uns
-    assert events == [("ga", "tacco", "attempted")]
 
 
 def test_tacco_does_not_hide_partial_nonfinite_final_zero_row(monkeypatch):
@@ -243,15 +234,11 @@ def test_tacco_rejects_target_with_no_informative_shared_gene_row(monkeypatch):
         raise AssertionError("TACCO must not run without an informative row")
 
     _install_tacco(monkeypatch, annotate)
-    events = []
-
     with pytest.raises(ValueError, match="at least one target row"):
         GlobalAnchoringKernel(
-            _config("tacco", lambda *event: events.append(event)),
+            _config("tacco"),
             logging.getLogger("test"),
         ).run(target, reference)
-
-    assert events == [("ga", "tacco", "attempted")]
 
 
 def test_tacco_wrong_result_key_fails_closed(monkeypatch):
@@ -293,15 +280,11 @@ def test_malformed_fresh_tacco_result_fails_before_completed(
         return adata, ref
 
     _install_tacco(monkeypatch, annotate)
-    events = []
-
     with pytest.raises(ValueError, match=message):
         GlobalAnchoringKernel(
-            _config("tacco", lambda *event: events.append(event)),
+            _config("tacco"),
             logging.getLogger("test"),
         ).run(target, reference)
-
-    assert events == [("ga", "tacco", "attempted")]
 
 
 @pytest.mark.parametrize(
@@ -323,9 +306,8 @@ def test_malformed_pot_coupling_fails_before_completed(
         "sinkhorn_unbalanced",
         lambda *args, **kwargs: coupling,
     )
-    events = []
     kernel = GlobalAnchoringKernel(
-        _config("pot", lambda *event: events.append(event)),
+        _config("pot"),
         logging.getLogger("test"),
     )
 
@@ -338,8 +320,6 @@ def test_malformed_pot_coupling_fails_before_completed(
             annotate_pot_reg_type="entropy",
         )
 
-    assert events == [("ga", "pot", "attempted")]
-
 
 def test_pot_global_records_completed_only_after_validated_result(monkeypatch):
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
@@ -349,9 +329,8 @@ def test_pot_global_records_completed_only_after_validated_result(monkeypatch):
         "sinkhorn_unbalanced",
         lambda *args, **kwargs: np.array([[0.4, 0.1], [0.2, 0.3]]),
     )
-    events = []
     result = GlobalAnchoringKernel(
-        _config("pot", lambda *event: events.append(event)),
+        _config("pot"),
         logging.getLogger("test"),
     ).run(
         target,
@@ -362,7 +341,6 @@ def test_pot_global_records_completed_only_after_validated_result(monkeypatch):
     )
 
     assert result.obsm["Level1"].shape == (2, 2)
-    assert events == [("ga", "pot", "attempted"), ("ga", "pot", "completed")]
 
 
 def test_pot_publishes_ordered_row_normalized_posterior_and_argmax_labels(

@@ -520,7 +520,7 @@ def test_explicit_cli_ot_flag_overrides_both_phases(method):
     assert overrides["ot"]["lr"]["solver"] == method
 
 
-def test_framework_provenance_records_resolved_ot_config_and_events(tmp_path):
+def test_framework_provenance_records_resolved_ot_config_without_events(tmp_path):
     from revise.framework import REVISEPipeline
 
     merged = _merge(_raw_config())
@@ -536,10 +536,7 @@ def test_framework_provenance_records_resolved_ot_config_and_events(tmp_path):
         stage_trace=[],
         quality_metrics={},
         svc=svc,
-        ot_events=[
-            {"phase": "ga", "solver": "pot", "status": "requested", "call": 0},
-            {"phase": "lr", "solver": "pot", "status": "requested", "call": 0},
-        ],
+        software_versions={},
         local_refinement_record={
             "route": "sp_svc:bin2cell",
             "applied": False,
@@ -550,7 +547,7 @@ def test_framework_provenance_records_resolved_ot_config_and_events(tmp_path):
     REVISEPipeline()._write_final_metadata(ctx)
 
     assert svc.provenance["ot_config"] == merged["ot"]
-    assert svc.provenance["ot_events"] == ctx.ot_events
+    assert "ot_events" not in svc.provenance
     assert not any("actual" in key or "completed" in key for key in svc.provenance)
 
 

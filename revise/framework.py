@@ -21,7 +21,7 @@ from revise.utils import (
     build_run_dir,
     build_run_logger,
     canonical_config_projection,
-    collect_package_versions,
+    collect_software_versions,
     exclusive_run_directory,
     hash_jsonable,
     set_global_seed,
@@ -238,6 +238,7 @@ class REVISEPipeline:
             config_hash=config_hash,
             dry_run=bool(dry_run),
             finalize_callback=finalize_callback,
+            software_versions=collect_software_versions(merged_config),
         )
         ctx.set_provenance_callback(self._write_final_metadata, notify=False)
 
@@ -279,7 +280,7 @@ class REVISEPipeline:
             except _SigtermInterrupt as exc:
                 try:
                     ctx.rollback_pending_publication()
-                    ctx.terminate_run(exc, interrupted=True)
+                    ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise KeyboardInterrupt("received SIGTERM") from persistence_error
                 logger.warning("[framework] run interrupted by SIGTERM")
@@ -290,7 +291,7 @@ class REVISEPipeline:
             except KeyboardInterrupt as exc:
                 try:
                     ctx.rollback_pending_publication()
-                    ctx.terminate_run(exc, interrupted=True)
+                    ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
                 logger.warning("[framework] run interrupted")
@@ -310,7 +311,7 @@ class REVISEPipeline:
             ModeValidationPolicy().validate(ctx)
         except KeyboardInterrupt as exc:
             try:
-                ctx.terminate_stage("validate_inputs", exc, interrupted=True)
+                ctx.terminate_stage("validate_inputs", exc)
             except BaseException as persistence_error:
                 raise exc from persistence_error
             raise
@@ -356,25 +357,12 @@ class REVISEPipeline:
             "input_identities": copy.deepcopy(
                 getattr(ctx, "input_identities", [])
             ),
-            "packages": collect_package_versions(
-                [
-                    "revise-svc",
-                    "scanpy",
-                    "anndata",
-                    "numpy",
-                    "pandas",
-                    "scipy",
-                    "POT",
-                    "tacco",
-                    "leidenalg",
-                ]
-            ),
+            "packages": copy.deepcopy(ctx.software_versions),
             "stages": copy.deepcopy(getattr(ctx, "stage_records", [])),
             "artifacts": copy.deepcopy(getattr(ctx, "artifact_records", [])),
             "quality_metric_keys": sorted(ctx.quality_metrics.keys()),
             "svc_summary": ctx.svc.summary() if ctx.svc else {},
             "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
-            "ot_events": copy.deepcopy(ctx.ot_events),
             "local_refinement": copy.deepcopy(
                 ctx.local_refinement_record
             ),

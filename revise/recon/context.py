@@ -48,10 +48,10 @@ class PipelineContext:
     quality_metrics: Dict[str, Any] = field(default_factory=dict)
     artifacts: Dict[str, Any] = field(default_factory=dict)
     provenance: Dict[str, Any] = field(default_factory=dict)
-    ot_events: List[Dict[str, str | int]] = field(default_factory=list)
     artifact_records: List[Dict[str, Any]] = field(default_factory=list)
     sr_allocation_records: List[Dict[str, Any]] = field(default_factory=list)
     input_identities: List[Dict[str, str]] = field(default_factory=list)
+    software_versions: Dict[str, str] = field(default_factory=dict)
     pm_on_cell: Any = None
 
     run_status: str = field(init=False, default="running")
@@ -100,9 +100,6 @@ class PipelineContext:
                 else None
             ),
         }
-        for phase in ("ga", "lr"):
-            solver = self.merged_config["ot"][phase]["solver"]
-            self.record_ot_event(phase, solver, "requested")
 
     @staticmethod
     def _timestamp() -> str:
@@ -180,7 +177,6 @@ class PipelineContext:
             "stage_started_monotonic": dict(self._stage_started_monotonic),
             "artifact_records": copy.deepcopy(self.artifact_records),
             "sr_allocation_records": copy.deepcopy(self.sr_allocation_records),
-            "ot_events": copy.deepcopy(self.ot_events),
             "local_refinement_record": copy.deepcopy(
                 self.local_refinement_record
             ),
@@ -199,7 +195,6 @@ class PipelineContext:
             ]
             self.artifact_records = snapshot["artifact_records"]
             self.sr_allocation_records = snapshot["sr_allocation_records"]
-            self.ot_events = snapshot["ot_events"]
             self.local_refinement_record = snapshot["local_refinement_record"]
             raise
 
@@ -261,8 +256,6 @@ class PipelineContext:
         self,
         name: str,
         error: BaseException,
-        *,
-        interrupted: bool = False,
     ) -> None:
         record = self._stage_record(name)
         if record["status"] != "running":
@@ -271,19 +264,18 @@ class PipelineContext:
             )
 
         with self._durable_transition():
-            record["status"] = "interrupted" if interrupted else "failed"
+            record["status"] = "failed"
             record["duration_seconds"] = max(
                 0.0, time.monotonic() - self._stage_started_monotonic.pop(name)
             )
             record["error"] = self._error_record(error)
-            skip_reason = "run_interrupted" if interrupted else "upstream_failure"
             current_index = self.stage_records.index(record)
             for later in self.stage_records[current_index + 1 :]:
                 if later["status"] == "pending":
                     later["status"] = "skipped"
-                    later["reason"] = skip_reason
+                    later["reason"] = "upstream_failure"
 
-            self.run_status = "interrupted" if interrupted else "failed"
+            self.run_status = "failed"
             self.run_ended_at = self._timestamp()
             self.run_duration_seconds = max(
                 0.0, time.monotonic() - self._run_started_monotonic
@@ -293,8 +285,6 @@ class PipelineContext:
     def terminate_run(
         self,
         error: BaseException,
-        *,
-        interrupted: bool = False,
     ) -> None:
         if self.run_status != "running":
             self._notify_provenance()
@@ -308,20 +298,15 @@ class PipelineContext:
             None,
         )
         if running is not None:
-            self.terminate_stage(
-                str(running["name"]),
-                error,
-                interrupted=interrupted,
-            )
+            self.terminate_stage(str(running["name"]), error)
             return
 
         with self._durable_transition():
-            skip_reason = "run_interrupted" if interrupted else "upstream_failure"
             for record in self.stage_records:
                 if record["status"] == "pending":
                     record["status"] = "skipped"
-                    record["reason"] = skip_reason
-            self.run_status = "interrupted" if interrupted else "failed"
+                    record["reason"] = "upstream_failure"
+            self.run_status = "failed"
             self.run_ended_at = self._timestamp()
             self.run_duration_seconds = max(
                 0.0, time.monotonic() - self._run_started_monotonic
@@ -352,64 +337,14 @@ class PipelineContext:
     def record_local_refinement(self, applied: bool) -> None:
         if not isinstance(applied, bool):
             raise TypeError("applied must be a bool")
+        if not applied or self.local_refinement_record["applied"]:
+            return
         with self._durable_transition():
-            self.local_refinement_record["applied"] = bool(
-                self.local_refinement_record["applied"] or applied
-            )
+            self.local_refinement_record["applied"] = True
 
     def record_sr_allocation(self, evidence: Dict[str, Any]) -> None:
         with self._durable_transition():
             self.sr_allocation_records.append(copy.deepcopy(evidence))
-
-    def record_ot_event(self, phase: str, solver: str, status: str) -> None:
-        if phase not in {"ga", "lr"}:
-            raise ValueError(f"Unknown OT phase {phase!r}; expected 'ga' or 'lr'")
-        if status not in {"requested", "attempted", "completed"}:
-            raise ValueError(f"Unknown OT event status {status!r}")
-
-        expected_solver = str(self.merged_config["ot"][phase]["solver"])
-        normalized_solver = str(solver).strip().lower()
-        if normalized_solver != expected_solver:
-            raise ValueError(
-                f"OT {phase} event solver {normalized_solver!r} does not match "
-                f"configured solver {expected_solver!r}"
-            )
-
-        phase_events = [event for event in self.ot_events if event["phase"] == phase]
-        if status == "requested":
-            if phase_events:
-                raise ValueError(f"OT {phase} requested must be recorded exactly once")
-            call = 0
-        elif not phase_events or phase_events[0]["status"] != "requested":
-            raise ValueError(f"OT {phase} requested must be recorded before {status}")
-        elif status == "attempted":
-            if phase_events[-1]["status"] == "attempted":
-                raise ValueError(
-                    f"OT {phase} attempted cannot repeat before completed"
-                )
-            if phase == "ga" and any(
-                event["status"] == "attempted" for event in phase_events
-            ):
-                raise ValueError("OT ga can be attempted only once")
-            call = 1 + sum(
-                event["status"] == "attempted" for event in phase_events
-            )
-        else:
-            if phase_events[-1]["status"] != "attempted":
-                raise ValueError(
-                    f"OT {phase} completed requires a preceding attempted"
-                )
-            call = int(phase_events[-1]["call"])
-
-        with self._durable_transition():
-            self.ot_events.append(
-                {
-                    "phase": phase,
-                    "solver": normalized_solver,
-                    "status": status,
-                    "call": call,
-                }
-            )
 
     @property
     def io(self) -> Dict[str, Any]:

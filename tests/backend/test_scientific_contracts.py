@@ -584,7 +584,6 @@ def test_application_svc_fields_preserve_their_labeled_row_identity():
         runtime={"strategy": "ScSvcApplicationStrategy", "svc_kind": "sc"},
         route="application:sc",
         stage_trace=[],
-        ot_events=[],
         quality_metrics={},
     )
 

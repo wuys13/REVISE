@@ -260,7 +260,6 @@ def _config(*, solver="pot", strength=0.2):
         rec_pot_reg_type="kl",
         rec_alpha=1.0,
         local_refinement_strength=strength,
-        ot_event_callback=None,
     )
 
 

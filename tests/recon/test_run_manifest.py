@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
+import revise.framework as framework
 from revise.framework import REVISEPipeline
 from revise.utils import provenance
 from revise.utils.io import build_run_dir
@@ -82,28 +83,74 @@ def test_completed_artifact_uses_streamed_content_identity(tmp_path):
     assert provenance.sha256_file(path) != expected
 
 
-@pytest.mark.parametrize(
-    ("recorded", "process_alive", "effective"),
-    [
-        ("succeeded", False, "succeeded"),
-        ("failed", False, "failed"),
-        ("interrupted", False, "interrupted"),
-        ("running", True, "running"),
-        ("running", False, "incomplete"),
-    ],
-)
-def test_effective_run_status_does_not_rewrite_recorded_history(
-    recorded,
-    process_alive,
-    effective,
+def test_software_identity_contains_only_core_and_selected_solvers(
+    monkeypatch,
 ):
-    manifest = {"run": {"status": recorded}}
+    resolved = []
 
-    assert provenance.effective_run_status(
-        manifest,
-        process_alive=process_alive,
-    ) == effective
-    assert manifest == {"run": {"status": recorded}}
+    def version(name):
+        resolved.append(name)
+        return f"version:{name}"
+
+    monkeypatch.setattr(provenance, "pkg_version", version)
+
+    identity = provenance.collect_software_versions(
+        {
+            "ot": {
+                "ga": {"solver": "pot"},
+                "lr": {"solver": "pot"},
+            }
+        }
+    )
+
+    assert identity == {
+        "Python": provenance.platform.python_version(),
+        "REVISE": "version:revise-svc",
+        "NumPy": "version:numpy",
+        "SciPy": "version:scipy",
+        "Pandas": "version:pandas",
+        "AnnData": "version:anndata",
+        "h5py": "version:h5py",
+        "POT": "version:POT",
+    }
+    assert resolved == [
+        "revise-svc",
+        "numpy",
+        "scipy",
+        "pandas",
+        "anndata",
+        "h5py",
+        "POT",
+    ]
+
+
+def test_manifest_rewrites_copy_one_cached_software_identity(
+    monkeypatch,
+    tmp_path,
+):
+    _write_application_inputs(tmp_path, "sample")
+    calls = []
+
+    def collect(merged_config):
+        calls.append(merged_config)
+        return {"Python": "cached"}
+
+    monkeypatch.setattr(framework, "collect_software_versions", collect)
+
+    REVISEPipeline().run(
+        profile="application_sp",
+        io_overrides={
+            "data_root": str(tmp_path),
+            "output_root": str(tmp_path / "output"),
+            "sample_name": "sample",
+        },
+        dry_run=True,
+    )
+
+    [manifest_path] = (tmp_path / "output").glob("**/provenance.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["packages"] == {"Python": "cached"}
+    assert len(calls) == 1
 
 
 def test_application_run_directories_do_not_collide_when_created_together(tmp_path):

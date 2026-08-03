@@ -301,11 +301,6 @@ class ScSVCImpute(BenchmarkSVC):
                 pot_verbose=True,
                 pot_num_iter_max=5000,
                 reference_measure=None,
-                event_callback=getattr(
-                    self.config,
-                    "ot_event_callback",
-                    None,
-                ),
             )
 
             T_matrix = pd.DataFrame(

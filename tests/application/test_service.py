@@ -6,7 +6,6 @@ Proof limit: uses synthetic AnnData and does not run scientific kernels.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -73,7 +72,6 @@ def test_sc_svc_publication_preserves_the_notebook_spatial_and_expression_pair(
         ),
         run_dir=tmp_path / "run",
         merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
-        ot_events=[],
         provenance={},
         artifact_records=records,
         record_artifact=records.append,
@@ -112,9 +110,7 @@ def test_sc_svc_publication_preserves_the_notebook_spatial_and_expression_pair(
         published_expression.uns["revise_reconstruction"]["output_role"]
         == "expression"
     )
-    assert json.loads(
-        published_spatial.uns["revise_reconstruction"]["ot_events"]
-    ) == []
+    assert "ot_events" not in published_spatial.uns["revise_reconstruction"]
 
 
 def test_sc_pair_publication_rolls_back_both_existing_files_on_replace_failure(
@@ -152,7 +148,6 @@ def test_sc_pair_publication_rolls_back_both_existing_files_on_replace_failure(
             "sc": {"tacco_annotate": {"multi_center": 1, "lamb": 0.001}},
             "ot": {"ga": {"solver": "tacco"}, "lr": {"solver": "tacco"}},
         },
-        ot_events=[],
         provenance={},
         artifact_records=records,
         record_artifact=records.append,
@@ -221,7 +216,6 @@ def test_sc_pair_delayed_rollback_restores_pair_without_touching_unrelated_file(
             "runtime": {"seed": 17},
             "ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}},
         },
-        ot_events=[],
         provenance={},
         artifact_records=records,
         record_artifact=records.append,

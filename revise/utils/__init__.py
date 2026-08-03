@@ -6,9 +6,8 @@ from revise.utils.io import build_task_dir
 from revise.utils.io import build_run_dir
 from revise.utils.logging import build_run_logger
 from revise.utils.provenance import (
-    collect_package_versions,
+    collect_software_versions,
     completed_artifact,
-    effective_run_status,
     exclusive_run_directory,
     input_identities,
     hash_jsonable,
@@ -24,9 +23,8 @@ __all__ = [
     "build_task_dir",
     "build_run_dir",
     "build_run_logger",
-    "collect_package_versions",
+    "collect_software_versions",
     "completed_artifact",
-    "effective_run_status",
     "exclusive_run_directory",
     "input_identities",
     "hash_jsonable",

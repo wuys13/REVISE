@@ -57,7 +57,7 @@ class UnifiedReconstructionPipeline:
             operation(ctx)
         except KeyboardInterrupt as exc:
             try:
-                ctx.terminate_stage(stage, exc, interrupted=True)
+                ctx.terminate_stage(stage, exc)
             except BaseException as persistence_error:
                 raise exc from persistence_error
             raise
@@ -178,7 +178,7 @@ class UnifiedReconstructionPipeline:
         try:
             return self._evaluation_skip_reason(ctx)
         except KeyboardInterrupt as exc:
-            self._terminate_pending_evaluation(ctx, exc, interrupted=True)
+            self._terminate_pending_evaluation(ctx, exc)
             raise
         except Exception as exc:
             self._terminate_pending_evaluation(ctx, exc)
@@ -188,12 +188,10 @@ class UnifiedReconstructionPipeline:
     def _terminate_pending_evaluation(
         ctx,
         error: BaseException,
-        *,
-        interrupted: bool = False,
     ) -> None:
         try:
             ctx.start_stage("evaluate")
-            ctx.terminate_stage("evaluate", error, interrupted=interrupted)
+            ctx.terminate_stage("evaluate", error)
         except BaseException as persistence_error:
             raise error from persistence_error
 

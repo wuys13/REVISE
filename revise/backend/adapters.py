@@ -365,7 +365,6 @@ def _build_svc(
         "route": ctx.route,
         "output_keys": sorted(outputs.keys()),
         "primary_output_key": primary_key,
-        "ot_events": list(ctx.ot_events),
     }
     if extra_provenance:
         provenance.update(extra_provenance)
@@ -469,17 +468,13 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
         # centrally managed under revise.backend.kernels.
         from revise.backend.kernels import build_kernel
 
-        def record_ot_event(phase, solver, status):
-            ctx.record_ot_event(phase, solver, status)
-            if (
-                phase == "lr"
-                and status == "completed"
-                and ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}
-                and ctx.local_refinement_record["strength"] != 0
-            ):
-                ctx.record_local_refinement(True)
-
-        ctx.runner_config.ot_event_callback = record_ot_event
+        if (
+            ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}
+            and ctx.local_refinement_record["strength"] != 0
+        ):
+            ctx.runner_config.local_refinement_applied_callback = (
+                lambda: ctx.record_local_refinement(True)
+            )
         kernel = build_kernel("global_anchoring", config=ctx.runner_config, logger=ctx.logger)
         ctx.runner.st_adata = kernel.run(
             ctx.runner.st_adata,

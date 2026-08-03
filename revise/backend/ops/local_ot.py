@@ -237,7 +237,6 @@ def solve_local_ot(
     pot_num_iter_max: int = 5000,
     reference_measure=None,
     valid_support_mask=None,
-    event_callback=None,
 ) -> np.ndarray:
     """Solve a local coupling with POT or TACCO using one matrix contract."""
     source, target, cost = _validated_inputs(source_mass, target_mass, cost_matrix)
@@ -299,8 +298,6 @@ def solve_local_ot(
     source_norm = None
     target_norm = None
     if normalized_method == "pot":
-        if event_callback is not None:
-            event_callback("lr", "pot", "attempted")
         import ot
 
         kwargs = {}
@@ -318,8 +315,6 @@ def solve_local_ot(
             **kwargs,
         )
     else:
-        if event_callback is not None:
-            event_callback("lr", "tacco", "attempted")
         tacco = require_tacco()
 
         # Normalize in float64 before TACCO sees the marginals. Normalizing a
@@ -503,6 +498,4 @@ def solve_local_ot(
 
     coupling = np.zeros(full_shape, dtype=active_coupling.dtype)
     coupling[np.ix_(source_idx, target_idx)] = active_coupling
-    if event_callback is not None:
-        event_callback("lr", normalized_method, "completed")
     return coupling

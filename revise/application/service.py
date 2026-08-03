@@ -175,11 +175,6 @@ def _build_public_result(args, profile, output_key, ctx) -> tuple[AnnData, Path]
             "run_manifest": (Path(relative_run_dir) / "provenance.json").as_posix(),
             "ot_method_override": args.ot_method,
             "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
-            "ot_events": json.dumps(
-                ctx.ot_events,
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
         }
     )
 
@@ -364,11 +359,6 @@ def _build_sc_public_results(args, profile, ctx):
                 "ot_config": copy.deepcopy(ctx.merged_config["ot"]),
                 "tacco_annotate": json.dumps(
                     tacco_parameters,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
-                "ot_events": json.dumps(
-                    ctx.ot_events,
                     ensure_ascii=False,
                     sort_keys=True,
                 ),

@@ -30,7 +30,6 @@ class LocalAnchoringKernel(BaseKernel):
             return GlobalAnchoringKernel(
                 delegate_config,
                 self.logger,
-                event_phase="lr",
             ).run(
                 target,
                 reference,
@@ -77,7 +76,6 @@ class LocalAnchoringKernel(BaseKernel):
             pot_reg_type=self.config.rec_pot_reg_type,
             pot_verbose=False,
             pot_num_iter_max=5000,
-            event_callback=getattr(self.config, "ot_event_callback", None),
         )
 
         row_mass = coupling.sum(axis=1)

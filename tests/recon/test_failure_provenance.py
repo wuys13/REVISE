@@ -19,7 +19,7 @@ from anndata import AnnData
 from revise.recon.context import PipelineContext
 from revise.recon.pipeline import UnifiedReconstructionPipeline
 from revise.svc import SVC
-from revise.utils.provenance import completed_artifact, effective_run_status, write_json
+from revise.utils.provenance import completed_artifact, write_json
 
 
 STAGE_NAMES = [
@@ -65,8 +65,6 @@ class FailingStrategy:
         ctx.real_st_adata = self.output.copy()
 
     def global_anchoring(self, ctx) -> None:
-        if self.selected == "global_anchoring":
-            ctx.record_ot_event("ga", "pot", "attempted")
         _raise("global_anchoring", self.selected, self.interrupt)
 
     def prepare_local_units(self, ctx) -> None:
@@ -79,8 +77,6 @@ class FailingStrategy:
         return None
 
     def solve_ot(self, ctx) -> None:
-        if self.selected == "local_refinement":
-            ctx.record_ot_event("lr", "pot", "attempted")
         _raise("local_refinement", self.selected, self.interrupt)
 
     def update_expression(self, ctx) -> None:
@@ -149,7 +145,6 @@ def _attach_manifest_writer(ctx: PipelineContext) -> None:
                     "error": copy.deepcopy(current.run_error),
                 },
                 "stages": copy.deepcopy(current.stage_records),
-                "ot_events": copy.deepcopy(current.ot_events),
                 "artifacts": copy.deepcopy(current.artifact_records),
             },
         )
@@ -187,7 +182,7 @@ def test_each_stage_failure_persists_terminal_truth(monkeypatch, tmp_path, selec
     assert manifest["stages"][selected_index]["error"]["type"] == (
         "InjectedTermination"
     )
-    assert not any(event["status"] == "completed" for event in manifest["ot_events"])
+    assert "ot_events" not in manifest
 
 
 class _Registry:
@@ -526,7 +521,6 @@ def test_persistent_terminal_write_failure_preserves_running_disk_truth(
     assert isinstance(exc_info.value.__cause__, OSError)
     manifest = _framework_manifest(output_root, "persistent-case")
     assert manifest["run"]["status"] == "running"
-    assert effective_run_status(manifest, process_alive=False) == "incomplete"
 
 
 def test_terminal_persistence_failure_rolls_back_in_memory_before_retry(tmp_path):
@@ -584,10 +578,10 @@ def test_framework_sigterm_is_persisted_and_host_handler_is_restored(tmp_path):
 
     assert signal.getsignal(signal.SIGTERM) == previous_handler
     manifest = _framework_manifest(output_root, "sigterm-case")
-    assert manifest["run"]["status"] == "interrupted"
-    assert manifest["stages"][1]["status"] == "interrupted"
+    assert manifest["run"]["status"] == "failed"
+    assert manifest["stages"][1]["status"] == "failed"
     assert all(
-        stage["status"] == "skipped" and stage["reason"] == "run_interrupted"
+        stage["status"] == "skipped" and stage["reason"] == "upstream_failure"
         for stage in manifest["stages"][2:]
     )
 
@@ -622,7 +616,7 @@ def test_framework_sigterm_chains_custom_handler_after_terminal_persistence(
                 },
             )
 
-        assert observed_statuses == ["interrupted"]
+        assert observed_statuses == ["failed"]
         assert signal.getsignal(signal.SIGTERM) is custom_handler
     finally:
         signal.signal(signal.SIGTERM, original_handler)
@@ -641,7 +635,7 @@ def test_temporary_sigterm_handler_respects_ignored_host_signal():
         signal.signal(signal.SIGTERM, original_handler)
 
 
-def test_abrupt_death_leaves_running_manifest_for_incomplete_inspection(tmp_path):
+def test_abrupt_death_leaves_running_manifest_for_inspection(tmp_path):
     output_root = tmp_path / "abrupt-output"
     _write_framework_inputs(tmp_path, "abrupt-case")
     code = f"""
@@ -684,7 +678,6 @@ pipeline.run(
     assert manifest["run"]["status"] == "running"
     assert manifest["stages"][0]["status"] == "running"
     assert manifest["stages"][1]["status"] == "pending"
-    assert effective_run_status(manifest, process_alive=False) == "incomplete"
     assert (manifest_path.parent / ".revise-run.lock").is_dir()
 
 
@@ -748,7 +741,7 @@ def test_only_completed_artifacts_are_registered_before_finalize_failure(tmp_pat
 
 
 @pytest.mark.parametrize("selected", STAGE_NAMES)
-def test_each_stage_interrupt_persists_interrupted_truth(
+def test_each_stage_interrupt_persists_failed_truth(
     monkeypatch,
     tmp_path,
     selected,
@@ -767,10 +760,10 @@ def test_each_stage_interrupt_persists_interrupted_truth(
 
     manifest = json.loads((tmp_path / "provenance.json").read_text())
     selected_index = STAGE_NAMES.index(selected)
-    assert manifest["run"]["status"] == "interrupted"
-    assert manifest["stages"][selected_index]["status"] == "interrupted"
+    assert manifest["run"]["status"] == "failed"
+    assert manifest["stages"][selected_index]["status"] == "failed"
     assert all(
-        stage["status"] == "skipped" and stage["reason"] == "run_interrupted"
+        stage["status"] == "skipped" and stage["reason"] == "upstream_failure"
         for stage in manifest["stages"][selected_index + 1 :]
     )
-    assert not any(event["status"] == "completed" for event in manifest["ot_events"])
+    assert "ot_events" not in manifest

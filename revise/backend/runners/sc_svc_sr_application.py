@@ -258,10 +258,6 @@ class ScSVCSr(ApplicationSVC):
                         neighbor_indices=neighbor_idx_matrix,
                         strength=conditioning_strength,
                     )
-                    conditioning_applied = (
-                        conditioning_applied
-                        or conditioning_strength != 0
-                    )
                     distance_matrix[~valid_neighbor_mask] = np.inf
                     T_transform = solve_local_ot(
                         nu,
@@ -275,12 +271,16 @@ class ScSVCSr(ApplicationSVC):
                         pot_num_iter_max=5000,
                         reference_measure=None,
                         valid_support_mask=valid_neighbor_mask.T,
-                        event_callback=getattr(
-                            self.config,
-                            "ot_event_callback",
-                            None,
-                        ),
                     )
+                    if conditioning_strength != 0:
+                        callback = getattr(
+                            self.config,
+                            "local_refinement_applied_callback",
+                            None,
+                        )
+                        if callback is not None:
+                            callback()
+                        conditioning_applied = True
                     adata_cell = self.graph_aggregate.run(
                         adata=adata_cell,
                         neighbor_idx_matrix=neighbor_idx_matrix,

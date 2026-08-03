@@ -83,7 +83,6 @@ reference = AnnData(
     var=pd.DataFrame(index=["g1", "g2", "g3"]),
 )
 
-annotation_events = []
 config = ApplicationScConf(
     sample_name="sample",
     raw_data_path="data",
@@ -98,7 +97,6 @@ config = ApplicationScConf(
     tacco_annotate_multi_center=1,
     tacco_annotate_lamb=0.001,
 )
-config.ot_event_callback = lambda *event: annotation_events.append(event)
 annotated = GlobalAnchoringKernel(config, logging.getLogger("tacco-smoke")).run(
     target, reference
 )
@@ -111,13 +109,11 @@ annotated_reference = local.run(
     cell_type_col="SVC_cluster",
 )
 
-local_events = []
 coupling = solve_local_ot(
     [0.5, 0.5],
     [0.5, 0.5],
     [[0.0, 1.0], [1.0, 0.0]],
     method="tacco",
-    event_callback=lambda *event: local_events.append(event),
 )
 
 @numba.njit
@@ -139,18 +135,6 @@ assert annotated.obs["Level1"].tolist() == annotated.obsm["Level1"].idxmax(axis=
 assert annotated_level2.obsm["Level2"].shape == (4, 4)
 assert annotated_reference.obsm["SVC_cluster"].shape == (6, 2)
 assert coupling.shape == (2, 2)
-assert annotation_events == [
-    ("ga", "tacco", "attempted"),
-    ("ga", "tacco", "completed"),
-    ("lr", "tacco", "attempted"),
-    ("lr", "tacco", "completed"),
-    ("lr", "tacco", "attempted"),
-    ("lr", "tacco", "completed"),
-]
-assert local_events == [
-    ("lr", "tacco", "attempted"),
-    ("lr", "tacco", "completed"),
-]
 """
     env = os.environ.copy()
     env.pop("NUMBA_DISABLE_JIT", None)

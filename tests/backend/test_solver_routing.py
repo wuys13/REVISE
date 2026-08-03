@@ -29,6 +29,12 @@ LOCAL_OT_CALLERS = {
     "revise/backend/runners/sc_svc_sr_benchmark.py": 1,
     "revise/backend/runners/sc_svc_impute_benchmark.py": 1,
 }
+GUIDED_LOCAL_OT_CALLERS = {
+    "revise/backend/runners/sp_svc_application.py",
+    "revise/backend/runners/sp_svc_benchmark.py",
+    "revise/backend/runners/sc_svc_sr_application.py",
+    "revise/backend/runners/sc_svc_sr_benchmark.py",
+}
 
 
 def _load_runner_method(relative_path, class_name, method_name, namespace):
@@ -118,72 +124,7 @@ def _fake_tacco(monkeypatch, coupling=None, error: Exception | None = None):
     return module
 
 
-def test_pipeline_context_accepts_ordered_ga_and_repeated_lr_events(tmp_path):
-    ctx = _context(tmp_path)
-
-    assert ctx.ot_events == [
-        {"phase": "ga", "solver": "pot", "status": "requested", "call": 0},
-        {"phase": "lr", "solver": "tacco", "status": "requested", "call": 0},
-    ]
-
-    for event in (
-        ("ga", "pot", "attempted"),
-        ("ga", "pot", "completed"),
-        ("lr", "tacco", "attempted"),
-        ("lr", "tacco", "completed"),
-        ("lr", "tacco", "attempted"),
-        ("lr", "tacco", "completed"),
-    ):
-        ctx.record_ot_event(*event)
-
-    assert ctx.ot_events == [
-        {"phase": phase, "solver": solver, "status": status, "call": call}
-        for phase, solver, status, call in (
-            ("ga", "pot", "requested", 0),
-            ("lr", "tacco", "requested", 0),
-            ("ga", "pot", "attempted", 1),
-            ("ga", "pot", "completed", 1),
-            ("lr", "tacco", "attempted", 1),
-            ("lr", "tacco", "completed", 1),
-            ("lr", "tacco", "attempted", 2),
-            ("lr", "tacco", "completed", 2),
-        )
-    ]
-
-
-@pytest.mark.parametrize(
-    "events, message",
-    [
-        ([("ga", "tacco", "attempted")], "configured solver"),
-        ([("ga", "pot", "completed")], "attempted"),
-        ([("ga", "pot", "requested")], "exactly once"),
-        (
-            [("lr", "tacco", "attempted"), ("lr", "tacco", "attempted")],
-            "cannot repeat",
-        ),
-        (
-            [
-                ("ga", "pot", "attempted"),
-                ("ga", "pot", "completed"),
-                ("ga", "pot", "attempted"),
-            ],
-            "only once",
-        ),
-    ],
-)
-def test_pipeline_context_rejects_solver_mismatch_and_invalid_transition(
-    tmp_path, events, message
-):
-    ctx = _context(tmp_path)
-
-    with pytest.raises(ValueError, match=message):
-        for event in events:
-            ctx.record_ot_event(*event)
-
-
-def test_local_pot_records_attempted_and_completed_without_importing_tacco(
-    monkeypatch,
-):
+def test_local_pot_routes_without_importing_tacco(monkeypatch):
     _fake_ot(monkeypatch)
     real_import_module = importlib.import_module
 
@@ -193,8 +134,6 @@ def test_local_pot_records_attempted_and_completed_without_importing_tacco(
         return real_import_module(name, package)
 
     monkeypatch.setattr(importlib, "import_module", guarded_import)
-    events = []
-
     coupling = solve_local_ot(
         [0.5, 0.5],
         [0.5, 0.5],
@@ -202,60 +141,17 @@ def test_local_pot_records_attempted_and_completed_without_importing_tacco(
         method="pot",
         pot_reg=0.1,
         pot_reg_m=0.0,
-        event_callback=lambda *event: events.append(event),
     )
 
     np.testing.assert_allclose(coupling, [[0.5, 0.0], [0.0, 0.5]])
-    assert events == [("lr", "pot", "attempted"), ("lr", "pot", "completed")]
 
 
-def test_local_tacco_records_attempted_and_completed(monkeypatch):
-    _fake_tacco(monkeypatch)
-    events = []
-
-    solve_local_ot(
-        [0.5, 0.5],
-        [0.5, 0.5],
-        [[0.0, 1.0], [1.0, 0.0]],
-        method="tacco",
-        event_callback=lambda *event: events.append(event),
-    )
-
-    assert events == [
-        ("lr", "tacco", "attempted"),
-        ("lr", "tacco", "completed"),
-    ]
-
-
-def test_local_failure_records_attempted_without_completed(monkeypatch):
-    _fake_tacco(monkeypatch, error=RuntimeError("solver exploded"))
-    events = []
-
-    with pytest.raises(RuntimeError, match="solver exploded"):
-        solve_local_ot(
-            [0.5, 0.5],
-            [0.5, 0.5],
-            [[0.0, 1.0], [1.0, 0.0]],
-            method="tacco",
-            event_callback=lambda *event: events.append(event),
-        )
-
-    assert events == [("lr", "tacco", "attempted")]
-
-
-def test_successful_events_are_persisted_to_svc_and_provenance_json(tmp_path):
+def test_manifest_has_ot_config_but_no_ot_events(tmp_path):
     import json
 
     from revise.framework import REVISEPipeline
 
     ctx = _context(tmp_path, ga="pot", lr="pot")
-    for event in (
-        ("ga", "pot", "attempted"),
-        ("ga", "pot", "completed"),
-        ("lr", "pot", "attempted"),
-        ("lr", "pot", "completed"),
-    ):
-        ctx.record_ot_event(*event)
     ctx.runner_config = SimpleNamespace(
         st_file_path=None,
         sc_ref_file_path=None,
@@ -267,25 +163,21 @@ def test_successful_events_are_persisted_to_svc_and_provenance_json(tmp_path):
     pipeline._write_final_metadata(ctx)
 
     persisted = json.loads((tmp_path / "provenance.json").read_text())
-    assert ctx.svc.provenance["ot_events"] == ctx.ot_events
-    assert persisted["ot_events"] == ctx.ot_events
-    assert "tacco" in persisted["packages"]
+    assert persisted["ot_config"] == ctx.merged_config["ot"]
+    assert "ot_events" not in persisted
+    assert "ot_events" not in ctx.svc.provenance
 
 
-def test_local_empty_support_does_not_fabricate_branch_events(monkeypatch):
-    events = []
-
+def test_local_empty_support_returns_zero_coupling():
     coupling = solve_local_ot(
         [0.5, 0.5],
         [0.5, 0.5],
         [[0.0, 1.0], [1.0, 0.0]],
         method="tacco",
         valid_support_mask=np.zeros((2, 2), dtype=bool),
-        event_callback=lambda *event: events.append(event),
     )
 
     np.testing.assert_array_equal(coupling, np.zeros((2, 2)))
-    assert events == []
 
 
 def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
@@ -359,50 +251,6 @@ def test_sp_benchmark_validates_ga_before_insufficient_units_short_circuit():
     assert runner.svc["sp_svc"].n_obs == 2
 
 
-def test_local_multiple_invocations_record_each_actual_call(monkeypatch):
-    _fake_ot(monkeypatch)
-    events = []
-    kwargs = {
-        "method": "pot",
-        "pot_reg": 0.1,
-        "pot_reg_m": 0.0,
-        "event_callback": lambda *event: events.append(event),
-    }
-
-    for _ in range(2):
-        solve_local_ot(
-            [0.5, 0.5],
-            [0.5, 0.5],
-            [[0.0, 1.0], [1.0, 0.0]],
-            **kwargs,
-        )
-
-    assert events == [
-        ("lr", "pot", "attempted"),
-        ("lr", "pot", "completed"),
-        ("lr", "pot", "attempted"),
-        ("lr", "pot", "completed"),
-    ]
-
-
-def test_lr_second_failed_call_keeps_distinct_attempted_call_id(tmp_path):
-    ctx = _context(tmp_path)
-    ctx.record_ot_event("lr", "tacco", "attempted")
-    ctx.record_ot_event("lr", "tacco", "completed")
-    ctx.record_ot_event("lr", "tacco", "attempted")
-
-    assert ctx.ot_events[-2:] == [
-        {"phase": "lr", "solver": "tacco", "status": "completed", "call": 1},
-        {"phase": "lr", "solver": "tacco", "status": "attempted", "call": 2},
-    ]
-    assert not any(
-        event["phase"] == "lr"
-        and event["status"] == "completed"
-        and event["call"] == 2
-        for event in ctx.ot_events
-    )
-
-
 @pytest.mark.parametrize(
     "coupling, message",
     [
@@ -411,12 +259,10 @@ def test_lr_second_failed_call_keeps_distinct_attempted_call_id(tmp_path):
         (np.array([[0.5, 0.0], [0.5, 0.0]]), "positive transported column mass"),
     ],
 )
-def test_local_pot_rejects_unusable_finite_coupling_before_completed(
+def test_local_pot_rejects_unusable_finite_coupling(
     monkeypatch, coupling, message
 ):
     _fake_ot(monkeypatch, coupling=coupling)
-    events = []
-
     with pytest.raises(ValueError, match=message):
         solve_local_ot(
             [0.5, 0.5],
@@ -425,10 +271,7 @@ def test_local_pot_rejects_unusable_finite_coupling_before_completed(
             method="pot",
             pot_reg=0.1,
             pot_reg_m=0.0,
-            event_callback=lambda *event: events.append(event),
         )
-
-    assert events == [("lr", "pot", "attempted")]
 
 
 def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
@@ -441,8 +284,6 @@ def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
         return real_import_module(name, package)
 
     monkeypatch.setattr(importlib, "import_module", missing)
-    events = []
-
     with pytest.raises(
         ModuleNotFoundError,
         match=r'python -m pip install "tacco==0\.5\.0"',
@@ -452,12 +293,10 @@ def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
             [0.5, 0.5],
             [[0.0, 1.0], [1.0, 0.0]],
             method="tacco",
-            event_callback=lambda *event: events.append(event),
         )
 
     assert "--ot-method pot" in str(caught.value)
     assert "does not fall back automatically" in str(caught.value)
-    assert events == [("lr", "tacco", "attempted")]
 
 
 def test_missing_tacco_transitive_dependency_is_not_reported_as_missing_tacco(
@@ -492,8 +331,6 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
     module.utils = SimpleNamespace(solve_OT=lambda *args: None)
     monkeypatch.setitem(sys.modules, "tacco", module)
     monkeypatch.setattr(importlib.metadata, "version", lambda package: "0.5.1")
-    events = []
-
     with pytest.raises(
         RuntimeError,
         match=r'requires tacco==0\.5\.0.*0\.5\.1.*python -m pip install',
@@ -503,17 +340,16 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
             [0.5, 0.5],
             [[0.0, 1.0], [1.0, 0.0]],
             method="tacco",
-            event_callback=lambda *event: events.append(event),
         )
 
     assert "--ot-method pot" in str(caught.value)
-    assert events == [("lr", "tacco", "attempted")]
 
 
-def test_every_physical_local_ot_caller_passes_the_explicit_event_callback():
+def test_physical_local_ot_callers_have_no_event_callback_wiring():
     found = {}
     for relative, expected_count in LOCAL_OT_CALLERS.items():
-        tree = ast.parse((ROOT / relative).read_text())
+        source = (ROOT / relative).read_text()
+        tree = ast.parse(source)
         calls = [
             node
             for node in ast.walk(tree)
@@ -523,82 +359,16 @@ def test_every_physical_local_ot_caller_passes_the_explicit_event_callback():
         ]
         found[relative] = len(calls)
         assert len(calls) == expected_count
-        for call in calls:
-            callback = next(
-                (kw.value for kw in call.keywords if kw.arg == "event_callback"),
-                None,
-            )
-            assert callback is not None, f"{relative} does not wire event_callback"
-            assert ast.unparse(callback) == (
-                "getattr(self.config, 'ot_event_callback', None)"
-            )
+        assert all(
+            keyword.arg != "event_callback"
+            for call in calls
+            for keyword in call.keywords
+        )
+        assert source.count('"local_refinement_applied_callback"') == (
+            1 if relative in GUIDED_LOCAL_OT_CALLERS else 0
+        )
 
     assert found == LOCAL_OT_CALLERS
-
-
-def test_runner_strategy_attaches_production_ot_recorder_and_persists_calls(
-    monkeypatch, tmp_path
-):
-    import json
-
-    scanpy = types.ModuleType("scanpy")
-    scanpy.pp = SimpleNamespace()
-    scanpy.pl = SimpleNamespace()
-    scanpy.tl = SimpleNamespace()
-    monkeypatch.setitem(sys.modules, "scanpy", scanpy)
-    import revise.backend.kernels as kernels
-    from revise.backend.adapters import RunnerBackedStrategy
-    from revise.framework import REVISEPipeline
-
-    ctx = _context(tmp_path, ga="pot", lr="pot")
-    ctx.runner_config = SimpleNamespace(
-        annotate_mode="pot",
-        rec_ot_method="pot",
-        st_file_path=None,
-        sc_ref_file_path=None,
-        gt_svc_file_path=None,
-    )
-    ctx.runner = SimpleNamespace(st_adata=object(), sc_ref_adata=object())
-
-    class FakeGlobalKernel:
-        def run(self, target, reference, **kwargs):
-            callback = ctx.runner_config.ot_event_callback
-            callback("ga", "pot", "attempted")
-            callback("ga", "pot", "completed")
-            return target
-
-    class ConcreteStrategy(RunnerBackedStrategy):
-        def prepare_context(self, ctx):
-            raise NotImplementedError
-
-        def finalize_svc(self, ctx):
-            raise NotImplementedError
-
-    monkeypatch.setattr(kernels, "build_kernel", lambda *args, **kwargs: FakeGlobalKernel())
-    ConcreteStrategy().global_anchoring(ctx)
-    _fake_ot(monkeypatch)
-    solve_local_ot(
-        [0.5, 0.5],
-        [0.5, 0.5],
-        [[0.0, 1.0], [1.0, 0.0]],
-        method="pot",
-        pot_reg=0.1,
-        pot_reg_m=0.0,
-        event_callback=ctx.runner_config.ot_event_callback,
-    )
-    ctx.svc = SVC(expr=None, spatial=None, svc_kind="sc")
-
-    REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
-
-    persisted = json.loads((tmp_path / "provenance.json").read_text())
-    assert persisted["ot_events"] == [
-        {"phase": "ga", "solver": "pot", "status": "requested", "call": 0},
-        {"phase": "lr", "solver": "pot", "status": "requested", "call": 0},
-        {"phase": "ga", "solver": "pot", "status": "attempted", "call": 1},
-        {"phase": "ga", "solver": "pot", "status": "completed", "call": 1},
-        {"phase": "lr", "solver": "pot", "status": "attempted", "call": 1},
-        {"phase": "lr", "solver": "pot", "status": "completed", "call": 1},
-    ]
 
 
 def test_runner_strategy_records_completed_conditioning_before_later_failure(
@@ -642,9 +412,7 @@ def test_runner_strategy_records_completed_conditioning_before_later_failure(
     strategy.global_anchoring(ctx)
 
     def local_refinement():
-        callback = ctx.runner_config.ot_event_callback
-        callback("lr", "pot", "attempted")
-        callback("lr", "pot", "completed")
+        ctx.runner_config.local_refinement_applied_callback()
         raise RuntimeError("later cell type failed")
 
     ctx.runner.local_refinement = local_refinement
@@ -653,6 +421,43 @@ def test_runner_strategy_records_completed_conditioning_before_later_failure(
         strategy.solve_ot(ctx)
 
     assert ctx.local_refinement_record["applied"] is True
+
+
+@pytest.mark.parametrize(
+    ("task", "strength"),
+    [("sp_svc", 0.0), ("sc_svc", None), ("impute", None)],
+)
+def test_unconditioned_routes_do_not_install_refinement_callback(
+    monkeypatch, tmp_path, task, strength
+):
+    import revise.backend.kernels as kernels
+    from revise.backend.adapters import RunnerBackedStrategy
+
+    ctx = _context(tmp_path, task=task, strength=strength)
+    ctx.runner_config = SimpleNamespace()
+    ctx.runner = SimpleNamespace(st_adata=object(), sc_ref_adata=object())
+
+    class FakeGlobalKernel:
+        def run(self, target, reference, **kwargs):
+            return target
+
+    class ConcreteStrategy(RunnerBackedStrategy):
+        def prepare_context(self, ctx):
+            raise NotImplementedError
+
+        def finalize_svc(self, ctx):
+            raise NotImplementedError
+
+    monkeypatch.setattr(
+        kernels,
+        "build_kernel",
+        lambda *args, **kwargs: FakeGlobalKernel(),
+    )
+
+    ConcreteStrategy().global_anchoring(ctx)
+
+    assert not hasattr(ctx.runner_config, "local_refinement_applied_callback")
+    assert ctx.local_refinement_record["applied"] is False
 
 
 def test_ci_has_mandatory_exact_tacco_smoke_job():

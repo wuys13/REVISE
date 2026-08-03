@@ -137,7 +137,6 @@ def _config():
         rec_impute_pot_reg_type="kl",
         rec_merge_subcluster_method="mean",
         rec_impute_prune_flag=False,
-        ot_event_callback=None,
     )
 
 
@@ -351,7 +350,6 @@ def test_reference_only_cell_type_is_skipped(
         rec_impute_pot_reg_type="kl",
         rec_merge_subcluster_method="mean",
         rec_impute_prune_flag=False,
-        ot_event_callback=None,
     )
     runner.logger = logging.getLogger("test-reference-only-cell-type")
     captured = _patch_problem(impute_module, monkeypatch, runner)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -130,18 +131,6 @@ def completed_artifact(role: str, path: str | Path) -> Dict[str, Any]:
     }
 
 
-def effective_run_status(
-    manifest: Dict[str, Any],
-    *,
-    process_alive: bool,
-) -> str:
-    """Interpret a stale running envelope without rewriting recorded history."""
-    recorded = str(manifest.get("run", {}).get("status", "unknown"))
-    if recorded == "running" and not process_alive:
-        return "incomplete"
-    return recorded
-
-
 @contextmanager
 def exclusive_run_directory(run_dir: str | Path):
     """Prevent concurrent writers and preserve an unfinished run envelope."""
@@ -174,14 +163,29 @@ def exclusive_run_directory(run_dir: str | Path):
         lock_path.rmdir()
 
 
-def collect_package_versions(packages: Iterable[str]) -> Dict[str, str]:
-    out: Dict[str, str] = {}
-    for name in packages:
+def collect_software_versions(merged_config: Dict[str, Any]) -> Dict[str, str]:
+    packages = [
+        ("REVISE", "revise-svc"),
+        ("NumPy", "numpy"),
+        ("SciPy", "scipy"),
+        ("Pandas", "pandas"),
+        ("AnnData", "anndata"),
+        ("h5py", "h5py"),
+    ]
+    solver_packages = {"pot": ("POT", "POT"), "tacco": ("tacco", "tacco")}
+    selected_solvers = dict.fromkeys(
+        str(merged_config["ot"][phase]["solver"]).strip().lower()
+        for phase in ("ga", "lr")
+    )
+    packages.extend(solver_packages[solver] for solver in selected_solvers)
+
+    versions = {"Python": platform.python_version()}
+    for label, distribution in packages:
         try:
-            out[name] = pkg_version(name)
+            versions[label] = pkg_version(distribution)
         except PackageNotFoundError:
-            out[name] = "not-installed"
-    return out
+            versions[label] = "not-installed"
+    return versions
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:

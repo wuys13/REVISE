@@ -97,15 +97,16 @@ allocation.
 Failure model
 -------------
 
-Every lifecycle stage is recorded as pending, running, succeeded, failed,
-skipped, or interrupted. A stage exception marks later stages skipped because
-of upstream failure. Dry-run marks non-validation stages skipped. Abrupt process
-death can leave incomplete states, which is evidence that the run did not
-complete—not permission to infer success.
+Run status is limited to ``running``, ``succeeded``, and ``failed``. Captured
+SIGTERM, KeyboardInterrupt, and stage exceptions are recorded as failed while
+preserving their error evidence; later stages are skipped because of upstream
+failure. Dry-run marks non-validation stages skipped. Abrupt process death can
+leave a running state, which is evidence that the run did not complete—not
+permission to infer success.
 
-Solver telemetry records requested, attempted, and completed events separately.
-A requested TACCO run cannot be reported as completed POT because TACCO does not
-fall back to POT.
+The manifest retains the resolved ``ot_config`` and the minimal
+``local_refinement`` evidence; it does not maintain separate solver event
+telemetry.
 
 The ``local_refinement.applied`` flag changes to true only after a local OT
 conditioning call succeeds. Failure and interruption continue through the

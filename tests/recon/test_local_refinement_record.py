@@ -54,3 +54,28 @@ def test_sc_route_has_no_inactive_strength_identity_value(tmp_path):
         "applied": False,
         "strength": None,
     }
+
+
+def test_refinement_record_persists_only_the_first_false_to_true_transition(
+    tmp_path,
+):
+    ctx = _context(
+        tmp_path,
+        task="sp_svc",
+        local_refinement={"strength": 0.2},
+    )
+    persisted = []
+    ctx.set_provenance_callback(
+        lambda current: persisted.append(
+            current.local_refinement_record["applied"]
+        ),
+        notify=False,
+    )
+
+    ctx.record_local_refinement(False)
+    ctx.record_local_refinement(False)
+    assert persisted == []
+
+    ctx.record_local_refinement(True)
+    ctx.record_local_refinement(True)
+    assert persisted == [True]

@@ -25,7 +25,6 @@ import pandas as pd
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
 from revise.backend.ops.local_ot import solve_local_ot
-from revise.recon.context import PipelineContext
 from revise.utils.deterministic import canonical_config_projection
 from revise.utils.provenance import hash_jsonable
 
@@ -89,16 +88,6 @@ kernel = SpotSrKernel(
 assigned = kernel.assign_cell_types_random(svc_obs, quota)
 ordered = assigned.sort_values(["spot_name", "cell_id"], kind="stable")
 
-ctx = PipelineContext(
-    merged_config=config,
-    raw_config={},
-    config_path="revise/revise.yaml",
-    profile="application_sc_sr",
-    runtime=config["runtime"],
-    route_key="sc_svc_sr:spot_size",
-    run_dir=Path(output_root) / "run",
-    logger=logging.getLogger("cross-process-events"),
-)
 coupling = solve_local_ot(
     [0.4, 0.6],
     [0.5, 0.5],
@@ -106,7 +95,6 @@ coupling = solve_local_ot(
     method="pot",
     pot_reg=0.1,
     pot_reg_m=0.0,
-    event_callback=ctx.record_ot_event,
 )
 observed_quota = {
     spot: {
@@ -121,7 +109,6 @@ print(json.dumps({
     "ordered_labels": ordered["cell_type"].tolist(),
     "quota_counts": observed_quota,
     "coupling": np.asarray(coupling).tolist(),
-    "solver_trace": ctx.ot_events,
     "config_hash": hash_jsonable(canonical_config_projection(config)),
 }))
 """
@@ -168,13 +155,6 @@ def test_fresh_processes_match_normalized_semantic_output(tmp_path):
         rtol=RTOL,
         atol=ATOL,
     )
-    assert first["solver_trace"] == second["solver_trace"]
-    assert first["solver_trace"] == [
-        {"phase": "ga", "solver": "pot", "status": "requested", "call": 0},
-        {"phase": "lr", "solver": "pot", "status": "requested", "call": 0},
-        {"phase": "lr", "solver": "pot", "status": "attempted", "call": 1},
-        {"phase": "lr", "solver": "pot", "status": "completed", "call": 1},
-    ]
     assert first["config_hash"] == second["config_hash"]
 
 

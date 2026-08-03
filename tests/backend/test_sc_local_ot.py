@@ -186,7 +186,6 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
     from revise.backend.kernels import global_anchoring, local_anchoring
     from revise.config.runner_conf import ApplicationScConf
 
-    events = []
     config = ApplicationScConf(
         sample_name="sample",
         raw_data_path="data",
@@ -201,7 +200,6 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
         tacco_annotate_multi_center=1,
         tacco_annotate_lamb=0.001,
     )
-    config.ot_event_callback = lambda *event: events.append(event)
     calls = []
 
     def annotate(
@@ -271,14 +269,6 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
     assert all(call["return_reference"] is True for call in calls)
     assert all(call["multi_center"] == 1 for call in calls)
     assert all(call["lamb"] == 0.001 for call in calls)
-    assert events == [
-        ("ga", "tacco", "attempted"),
-        ("ga", "tacco", "completed"),
-        ("lr", "tacco", "attempted"),
-        ("lr", "tacco", "completed"),
-        ("lr", "tacco", "attempted"),
-        ("lr", "tacco", "completed"),
-    ]
 
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
@@ -341,7 +331,6 @@ def test_local_anchoring_routes_normalized_problem_to_shared_solver(
         "pot_reg_type": "kl",
         "pot_verbose": False,
         "pot_num_iter_max": 5000,
-        "event_callback": None,
     }
     assert result.obs["Level2"].tolist() == ["A", "B"]
     assert tuple(result.obsm["Level2"].index) == ("sp1", "sp2")

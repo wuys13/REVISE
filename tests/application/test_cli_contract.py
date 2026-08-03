@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -210,9 +209,6 @@ def test_public_result_links_to_manifest_and_registers_artifact(
         ),
         run_dir=run_dir,
         merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
-        ot_events=[
-            {"phase": "ga", "solver": "pot", "status": "completed", "call": 1}
-        ],
         provenance={},
         record_artifact=records.append,
     )
@@ -236,7 +232,7 @@ def test_public_result_links_to_manifest_and_registers_artifact(
     expected_run_dir = Path(os.path.relpath(run_dir, start=path.parent)).as_posix()
     assert provenance["run_dir"] == expected_run_dir
     assert provenance["run_manifest"] == f"{expected_run_dir}/provenance.json"
-    assert json.loads(provenance["ot_events"])[0]["status"] == "completed"
+    assert "ot_events" not in provenance
     assert path.name == "SVC.h5ad"
     assert ctx.provenance["result"] == {
         "filename": "SVC.h5ad",
@@ -269,7 +265,6 @@ def test_public_result_write_failure_preserves_previous_result(
         ),
         run_dir=tmp_path / "run",
         merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
-        ot_events=[],
         provenance={},
         record_artifact=lambda artifact: None,
     )
@@ -314,7 +309,6 @@ def test_public_result_manifest_failure_restores_previous_result(tmp_path):
         ),
         run_dir=tmp_path / "run",
         merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
-        ot_events=[],
         provenance={},
         artifact_records=[],
     )
@@ -359,7 +353,6 @@ def test_public_result_rejects_route_type_mismatch_before_publishing(tmp_path):
         ),
         run_dir=tmp_path / "run",
         merged_config={"ot": {"ga": {"solver": "pot"}, "lr": {"solver": "pot"}}},
-        ot_events=[],
         provenance={},
         record_artifact=lambda artifact: None,
     )
