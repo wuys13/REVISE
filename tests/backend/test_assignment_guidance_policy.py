@@ -8,11 +8,15 @@ import types
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
 
+from revise.backend.ops import posterior_conditioning
 from revise.backend.ops.assignment import (
     AssignmentState,
     AssignmentStateError,
+    GlobalAssignment,
+    GlobalAssignmentContractError,
     aggregate_assignment,
     align_assignment_categories,
     align_assignment_observations,
@@ -51,6 +55,16 @@ def _state(
         value_semantics=semantics,
         lineage=list(lineage or []),
     )
+
+
+def _global_assignment(
+    values,
+    *,
+    observations=("o1", "o2"),
+    categories=("A", "B"),
+):
+    posterior = pd.DataFrame(values, index=observations, columns=categories)
+    return GlobalAssignment(labels=posterior.idxmax(axis=1), posterior=posterior)
 
 
 @pytest.mark.parametrize("mode", ["off", "prefer", "require"])
@@ -374,6 +388,226 @@ def test_dense_and_supported_compatibility_share_penalty_semantics():
         graph_guidance(weights, supported, strength),
         weights * np.power(supported, strength),
     )
+
+
+def test_local_ot_cost_conditioning_uses_fixed_directed_top_k_formula():
+    left = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+    right = _global_assignment(
+        [[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]],
+        observations=("r1", "r2", "r3"),
+    )
+    cost = np.array([[1.0, 2.0], [3.0, 4.0]])
+    support = np.array([[1, 2], [0, 2]])
+
+    conditioned = posterior_conditioning.condition_local_ot_cost(
+        cost,
+        left,
+        support,
+        right_posterior=right,
+        strength=0.5,
+    )
+    expected_affinity = np.array([[1e-12, 0.5], [1e-12, 0.5]])
+
+    assert np.allclose(
+        conditioned,
+        cost + 0.5 * -np.log(expected_affinity),
+        rtol=0.0,
+        atol=1e-14,
+    )
+
+    changed_left = _global_assignment([[0.75, 0.25], [0.25, 0.75]])
+    changed = posterior_conditioning.condition_local_ot_cost(
+        cost,
+        changed_left,
+        support,
+        right_posterior=right,
+        strength=0.5,
+    )
+    assert not np.array_equal(changed, conditioned)
+
+
+def test_local_ot_cost_conditioning_does_not_clip_affinity_above_one():
+    posterior = _global_assignment(
+        [[1.0000005, 0.0]],
+        observations=("o1",),
+    )
+    cost = np.array([[1.0]])
+
+    conditioned = posterior_conditioning.condition_local_ot_cost(
+        cost,
+        posterior,
+        np.array([[0]]),
+        strength=1.0,
+    )
+
+    assert conditioned[0, 0] == pytest.approx(
+        1.0 - np.log(1.0000005**2),
+    )
+    assert conditioned[0, 0] < cost[0, 0]
+
+
+@pytest.mark.parametrize("right_mode", ["default", "same"])
+def test_local_ot_cost_conditioning_validates_shared_posterior_once(
+    monkeypatch,
+    right_mode,
+):
+    posterior = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+    original = posterior_conditioning.validate_global_assignment
+    calls = []
+
+    def counting_validator(*args, **kwargs):
+        calls.append(args[0])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        posterior_conditioning,
+        "validate_global_assignment",
+        counting_validator,
+    )
+    kwargs = {} if right_mode == "default" else {"right_posterior": posterior}
+
+    posterior_conditioning.condition_local_ot_cost(
+        np.ones((2, 1)),
+        posterior,
+        np.array([[0], [1]]),
+        strength=0.2,
+        **kwargs,
+    )
+
+    assert calls == [posterior]
+
+
+def test_local_ot_zero_strength_returns_original_cost_unchanged():
+    posterior = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+    opaque_posterior = GlobalAssignment(labels=None, posterior=None)
+    cost = np.array([[np.inf, np.nan], [2.0, 3.0]], dtype=np.float32)
+
+    conditioned = posterior_conditioning.condition_local_ot_cost(
+        cost,
+        posterior,
+        np.array([[0, 1], [1, 0]]),
+        strength=0.0,
+    )
+
+    assert conditioned is cost
+    assert conditioned.dtype == cost.dtype
+    assert conditioned.shape == cost.shape
+    assert np.array_equal(conditioned, cost, equal_nan=True)
+    assert np.isposinf(conditioned[0, 0])
+    assert (
+        posterior_conditioning.condition_local_ot_cost(
+            cost,
+            opaque_posterior,
+            np.array([[0, 1], [1, 0]]),
+            right_posterior=opaque_posterior,
+            strength=0.0,
+        )
+        is cost
+    )
+    with pytest.raises(GlobalAssignmentContractError, match="left_posterior"):
+        posterior_conditioning.condition_local_ot_cost(
+            cost,
+            None,
+            np.array([[0, 1], [1, 0]]),
+            strength=0.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("strength", "error"),
+    [
+        (True, TypeError),
+        (False, TypeError),
+        ("1", TypeError),
+        (np.nan, ValueError),
+        (np.inf, ValueError),
+        (-0.1, ValueError),
+    ],
+)
+def test_local_ot_cost_conditioning_rejects_invalid_strength(strength, error):
+    posterior = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(error, match="strength"):
+        posterior_conditioning.condition_local_ot_cost(
+            np.ones((2, 1)),
+            posterior,
+            np.array([[0], [1]]),
+            strength=strength,
+        )
+
+
+@pytest.mark.parametrize(
+    ("cost", "support", "message"),
+    [
+        (np.ones((2, 2)), np.array([[0], [1]]), "shapes differ"),
+        (np.ones((2, 1)), np.array([0, 1]), "neighbor_indices must have shape"),
+        (np.ones((2, 1)), np.array([[0.0], [1.0]]), "integer dtype"),
+        (np.ones((2, 1)), np.array([[0], [2]]), "out-of-bounds"),
+        (np.array([[1.0], [np.inf]]), np.array([[0], [1]]), "finite"),
+        (np.array([[1.0], [-1.0]]), np.array([[0], [1]]), "non-negative"),
+    ],
+)
+def test_local_ot_cost_conditioning_rejects_invalid_cost_or_support(
+    cost,
+    support,
+    message,
+):
+    posterior = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(ValueError, match=message):
+        posterior_conditioning.condition_local_ot_cost(
+            cost,
+            posterior,
+            support,
+            strength=0.2,
+        )
+
+
+@pytest.mark.parametrize(
+    "cost",
+    [
+        np.array([[True], [False]]),
+        np.array([["1.0"], ["2.0"]]),
+        np.array([[1.0], [2.0]], dtype=object),
+        np.array([[1.0 + 1.0j], [2.0 + 0.0j]]),
+    ],
+)
+def test_local_ot_cost_conditioning_rejects_non_real_numeric_cost_dtype(cost):
+    posterior = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(ValueError, match="real numeric dtype"):
+        posterior_conditioning.condition_local_ot_cost(
+            cost,
+            posterior,
+            np.array([[0], [1]]),
+            strength=0.2,
+        )
+
+
+def test_local_ot_cost_conditioning_rejects_misaligned_or_invalid_posterior():
+    left = _global_assignment([[1.0, 0.0], [0.0, 1.0]])
+    reversed_categories = _global_assignment(
+        [[0.0, 1.0], [1.0, 0.0]],
+        observations=("r1", "r2"),
+        categories=("B", "A"),
+    )
+    invalid = _global_assignment([[0.6, 0.6], [0.0, 1.0]])
+
+    with pytest.raises(GlobalAssignmentContractError, match="category"):
+        posterior_conditioning.condition_local_ot_cost(
+            np.ones((2, 1)),
+            left,
+            np.array([[0], [1]]),
+            right_posterior=reversed_categories,
+            strength=0.2,
+        )
+    with pytest.raises(GlobalAssignmentContractError, match="row-normalized"):
+        posterior_conditioning.condition_local_ot_cost(
+            np.ones((2, 1)),
+            invalid,
+            np.array([[0], [1]]),
+            strength=0.2,
+        )
 
 
 @pytest.mark.parametrize(
