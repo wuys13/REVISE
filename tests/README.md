@@ -43,7 +43,7 @@ environment variables documented in their modules and CI jobs.
 | `benchmark/test_launcher.py` | `reproduce/benchmark_main.sh`, `revise/benchmark/launcher.py` | Bounded parallel launch and failure propagation | Benchmark launcher edits | Fake worker processes |
 | `config/test_local_refinement_contract.py` | `revise/config/loader.py` | Route defaults, sc/imputation rejection, bounds, and removed YAML grammar | Local-refinement config edits | Resolved config only |
 | `config/test_ot_config.py` | `revise/config/` plus OT application wiring | Schema, profiles, locked algorithm parameters, and solver mapping | Config/OT edits | Resolved configuration, not real runs |
-| `config/test_pm_on_cell_path.py` | `revise/config/runner_conf.py` | PM sidecar identity follows the resolved ST path | Spot-SR input-path edits | Path resolution only |
+| `config/test_pm_on_cell_path.py` | `revise/config/runner_conf.py` | PM sidecar uses the fixed data-root filename | Spot-SR input-path edits | Path resolution only |
 | `io/test_h5ad_preflight.py` | `revise/io/` and input resolution | H5AD roles, axes, labels, overlap, and dependency preflight | Input-contract edits | Metadata and bounded synthetic values |
 | `io/test_pm_on_cell_snapshot.py` | PM snapshot loading and provenance | One byte snapshot, probability validation, and per-role identity | Spot-SR PM input edits | Synthetic CSV contract only |
 | `preprocess/test_cli.py` | `revise/preprocess/` | Histology-prior console entry | Preprocess packaging edits | Static entry contract only |

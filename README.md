@@ -122,8 +122,8 @@ data/
   index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
   `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
   scale as `obsm["spatial"]`. Missing centers fall back to the spot center. The
-  optional sample-local probability prior is derived from the resolved ST
-  path as `<st-parent>/<st-stem>_PM_on_cell.csv`. Its axes must exactly equal
+  optional sample-local probability prior uses the case-sensitive path
+  `<data-root>/PM_on_cell.csv`. Its axes must exactly equal
   the active virtual-cell IDs and normalized cell types; values must be finite
   probabilities whose rows sum to one. REVISE reorders exact axes but does not
   clip or normalize PM. Without that file, these coordinates are retained while

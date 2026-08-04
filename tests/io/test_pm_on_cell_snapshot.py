@@ -41,7 +41,7 @@ def _quota():
 
 
 def test_snapshot_hashes_and_parses_the_same_single_read_bytes(monkeypatch, tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     original = b",T,Mono/Macro\nc1,0.8,0.2\nc2,0.1,0.9\n"
     replacement = b",T,Mono/Macro\nc1,0.4,0.6\nc2,0.7,0.3\n"
     path.write_bytes(original)
@@ -90,7 +90,7 @@ def test_snapshot_hashes_and_parses_the_same_single_read_bytes(monkeypatch, tmp_
     ],
 )
 def test_snapshot_rejects_invalid_probability_matrices(frame, tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     frame.to_csv(path)
 
     with pytest.raises(ValueError, match="pm_on_cell"):
@@ -105,7 +105,7 @@ def test_snapshot_rejects_invalid_probability_matrices(frame, tmp_path):
     ],
 )
 def test_snapshot_rejects_duplicate_or_blank_raw_headers(payload, tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     path.write_bytes(payload)
 
     with pytest.raises(ValueError, match="header"):
@@ -113,7 +113,7 @@ def test_snapshot_rejects_duplicate_or_blank_raw_headers(payload, tmp_path):
 
 
 def test_missing_snapshot_stays_none_after_file_appears(tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
 
     frame, identity = REVISEInputService().snapshot_pm_on_cell(path)
     path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
@@ -130,7 +130,7 @@ def test_missing_snapshot_stays_none_after_file_appears(tmp_path):
 
 
 def test_kernel_does_not_discover_pm_from_a_path(tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
     config = SimpleNamespace(
         pm_on_cell=None,

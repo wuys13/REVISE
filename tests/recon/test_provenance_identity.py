@@ -279,7 +279,7 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
 ):
     data_root = tmp_path / "data"
     _write_inputs(data_root)
-    pm_path = data_root / "sample_Xenium_PM_on_cell.csv"
+    pm_path = data_root / "PM_on_cell.csv"
     pm_path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
 
     manifests = []
@@ -322,7 +322,7 @@ def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
     _write_inputs(data_root)
-    pm_path = data_root / "sample_Xenium_PM_on_cell.csv"
+    pm_path = data_root / "PM_on_cell.csv"
     payload = b",A,B\nc1,invalid,0\nc2,0,1\n"
     pm_path.write_bytes(payload)
 

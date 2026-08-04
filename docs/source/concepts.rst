@@ -68,8 +68,7 @@ The LR contribution proportions are converted with ``np.round`` and then
 repaired in stable order until each spot has an exact quota equal to its virtual
 cell count. The optional ``PM_on_cell.csv`` is a sample-local probability prior
 for assigning those quota slots in the current sample. Its case-sensitive path
-is derived from the resolved ST input as
-``<st-parent>/<st-stem>_PM_on_cell.csv``; there is no CLI path override.
+is ``<data-root>/PM_on_cell.csv``; there is no CLI path override.
 Its rows must exactly equal the active virtual-cell IDs and its columns must
 exactly equal the active normalized cell-type labels. After exact set equality,
 REVISE only reindexes them into active order. Values must be numeric and finite

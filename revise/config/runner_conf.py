@@ -89,10 +89,8 @@ def benchmark_st_path(
     raise ValueError(f"Unsupported benchmark task for ST path: {task}")
 
 
-def pm_on_cell_path_from_st_path(resolved_st_path: str) -> str:
-    parent, filename = os.path.split(resolved_st_path)
-    stem, _ = os.path.splitext(filename)
-    return os.path.join(parent, f"{stem}_PM_on_cell.csv")
+def pm_on_cell_path_from_data_root(data_root: str) -> str:
+    return os.path.join(data_root, "PM_on_cell.csv")
 
 
 def configured_st_source_path(io_config, h5ad_path: str) -> str:

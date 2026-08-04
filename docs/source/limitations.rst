@@ -51,6 +51,9 @@ values in ``[0, 1]``, and row sums within an absolute tolerance of ``1e-6``. It
 does not clip, normalize, or interpret this software contract as biological
 validation. PM is not a case table, cohort registry, or generic assignment
 posterior.
+Because the path is fixed at ``<data-root>/PM_on_cell.csv``, all sc-SVC-sr
+runs sharing one data root also share one prior. Use separate data roots when
+different runs require different PM matrices.
 
 Publication
 -----------

@@ -85,8 +85,8 @@ For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in
 ``spot_name/x/y`` columns. Its assignments agree with
 ``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
 and scale as ``obsm["spatial"]``; rows without centers remain at the spot center.
-The optional sample-local probability prior is resolved from the prepared ST
-path as ``<st-parent>/<st-stem>_PM_on_cell.csv``. Its rows must exactly equal
+The optional sample-local probability prior uses the case-sensitive path
+``<data-root>/PM_on_cell.csv``. Its rows must exactly equal
 the active virtual-cell IDs and its columns must exactly equal the active
 normalized cell-type labels. Values must be numeric and finite within
 ``[0, 1]``; every row must sum to one with zero relative tolerance and an

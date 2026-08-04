@@ -431,10 +431,10 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
         sc_ref_file="sc_ref.h5ad",
     )
 
-    assert runner_contract["pm_on_cell_path_from_st_path"](
-        config.st_file_path
-    ) == "data/sample_st_PM_on_cell.csv"
-    assert "<st-parent>/<st-stem>_PM_on_cell.csv" in normalized
+    assert runner_contract["pm_on_cell_path_from_data_root"](
+        config.raw_data_path
+    ) == "data/PM_on_cell.csv"
+    assert "<data-root>/PM_on_cell.csv" in normalized
     assert "case-sensitive" in concepts
     assert "no CLI path override" in concepts
     assert "sample-local probability prior" in normalized
@@ -453,8 +453,7 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
         line for cell in notebook["cells"] for line in cell.get("source", [])
     )
     assert (
-        'PM_ON_CELL_PATH = PREPARED_ST_PATH.with_name('
-        'f"{PREPARED_ST_PATH.stem}_PM_on_cell.csv")'
+        'PM_ON_CELL_PATH = DATA_ROOT / "PM_on_cell.csv"'
     ) in source
     pm_cells = [
         cell

@@ -7,9 +7,8 @@ from revise.backend.contracts import EvaluationPolicy
 from revise.backend.contracts import InputValidationPolicy
 from revise.backend.ops.tacco_runtime import require_tacco
 from revise.config.runner_conf import REQUIRED_IO_BY_MODE_TASK
-from revise.config.runner_conf import pm_on_cell_path_from_st_path
+from revise.config.runner_conf import pm_on_cell_path_from_data_root
 from revise.config.runner_conf import resolve_input_specs
-from revise.config.runner_conf import resolved_input_path
 from revise.io import REVISEInputService
 from revise.io.input_service import PMOnCellSnapshotError
 from revise.utils import completed_artifact, input_identities, write_json
@@ -68,8 +67,7 @@ class ModeValidationPolicy(InputValidationPolicy):
             identities = input_identities(specs)
             ctx.pm_on_cell = None
             if str(task) == "sc_svc_sr":
-                st_path = resolved_input_path(specs, "st", "")
-                pm_path = pm_on_cell_path_from_st_path(st_path)
+                pm_path = pm_on_cell_path_from_data_root(str(data_root))
                 ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
                     pm_path
                 )
