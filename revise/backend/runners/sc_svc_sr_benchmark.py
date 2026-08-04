@@ -685,6 +685,7 @@ class ScSVCSr(BenchmarkSVC):
                 distance_matrix,
                 assignment=group_assignment,
                 neighbor_indices=neighbor_idx_matrix,
+                valid_support_mask=valid_neighbor_mask,
                 strength=self._conditioning_strength,
             )
             distance_matrix[~valid_neighbor_mask] = np.inf

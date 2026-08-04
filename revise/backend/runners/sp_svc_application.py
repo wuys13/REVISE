@@ -283,6 +283,7 @@ class SpSVC(ApplicationSVC):
                     left_observations=svc_recon_adata_cell_type.obs_names,
                     right_observations=svc_recon_adata_cell_type.obs_names,
                     neighbor_indices=neighbor_idx_matrix,
+                    valid_support_mask=valid_neighbor_mask,
                     strength=conditioning_strength,
                 )
                 distance_matrix[~valid_neighbor_mask] = np.inf

@@ -56,6 +56,7 @@ def condition_sp_local_ot_cost(
     right_observations: pd.Index,
     neighbor_indices: np.ndarray,
     strength: Real,
+    valid_support_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Condition one route-owned local OT cost from strict GA posteriors."""
     left = _group_assignment(
@@ -73,4 +74,5 @@ def condition_sp_local_ot_cost(
         neighbor_indices,
         right_posterior=right,
         strength=strength,
+        valid_support_mask=valid_support_mask,
     )

@@ -71,8 +71,9 @@ def condition_local_ot_cost(
     *,
     right_posterior: GlobalAssignment | None = None,
     strength: Real,
+    valid_support_mask: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Condition one ``(n_left, k)`` local-OT cost on fixed GA support."""
+    """Condition valid edges in one ``(n_left, k)`` local-OT cost."""
     if isinstance(strength, (bool, np.bool_)) or not isinstance(strength, Real):
         raise TypeError("strength must be a real number, excluding bool")
     strength_value = float(strength)
@@ -138,23 +139,45 @@ def condition_local_ot_cost(
         raise ValueError("cost and neighbor_indices shapes differ")
     if cost_values.shape[0] != left.posterior.shape[0]:
         raise ValueError("cost first axis does not match left posterior")
-    if not np.all(np.isfinite(cost_values)):
-        raise ValueError("cost values must be finite")
-    if np.any(cost_values < 0):
-        raise ValueError("cost values must be non-negative")
     if not np.issubdtype(support.dtype, np.integer):
         raise ValueError("neighbor_indices must use an integer dtype")
-    if np.any(support < 0) or np.any(support >= right.posterior.shape[0]):
+
+    if valid_support_mask is None:
+        valid_support = np.ones(cost_values.shape, dtype=bool)
+    else:
+        raw_valid_support = np.asarray(valid_support_mask)
+        if raw_valid_support.dtype != np.bool_:
+            raise ValueError("valid_support_mask must use a boolean dtype")
+        if raw_valid_support.shape != cost_values.shape:
+            raise ValueError(
+                "valid_support_mask shape must match cost and neighbor_indices"
+            )
+        valid_support = raw_valid_support
+
+    if not np.all(np.isfinite(cost_values[valid_support])):
+        raise ValueError("valid cost values must be finite")
+    if np.any(cost_values[valid_support] < 0):
+        raise ValueError("valid cost values must be non-negative")
+    valid_neighbor_indices = support[valid_support]
+    if np.any(valid_neighbor_indices < 0) or np.any(
+        valid_neighbor_indices >= right.posterior.shape[0]
+    ):
         raise ValueError("neighbor_indices contain an out-of-bounds index")
 
     left_values = left.posterior.to_numpy(dtype=np.float64, copy=False)
     right_values = right.posterior.to_numpy(dtype=np.float64, copy=False)
-    affinity = np.einsum(
-        "id,ikd->ik",
-        left_values,
-        right_values[support],
-    )
-    return cost_values + strength_value * -np.log(np.maximum(affinity, 1e-12))
+    conditioned = np.full(cost_values.shape, np.inf, dtype=np.float64)
+    valid_left = np.nonzero(valid_support)[0]
+    if valid_left.size:
+        affinity = np.einsum(
+            "id,id->i",
+            left_values[valid_left],
+            right_values[valid_neighbor_indices],
+        )
+        conditioned[valid_support] = cost_values[valid_support] + (
+            strength_value * -np.log(np.maximum(affinity, 1e-12))
+        )
+    return conditioned
 
 
 def posterior_reference_allocation(

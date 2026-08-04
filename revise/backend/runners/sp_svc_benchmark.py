@@ -155,6 +155,7 @@ class SpSVC(BenchmarkSVC):
                     left_observations=svc_replace_adata.obs_names,
                     right_observations=svc_candidate_adata.obs_names,
                     neighbor_indices=neighbor_idx_matrix,
+                    valid_support_mask=valid_neighbor_mask,
                     strength=conditioning_strength,
                 )
                 distance_matrix[~valid_neighbor_mask] = np.inf

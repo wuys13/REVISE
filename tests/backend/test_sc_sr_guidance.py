@@ -335,9 +335,10 @@ def load_sr_runner(monkeypatch):
     scanpy.AnnData = AnnData
     monkeypatch.setitem(sys.modules, "scanpy", scanpy)
     distance = types.ModuleType("revise.backend.ops.distance")
-    distance.similarity_to_distance = lambda values, _support: np.asarray(
-        values,
-        dtype=np.float64,
+    distance.similarity_to_distance = lambda values, support: np.where(
+        support,
+        np.asarray(values, dtype=np.float64),
+        np.inf,
     )
     monkeypatch.setitem(sys.modules, "revise.backend.ops.distance", distance)
     kernels = importlib.import_module("revise.backend.kernels")
@@ -408,9 +409,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
         monkeypatch.setattr(
             module,
             "get_adjacency_graph",
-            lambda adata, **_kwargs: sparse.csr_matrix(
-                np.ones((adata.n_obs, adata.n_obs), dtype=np.float64)
-            ),
+            lambda adata, **_kwargs: sparse.eye(adata.n_obs, format="csr"),
         )
 
         def solve(source, target, cost, **kwargs):
@@ -419,6 +418,9 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
                     "cost": np.asarray(cost).copy(),
                     "reference_measure": kwargs["reference_measure"],
                     "method": kwargs["method"],
+                    "valid_support_mask": np.asarray(
+                        kwargs["valid_support_mask"]
+                    ).copy(),
                 }
             )
             return np.outer(
@@ -445,6 +447,10 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
     assert {call["method"] for call in conditioned["calls"]} == {solver}
     assert all(
         call["reference_measure"] is None
+        for call in conditioned["calls"]
+    )
+    assert all(
+        np.isposinf(call["cost"][~call["valid_support_mask"]]).all()
         for call in conditioned["calls"]
     )
     assert any(
@@ -482,9 +488,7 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
     monkeypatch.setattr(
         module,
         "get_adjacency_graph",
-        lambda adata, **_kwargs: sparse.csr_matrix(
-            np.ones((adata.n_obs, adata.n_obs), dtype=np.float64)
-        ),
+        lambda adata, **_kwargs: sparse.eye(adata.n_obs, format="csr"),
     )
 
     def solve(source, target, cost, **kwargs):
@@ -493,6 +497,9 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
                 "cost": np.asarray(cost).copy(),
                 "reference_measure": kwargs["reference_measure"],
                 "method": kwargs["method"],
+                "valid_support_mask": np.asarray(
+                    kwargs["valid_support_mask"]
+                ).copy(),
             }
         )
         return np.outer(
@@ -506,6 +513,10 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
     assert len(calls) == 2
     assert {call["method"] for call in calls} == {solver}
     assert all(call["reference_measure"] is None for call in calls)
+    assert all(
+        np.isposinf(call["cost"][~call["valid_support_mask"]]).all()
+        for call in calls
+    )
     assert all(
         np.any(call["cost"][np.isfinite(call["cost"])] > 1.0)
         for call in calls

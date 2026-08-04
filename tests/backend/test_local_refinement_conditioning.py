@@ -57,7 +57,75 @@ def test_zero_strength_returns_original_cost_without_reading_payloads():
         np.array([[0, 1]]),
         right_posterior=opaque,
         strength=0.0,
+        valid_support_mask=object(),
     ) is cost
+
+
+def test_partial_support_conditions_only_valid_edges_and_restores_hard_support():
+    assignment = _assignment([[1.0, 0.0], [0.0, 1.0]])
+    cost = np.array([[0.5, 7.0], [8.0, 1.5]])
+    support = np.array([[0, 999], [-1, 1]])
+    valid_support = np.array([[True, False], [False, True]])
+    original = cost.copy()
+
+    conditioned = condition_local_ot_cost(
+        cost,
+        assignment,
+        support,
+        strength=0.2,
+        valid_support_mask=valid_support,
+    )
+
+    np.testing.assert_array_equal(cost, original)
+    np.testing.assert_allclose(conditioned[valid_support], [0.5, 1.5])
+    assert np.isposinf(conditioned[~valid_support]).all()
+
+
+@pytest.mark.parametrize("invalid_cost", [np.nan, np.inf])
+def test_partial_support_still_rejects_nonfinite_valid_cost(invalid_cost):
+    assignment = _assignment([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(ValueError, match="valid cost values must be finite"):
+        condition_local_ot_cost(
+            np.array([[invalid_cost, np.inf], [1.0, np.inf]]),
+            assignment,
+            np.array([[0, -1], [1, 999]]),
+            strength=0.2,
+            valid_support_mask=np.array([[True, False], [True, False]]),
+        )
+
+
+def test_partial_support_still_rejects_valid_out_of_bounds_index():
+    assignment = _assignment([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(ValueError, match="out-of-bounds"):
+        condition_local_ot_cost(
+            np.array([[1.0, np.inf], [1.0, np.inf]]),
+            assignment,
+            np.array([[2, -1], [1, 999]]),
+            strength=0.2,
+            valid_support_mask=np.array([[True, False], [True, False]]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("valid_support_mask", "message"),
+    [
+        (np.ones((2, 1), dtype=bool), "shape"),
+        (np.ones((2, 2), dtype=np.int8), "boolean dtype"),
+    ],
+)
+def test_partial_support_mask_is_strict(valid_support_mask, message):
+    assignment = _assignment([[1.0, 0.0], [0.0, 1.0]])
+
+    with pytest.raises(ValueError, match=message):
+        condition_local_ot_cost(
+            np.ones((2, 2)),
+            assignment,
+            np.array([[0, 1], [0, 1]]),
+            strength=0.2,
+            valid_support_mask=valid_support_mask,
+        )
 
 
 @pytest.mark.parametrize(

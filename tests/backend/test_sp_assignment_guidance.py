@@ -310,7 +310,14 @@ def _application_runner(
     return runner
 
 
-def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
+def _patch_application_problem(
+    module,
+    monkeypatch,
+    captured,
+    *,
+    n_slots=1,
+    partial_support=False,
+):
     monkeypatch.setattr(
         module,
         "trim_sp_adata",
@@ -324,6 +331,10 @@ def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
     neighbor_idx = np.column_stack(
         [np.roll(np.arange(51), -offset) for offset in range(1, n_slots + 1)]
     ).astype(np.int32)
+    valid_neighbor_mask = np.ones((51, n_slots), dtype=bool)
+    if partial_support:
+        valid_neighbor_mask[::2, -1] = False
+        neighbor_idx[~valid_neighbor_mask] = 999
     monkeypatch.setattr(
         module,
         "_compute_topk_expression",
@@ -331,7 +342,7 @@ def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
             np.ones((51, n_slots)),
             np.full(n_slots, 102.0 / n_slots),
             neighbor_idx,
-            np.ones((51, n_slots), dtype=bool),
+            valid_neighbor_mask.copy(),
             0,
         ),
     )
@@ -341,13 +352,17 @@ def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
         lambda *_args, **_kwargs: (
             np.arange(n_slots),
             np.arange(51),
-            np.ones((n_slots, 51), dtype=bool),
+            valid_neighbor_mask.T.copy(),
         ),
     )
     monkeypatch.setattr(
         module,
         "similarity_to_distance",
-        lambda similarities, _mask: np.zeros_like(similarities),
+        lambda similarities, mask: np.where(
+            mask,
+            np.zeros_like(similarities),
+            np.inf,
+        ),
     )
 
     def solve(nu, mu, cost, **kwargs):
@@ -357,7 +372,7 @@ def _patch_application_problem(module, monkeypatch, captured, *, n_slots=1):
             cost=np.asarray(cost).copy(),
             kwargs=kwargs.copy(),
         )
-        return np.ones((n_slots, 51), dtype=np.float64)
+        return np.asarray(kwargs["valid_support_mask"], dtype=np.float64)
 
     monkeypatch.setattr(module, "solve_local_ot", solve)
 
@@ -479,10 +494,18 @@ def test_application_conditions_cost_for_cost_capable_solver(
         solver=solver,
     )
     captured = {}
-    _patch_application_problem(application, monkeypatch, captured)
+    _patch_application_problem(
+        application,
+        monkeypatch,
+        captured,
+        n_slots=2,
+        partial_support=True,
+    )
 
     assert runner.local_refinement() is True
-    assert np.all(captured["cost"] > 0.0)
+    valid_support = captured["kwargs"]["valid_support_mask"]
+    assert np.all(captured["cost"][valid_support] > 0.0)
+    assert np.isposinf(captured["cost"][~valid_support]).all()
     assert captured["kwargs"]["method"] == solver
 
 
@@ -674,7 +697,11 @@ def _patch_benchmark_problem(module, monkeypatch, captured):
     monkeypatch.setattr(
         module,
         "similarity_to_distance",
-        lambda similarities, _mask: np.zeros_like(similarities),
+        lambda similarities, mask: np.where(
+            mask,
+            np.zeros_like(similarities),
+            np.inf,
+        ),
     )
 
     def solve(nu, mu, cost, **kwargs):
@@ -684,7 +711,7 @@ def _patch_benchmark_problem(module, monkeypatch, captured):
             cost=np.asarray(cost).copy(),
             kwargs=kwargs.copy(),
         )
-        return np.ones((1, 50), dtype=np.float64)
+        return np.asarray(kwargs["valid_support_mask"], dtype=np.float64)
 
     monkeypatch.setattr(module, "solve_local_ot", solve)
 
@@ -692,11 +719,14 @@ def _patch_benchmark_problem(module, monkeypatch, captured):
 def test_benchmark_conditions_replace_to_donor_q(sp_modules, monkeypatch):
     _application, benchmark = sp_modules
     runner = _benchmark_runner(benchmark)
+    runner.config.rec_graph_n_neighbors = 2
     captured = {}
     _patch_benchmark_problem(benchmark, monkeypatch, captured)
 
     assert runner.local_refinement() is True
-    assert np.all(captured["cost"] > 0.0)
+    valid_support = captured["kwargs"]["valid_support_mask"]
+    assert np.all(captured["cost"][valid_support] > 0.0)
+    assert np.isposinf(captured["cost"][~valid_support]).all()
 
 
 def test_benchmark_zero_strength_matches_unconditioned_solver_call(

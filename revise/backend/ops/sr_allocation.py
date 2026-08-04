@@ -129,6 +129,7 @@ def condition_virtual_cell_ot_cost(
     assignment: GlobalAssignment,
     neighbor_indices: np.ndarray,
     strength: Real,
+    valid_support_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Condition one virtual-cell local OT cost on projected spot Q."""
     return condition_local_ot_cost(
@@ -136,6 +137,7 @@ def condition_virtual_cell_ot_cost(
         assignment,
         neighbor_indices,
         strength=strength,
+        valid_support_mask=valid_support_mask,
     )
 
 
