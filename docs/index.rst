@@ -26,15 +26,23 @@ Start here
 Public result contract
 ----------------------
 
-Every application reconstruction publishes:
+sp-SVC and sc-SVC-sr publish:
 
 .. code-block:: text
 
    <output-root>/<sample-name>/SVC.h5ad
 
-The result links to the run's ``provenance.json``. Its ``result.type`` records
-``sp-SVC`` or ``sc-SVC``; the manifest also records the internal route,
-configuration, stages, inputs, and artifacts.
+Standard sc-SVC publishes its paired carriers:
+
+.. code-block:: text
+
+   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
+   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
+
+Each result links to the run's ``provenance.json``. Single-output runs use
+``result.type``; sc-SVC records both roles under ``results``. The manifest also
+records the application request, internal route, engine configuration, stages,
+inputs, and artifacts.
 
 .. toctree::
    :caption: Start Here

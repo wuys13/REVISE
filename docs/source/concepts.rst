@@ -46,7 +46,8 @@ Every full pipeline request follows the same ordered stages:
 8. optional benchmark evaluation.
 
 ``ot.ga.solver`` and ``ot.lr.solver`` select POT or TACCO for their respective
-stages. ``--ot-method`` is the convenience control that sets both stages.
+stages. ``algorithm.ot_method`` in an application YAML is the controlled value
+that sets both stages.
 
 Spot super-resolution cell locations and random assignment
 -----------------------------------------------------------
@@ -68,7 +69,8 @@ The LR contribution proportions are converted with ``np.round`` and then
 repaired in stable order until each spot has an exact quota equal to its virtual
 cell count. The optional ``PM_on_cell.csv`` is a sample-local probability prior
 for assigning those quota slots in the current sample. Its case-sensitive path
-is ``<data-root>/PM_on_cell.csv``; there is no CLI path override.
+is ``<data-root>/PM_on_cell.csv`` in ``legacy_layout`` mode; direct mode does
+not probe this legacy sidecar, and there is no CLI path override.
 Its rows must exactly equal the active virtual-cell IDs and its columns must
 exactly equal the active normalized cell-type labels. After exact set equality,
 REVISE only reindexes them into active order. Values must be numeric and finite
@@ -103,8 +105,8 @@ dataset into a scientifically comparable one.
 Evidence versus interpretation
 ------------------------------
 
-Automated tests establish route selection, array/label invariants, solver
-events, deterministic identities, failure states, output publication, and
+Automated tests establish route selection, array/label invariants, resolved OT
+configuration, deterministic identities, failure states, output publication, and
 small synthetic execution. They do not establish biological validation,
 cross-solver biological parity, or production-scale suitability. See
 :doc:`limitations` before interpreting an SVC or benchmark table.

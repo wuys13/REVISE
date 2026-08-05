@@ -295,7 +295,7 @@ def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
             method="tacco",
         )
 
-    assert "--ot-method pot" in str(caught.value)
+    assert "algorithm.ot_method: pot" in str(caught.value)
     assert "does not fall back automatically" in str(caught.value)
 
 
@@ -323,7 +323,7 @@ def test_missing_tacco_transitive_dependency_is_not_reported_as_missing_tacco(
         )
 
     assert "No module named 'tacco'" not in str(caught.value)
-    assert "--ot-method pot" in str(caught.value)
+    assert "algorithm.ot_method: pot" in str(caught.value)
 
 
 def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypatch):
@@ -342,7 +342,7 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
             method="tacco",
         )
 
-    assert "--ot-method pot" in str(caught.value)
+    assert "algorithm.ot_method: pot" in str(caught.value)
 
 
 def test_physical_local_ot_callers_have_no_event_callback_wiring():

@@ -1,9 +1,10 @@
 API
 ===
 
-The stable public entry point is ``REVISEPipeline``. It resolves
-``revise/revise.yaml`` profiles, applies runtime and IO overrides, and routes
-each run to the appropriate backend strategy.
+The stable public Python entry point is ``REVISEPipeline``. Application callers
+select one SVC data type with ``svc_type``; Benchmark callers select one
+confounding family with ``cf``. The package-owned router then resolves the
+profile and backend strategy.
 
 Start with :doc:`../quickstart` for runnable examples and :doc:`../architecture`
 for the full lifecycle. This page is the reference surface for classes and
@@ -21,8 +22,8 @@ extension points.
 
     pipeline = REVISEPipeline()
     svc = pipeline.run(
-        profile="application_sc",
-        runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
+        svc_type="sc-SVC",
+        runtime_overrides={"seed": 42},
         io_overrides={
             "data_root": "raw_data/Real_application",
             "output_root": "output/sc_SVC_case",
@@ -61,7 +62,8 @@ surface.
 Configuration
 ~~~~~~~~~~~~~
 
-``revise/revise.yaml`` is the external configuration and routing surface.
+``revise/revise.yaml`` is the package-owned engine configuration and routing
+authority; application YAML is the external request surface.
 ``revise.config.runner_conf`` contains internal runner contracts used by
 backend adapters and compatibility notebooks.
 

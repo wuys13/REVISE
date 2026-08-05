@@ -10,9 +10,7 @@ from typing import Dict, List
 
 import numpy as np
 
-from revise.config import merge_unified_config
 from revise.framework import REVISEPipeline
-from revise.utils import build_run_dir
 
 # Base settings aligned with Sim2Real-ST benchmark convention.
 SEG_METHODS = ["seg_1", "seg_2", "seg_3", "seg_4"]
@@ -36,15 +34,6 @@ _CLI_MIGRATION_ERROR = (
     "Assignment guidance options were removed; "
     "use --local-refinement-strength"
 )
-BENCHMARK_PROFILES = {
-    "segmentation": "benchmark_seg",
-    "bin2cell": "benchmark_bin2cell",
-    "batch_effect": "benchmark_sr_batch",
-    "spot_size": "benchmark_sr_spot_size",
-    "gene_panel": "benchmark_impute_panel",
-    "gene_dropout": "benchmark_impute_dropout",
-}
-
 SR_REFINEMENT_PRESETS = {
     "none": {
         "sr_graph_agg_enabled": False,
@@ -217,50 +206,16 @@ def _read_manifest_snapshot(
 def _run_case(
     pipeline: REVISEPipeline,
     *,
-    platform: str,
-    profile: str,
     confounding: str,
     io_overrides: Dict[str, object],
     runtime_seed: int | None,
     algorithm_overrides: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
-    expected_run_dir = None
-    expected_manifest_path = None
     try:
-        resolved = merge_unified_config(
-            raw_config=pipeline.raw_config,
-            profile=profile,
-            runtime_overrides={
-                "platform": platform,
-                "confounding": confounding,
-                "seed": runtime_seed,
-            },
-            io_overrides=io_overrides,
-            algorithm_overrides=algorithm_overrides or {},
-        )
-        route_key = (
-            f"{resolved['runtime']['platform']}:"
-            f"{resolved['runtime']['confounding']}"
-        )
-        expected_run_dir = build_run_dir(
-            output_root=resolved["io"]["output_root"],
-            sample_name=resolved["io"]["sample_name"],
-            route_key=route_key,
-            io_cfg=resolved["io"],
-        )
-        expected_manifest_path = expected_run_dir / "provenance.json"
-    except (AttributeError, KeyError, TypeError, ValueError):
-        # A pre-context configuration error has no durable run envelope.
-        pass
-    try:
-        runtime_cfg = {
-            "platform": platform,
-            "confounding": confounding,
-            "seed": runtime_seed,
-        }
-        svc = pipeline._run_with_algorithm_overrides(
-            profile=profile,
-            runtime_overrides=runtime_cfg,
+        svc = pipeline._execute_run(
+            svc_type=None,
+            cf=confounding,
+            runtime_overrides={"seed": runtime_seed},
             io_overrides=io_overrides,
             algorithm_overrides=algorithm_overrides,
             dry_run=False,
@@ -269,7 +224,7 @@ def _run_case(
         run_dir = svc.provenance.get("run_dir")
         return {
             "ok": True,
-            "profile": profile,
+            "profile": svc.provenance.get("profile"),
             "seed": runtime_seed,
             "run_dir": run_dir,
             "manifest_path": (
@@ -284,37 +239,27 @@ def _run_case(
     except Exception as exc:  # pragma: no cover - wrapper behavior
         local_refinement = None
         failure_context = getattr(exc, "_revise_failure_context", None)
-        current_identity = None
-        manifest = None
-        if expected_manifest_path is not None:
-            snapshot = _read_manifest_snapshot(expected_manifest_path)
+        run_dir = None
+        manifest_path = None
+        current_manifest = False
+        if isinstance(failure_context, dict):
+            run_dir = failure_context.get("run_dir")
+            manifest_path = failure_context.get("manifest_path")
+        if manifest_path is not None:
+            snapshot = _read_manifest_snapshot(Path(manifest_path))
             if snapshot is not None:
                 current_identity, manifest = snapshot
-        current_manifest = bool(
-            isinstance(failure_context, dict)
-            and expected_run_dir is not None
-            and expected_manifest_path is not None
-            and failure_context.get("run_dir") == str(expected_run_dir)
-            and failure_context.get("manifest_path")
-            == str(expected_manifest_path)
-            and failure_context.get("manifest_identity") == current_identity
-        )
+                current_manifest = (
+                    failure_context.get("manifest_identity") == current_identity
+                )
         if current_manifest:
             local_refinement = manifest.get("local_refinement")
         return {
             "ok": False,
-            "profile": profile,
+            "profile": manifest.get("profile") if current_manifest else None,
             "seed": runtime_seed,
-            "run_dir": (
-                str(expected_run_dir)
-                if current_manifest
-                else None
-            ),
-            "manifest_path": (
-                str(expected_manifest_path)
-                if current_manifest
-                else None
-            ),
+            "run_dir": str(run_dir) if current_manifest else None,
+            "manifest_path": str(manifest_path) if current_manifest else None,
             "local_refinement": local_refinement,
             "summary": None,
             "error": f"{type(exc).__name__}: {exc}",
@@ -398,9 +343,6 @@ def main(args: argparse.Namespace | None = None) -> None:
         algorithm_overrides = _build_algorithm_overrides(args)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    profile = BENCHMARK_PROFILES.get(args.confounding)
-    if profile is None:
-        raise NotImplementedError(f"Unsupported confounding: {args.confounding}")
     if args.confounding == "segmentation":
         st_file = args.st_file or "xenium_spot.h5ad"
         gt_svc_file = args.gt_svc_file or "selected_xenium.h5ad"
@@ -417,8 +359,6 @@ def main(args: argparse.Namespace | None = None) -> None:
             )
             run_result = _run_case(
                 pipeline,
-                platform=args.platform,
-                profile=profile,
                 confounding="segmentation",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
@@ -442,8 +382,6 @@ def main(args: argparse.Namespace | None = None) -> None:
             )
             run_result = _run_case(
                 pipeline,
-                platform=args.platform,
-                profile=profile,
                 confounding="bin2cell",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
@@ -472,8 +410,6 @@ def main(args: argparse.Namespace | None = None) -> None:
                 )
                 run_result = _run_case(
                     pipeline,
-                    platform=args.platform,
-                    profile=profile,
                     confounding="batch_effect",
                     io_overrides=io_cfg,
                     runtime_seed=next_runtime_seed(),
@@ -497,8 +433,6 @@ def main(args: argparse.Namespace | None = None) -> None:
             )
             run_result = _run_case(
                 pipeline,
-                platform=args.platform,
-                profile=profile,
                 confounding="spot_size",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
@@ -517,8 +451,6 @@ def main(args: argparse.Namespace | None = None) -> None:
         )
         run_result = _run_case(
             pipeline,
-            platform=args.platform,
-            profile=profile,
             confounding="gene_panel",
             io_overrides=io_cfg,
             runtime_seed=next_runtime_seed(),
@@ -537,8 +469,6 @@ def main(args: argparse.Namespace | None = None) -> None:
         )
         run_result = _run_case(
             pipeline,
-            platform=args.platform,
-            profile=profile,
             confounding="gene_dropout",
             io_overrides=io_cfg,
             runtime_seed=next_runtime_seed(),

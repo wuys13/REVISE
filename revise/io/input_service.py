@@ -288,7 +288,8 @@ class REVISEInputService:
                 required_obs.append("transcript_counts")
             self._require_obs(adata, required_obs, context=context)
         elif role == "sc_ref":
-            required_obs = [str(columns.get("cell_type_col", "Level1"))]
+            cell_type_col = str(columns.get("cell_type_col", "Level1"))
+            required_obs = [cell_type_col]
             if mode == "application" and task == "sc_svc":
                 required_obs.append(
                     str(columns.get("sub_cell_type_col", "Level2"))
@@ -300,6 +301,7 @@ class REVISEInputService:
             )
             patient_key = self.io_config.get("patient_key")
             sample_name = self.io_config.get("sample_name")
+            patient_sample = str(sample_name) if sample_name is not None else None
             requires_patient_match = not (
                 mode == "benchmark"
                 and str(runtime.get("confounding")) == "batch_effect"
@@ -310,13 +312,36 @@ class REVISEInputService:
                 and patient_key in adata.obs
                 and sample_name is not None
             ):
-                patient_sample = str(sample_name)
                 if mode == "benchmark":
                     patient_sample = patient_sample.split("/", 1)[0]
                 if not adata.obs[patient_key].astype(str).eq(patient_sample).any():
                     raise ValueError(
                         f"Invalid input: {context}; field=obs[{patient_key!r}]; "
                         f"expected=at least one row for sample {patient_sample!r}"
+                    )
+            selected = columns.get("select_cell_type")
+            if mode == "application" and task == "sc_svc" and selected:
+                labels = adata.obs[cell_type_col].astype(str)
+                if (
+                    requires_patient_match
+                    and patient_key
+                    and patient_key in adata.obs
+                    and sample_name is not None
+                ):
+                    labels = labels[
+                        adata.obs[patient_key].astype(str).eq(patient_sample)
+                    ]
+                normalized_labels = labels.str.replace("/", "_", regex=False)
+                normalized_selected = str(selected).replace("/", "_")
+                if normalized_selected not in set(normalized_labels):
+                    available = sorted(
+                        {str(value) for value in normalized_labels.dropna().unique()}
+                    )[:8]
+                    raise ValueError(
+                        f"Invalid input: {context}; field=select_cell_type; "
+                        f"actual={selected!r}; patient={patient_sample!r}; "
+                        f"expected=label present after patient filtering; "
+                        f"available={available}"
                     )
         elif role == "gt" and task == "sc_svc_sr":
             label_key = self._resolve_sr_ground_truth_label_key(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import copy
 import importlib
 import inspect
@@ -14,7 +13,13 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from revise.config import ConfigError, load_raw_config, merge_unified_config
+from revise.config import (
+    ConfigError,
+    load_raw_config,
+    merge_unified_config,
+    resolve_semantic_route,
+)
+from revise.framework import REVISEPipeline
 from revise.recon.context import PipelineContext
 from revise.svc import SVC
 
@@ -22,15 +27,100 @@ from revise.svc import SVC
 CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
+def test_semantic_router_resolves_each_mode_without_cross_domain_selector():
+    raw = load_raw_config(CONFIG_PATH)
+
+    application = resolve_semantic_route(raw, svc_type="sc-SVC")
+    benchmark = resolve_semantic_route(raw, cf="segmentation")
+
+    assert application == {
+        "mode": "application",
+        "application_route": "sc-SVC",
+        "profile": "application_sc",
+        "task": "sc_svc",
+        "svc_kind": "sc",
+        "strategy": "ScSvcApplicationStrategy",
+        "warning": None,
+    }
+    assert "confounding" not in application
+    assert benchmark == {
+        "mode": "benchmark",
+        "confounding": "segmentation",
+        "profile": "benchmark_seg",
+        "task": "sp_svc",
+        "svc_kind": "sp",
+        "strategy": "SpSvcBenchmarkSegStrategy",
+        "warning": None,
+    }
+    assert "application_route" not in benchmark
+
+
+def test_semantic_router_application_wins_and_invalid_winner_never_falls_back():
+    raw = load_raw_config(CONFIG_PATH)
+
+    selected = resolve_semantic_route(
+        raw,
+        svc_type="sp-SVC",
+        cf="segmentation",
+    )
+
+    assert selected["application_route"] == "sp-SVC"
+    assert selected["profile"] == "application_sp"
+    assert "segmentation" in selected["warning"]
+    assert "sp-SVC" in selected["warning"]
+    assert "ignored" in selected["warning"]
+    with pytest.raises(ConfigError, match="invalid.*svc_type"):
+        resolve_semantic_route(raw, svc_type="invalid", cf="segmentation")
+    with pytest.raises(ConfigError, match="svc_type.*cf"):
+        resolve_semantic_route(raw)
+
+
+def test_public_run_uses_selectors_and_rejects_route_identity_overrides():
+    pipeline = REVISEPipeline()
+
+    with pytest.raises(ConfigError, match="route identity"):
+        pipeline.run(
+            svc_type="sp-SVC",
+            runtime_overrides={"confounding": "segmentation"},
+            dry_run=True,
+        )
+
+
 def _raw_config():
     return load_raw_config(CONFIG_PATH)
+
+
+def _runtime_for_profile(raw, profile):
+    selected_profile = profile or "application_sp"
+    for namespace, routes in raw["router"].items():
+        for selector, route in routes.items():
+            if route["profile"] != selected_profile:
+                continue
+            key = "application_route" if namespace == "application" else "confounding"
+            return {
+                "mode": namespace,
+                key: selector,
+                "task": route["task"],
+                "svc_kind": route["svc_kind"],
+                "strategy": route["strategy"],
+            }
+    if selected_profile == "application_sc_hyper":
+        route = raw["router"]["application"]["sc-SVC"]
+        return {
+            "mode": "application",
+            "application_route": "sc-SVC",
+            "task": route["task"],
+            "svc_kind": route["svc_kind"],
+            "strategy": "ScSvcHyperApplicationStrategy",
+        }
+    raise AssertionError(f"No test route uses profile {selected_profile!r}")
 
 
 def _merge(raw, profile=None, algorithm_overrides=None):
     return merge_unified_config(
         raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, profile),
         io_overrides={},
         algorithm_overrides=algorithm_overrides or {},
     )
@@ -116,7 +206,10 @@ def test_runtime_none_is_an_explicit_override():
     merged = merge_unified_config(
         raw_config=_raw_config(),
         profile="benchmark_seg",
-        runtime_overrides={"seed": None},
+        runtime_overrides={
+            **_runtime_for_profile(_raw_config(), "benchmark_seg"),
+            "seed": None,
+        },
         io_overrides={},
         algorithm_overrides={},
     )
@@ -128,12 +221,15 @@ def test_non_seed_runtime_none_remains_omitted():
     merged = merge_unified_config(
         raw_config=_raw_config(),
         profile="application_sp",
-        runtime_overrides={"platform": None},
+        runtime_overrides={
+            **_runtime_for_profile(_raw_config(), "application_sp"),
+            "application_route": None,
+        },
         io_overrides={},
         algorithm_overrides={},
     )
 
-    assert merged["runtime"]["platform"] == "sp_svc"
+    assert merged["runtime"]["application_route"] == "sp-SVC"
 
 
 def test_pipeline_public_api_does_not_expose_algorithm_overrides():
@@ -141,9 +237,7 @@ def test_pipeline_public_api_does_not_expose_algorithm_overrides():
     from revise.recon.facade import sc_svc, sp_svc
 
     public_parameters = inspect.signature(REVISEPipeline.run).parameters
-    internal_parameters = inspect.signature(
-        REVISEPipeline._run_with_algorithm_overrides
-    ).parameters
+    internal_parameters = inspect.signature(REVISEPipeline._execute_run).parameters
 
     assert "algorithm_overrides" not in public_parameters
     assert "set_overrides" not in public_parameters
@@ -216,7 +310,7 @@ def test_explicit_ot_method_overrides_conflicting_profile_solvers():
     merged = _merge(
         raw,
         "application_sp",
-        service._build_algorithm_overrides(_cli_args(ot_method="pot")),
+        service._build_algorithm_overrides(_application_request(ot_method="pot")),
     )
 
     assert merged["ot"]["ga"]["solver"] == "pot"
@@ -293,19 +387,15 @@ def test_every_profile_and_ga_lr_combination_reaches_production_mapping(
     }
 
 
-def test_profiles_cover_the_flattened_router_route_set():
+def test_router_profiles_exist():
     raw = _raw_config()
     routed_profiles = {
-        (_merge(raw, profile)["runtime"]["platform"], _merge(raw, profile)["runtime"]["confounding"])
-        for profile in raw["profiles"]
-    }
-    router_routes = {
-        (platform, confounding)
-        for platform, confoundings in raw["router"].items()
-        for confounding in confoundings
+        route["profile"]
+        for routes in raw["router"].values()
+        for route in routes.values()
     }
 
-    assert routed_profiles == router_routes
+    assert routed_profiles <= raw["profiles"].keys()
 
 
 def test_impute_reuses_lr_solver_with_independent_numerics(adapters):
@@ -432,7 +522,7 @@ def test_false_completeness_fails_before_input_or_output_path_processing(tmp_pat
     pipeline = REVISEPipeline(str(_write_config(tmp_path, raw)))
 
     with pytest.raises(ConfigError, match="sc.svc_completeness must be exactly true"):
-        pipeline.run()
+        pipeline.run(svc_type="sp-SVC")
 
     assert not (tmp_path / "must-not-exist").exists()
 
@@ -459,7 +549,7 @@ def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
         config_path=str(CONFIG_PATH),
         profile=None,
         runtime=merged["runtime"],
-        route_key="sp_svc:bin2cell",
+        route_key="application:sp-SVC",
         run_dir=tmp_path,
         logger=logging.getLogger("test_ot_config"),
     )
@@ -468,36 +558,27 @@ def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
     assert "ot_solver" not in ctx.route
 
 
-def _cli_args(**overrides):
+def _application_request(**overrides):
     values = {
         "svc_type": "sc-SVC",
         "ot_method": None,
-        "select_ct": "T",
-        "cell_type_col": "Level1",
-        "sub_cell_type_col": "Level2",
+        "select_cell_type": "T",
+        "broad_column": "Level1",
+        "subtype_column": "Level2",
+        "local_refinement_strength": None,
     }
     values.update(overrides)
-    return argparse.Namespace(**values)
+    return SimpleNamespace(**values)
 
 
-def test_cli_omitted_ot_method_parses_as_none(monkeypatch):
-    from revise.application import cli
+def test_application_yaml_omitted_ot_method_parses_as_none():
+    from revise.application.request import load_application_request
 
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "reconstruct.py",
-            "--svc-type", "sc-SVC",
-            "--sample-name", "sample",
-            "--st-file", "st.h5ad",
-            "--sc-ref-file", "sc.h5ad",
-            "--data-root", "data",
-            "--select-ct", "T",
-        ],
+    request = load_application_request(
+        CONFIG_PATH.parents[1] / "configs/application/VisiumHD.yaml"
     )
 
-    assert cli.parse_args().ot_method is None
+    assert request.ot_method is None
 
 
 def test_structured_config_supports_mixed_ot_solvers():
@@ -512,10 +593,12 @@ def test_structured_config_supports_mixed_ot_solvers():
 
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
-def test_explicit_cli_ot_flag_overrides_both_phases(method):
+def test_explicit_application_ot_method_overrides_both_phases(method):
     from revise.application import service
 
-    overrides = service._build_algorithm_overrides(_cli_args(ot_method=method))
+    overrides = service._build_algorithm_overrides(
+        _application_request(ot_method=method)
+    )
 
     assert overrides["ot"]["ga"]["solver"] == method
     assert overrides["ot"]["lr"]["solver"] == method
@@ -531,15 +614,15 @@ def test_framework_provenance_records_resolved_ot_config_without_events(tmp_path
         merged_config=merged,
         config_path=str(CONFIG_PATH),
         profile=None,
-        route={"platform": "sp_svc"},
-        route_key="sp_svc:bin2cell",
+        route={"mode": "application", "application_route": "sp-SVC"},
+        route_key="application:sp-SVC",
         run_dir=tmp_path,
         stage_trace=[],
         quality_metrics={},
         svc=svc,
         software_versions={},
         local_refinement_record={
-            "route": "sp_svc:bin2cell",
+            "route": "application:sp-SVC",
             "applied": False,
             "strength": 0.2,
         },
@@ -550,6 +633,36 @@ def test_framework_provenance_records_resolved_ot_config_without_events(tmp_path
     assert svc.provenance["ot_config"] == merged["ot"]
     assert "ot_events" not in svc.provenance
     assert not any("actual" in key or "completed" in key for key in svc.provenance)
+
+
+def test_application_metadata_cannot_override_canonical_provenance(tmp_path):
+    from revise.framework import REVISEPipeline
+
+    merged = _merge(_raw_config())
+    svc = SVC(expr=None, spatial=None, svc_kind="sc")
+    ctx = SimpleNamespace(
+        merged_config=merged,
+        config_path=str(CONFIG_PATH),
+        profile=None,
+        route={"mode": "application", "application_route": "sp-SVC"},
+        route_key="application:sp-SVC",
+        run_dir=tmp_path,
+        run_record={"status": "failed"},
+        stage_records=[],
+        artifact_records=[],
+        quality_metrics={},
+        svc=svc,
+        software_versions={},
+        local_refinement_record={},
+        application_config_metadata={"run": {"status": "succeeded"}},
+    )
+
+    REVISEPipeline()._write_final_metadata(ctx)
+
+    assert svc.provenance["run"] == {"status": "failed"}
+    assert svc.provenance["application_config"] == {
+        "run": {"status": "succeeded"}
+    }
 
 
 def test_application_sc_sr_config_fields_accept_production_mapping(adapters):
@@ -774,7 +887,10 @@ def test_six_strategies_put_ot_mapping_on_actual_runner_config(
         merged_config=merged,
         io=merged["io"],
         columns=merged["columns"],
-        route_key=f"{merged['runtime']['platform']}:{merged['runtime']['confounding']}",
+        route_key=(
+            f"{merged['runtime']['mode']}:"
+            f"{merged['runtime'].get('application_route') or merged['runtime'].get('confounding')}"
+        ),
         run_dir=tmp_path,
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=bool(merged["runtime"].get("compatibility_mode", False)),

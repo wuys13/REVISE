@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import signal
 import threading
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -10,9 +11,10 @@ from typing import Any, Dict, Optional
 from revise.backend import ModeEvaluationPolicy
 from revise.backend import ModeValidationPolicy
 from revise.backend import build_default_registry
-from revise.config import infer_default_profile
+from revise.config import ConfigError
 from revise.config import load_raw_config
 from revise.config import merge_unified_config
+from revise.config import resolve_semantic_route
 from revise.recon.context import PipelineContext
 from revise.recon.pipeline import UnifiedReconstructionPipeline
 from revise.svc import SVC
@@ -27,6 +29,20 @@ from revise.utils import (
     set_global_seed,
     sha256_file,
     write_json,
+)
+from revise.utils.logging import log_exception_to_run_file
+
+
+_APPLICATION_CONFIG_PROVENANCE_KEYS = (
+    "source_path",
+    "source_sha256",
+    "declared_root",
+    "resolved_root",
+    "cwd",
+    "resolved_paths",
+    "declared_action",
+    "effective_action",
+    "dry_run_override",
 )
 
 
@@ -109,14 +125,16 @@ class REVISEPipeline:
     def run(
         self,
         *,
-        profile: Optional[str] = None,
+        svc_type: Optional[str] = None,
+        cf: Optional[str] = None,
         runtime_overrides: Optional[Dict[str, Any]] = None,
         io_overrides: Optional[Dict[str, Any]] = None,
         dry_run: bool = False,
         finalize_callback=None,
     ):
-        return self._run_with_algorithm_overrides(
-            profile=profile,
+        return self._execute_run(
+            svc_type=svc_type,
+            cf=cf,
             runtime_overrides=runtime_overrides,
             io_overrides=io_overrides,
             algorithm_overrides=None,
@@ -124,15 +142,17 @@ class REVISEPipeline:
             finalize_callback=finalize_callback,
         )
 
-    def _run_with_algorithm_overrides(
+    def _execute_run(
         self,
         *,
-        profile: Optional[str] = None,
+        svc_type: Optional[str] = None,
+        cf: Optional[str] = None,
         runtime_overrides: Optional[Dict[str, Any]] = None,
         io_overrides: Optional[Dict[str, Any]] = None,
         algorithm_overrides: Optional[Dict[str, Any]] = None,
         dry_run: bool = False,
         finalize_callback=None,
+        application_config_metadata: Optional[Dict[str, Any]] = None,
     ):
         # 1) Resolve final runtime config from single YAML entry:
         # defaults -> profile -> runtime/io overrides -> algorithm overrides.
@@ -140,20 +160,49 @@ class REVISEPipeline:
         io_overrides = dict(io_overrides or {})
         algorithm_overrides = dict(algorithm_overrides or {})
 
-        if profile is None:
-            profile = infer_default_profile(self.raw_config, runtime_overrides)
+        route_identity_keys = {
+            "platform",
+            "application_route",
+            "confounding",
+            "mode",
+            "task",
+            "svc_kind",
+            "strategy",
+        }
+        forbidden = sorted(route_identity_keys & set(runtime_overrides))
+        if forbidden:
+            raise ConfigError(
+                "runtime_overrides cannot modify route identity: "
+                + ", ".join(forbidden)
+            )
+
+        resolved_route = resolve_semantic_route(
+            self.raw_config,
+            svc_type=svc_type,
+            cf=cf,
+        )
+        route_warning = resolved_route.pop("warning")
+        profile = resolved_route.pop("profile")
+        if route_warning:
+            warnings.warn(route_warning, UserWarning, stacklevel=2)
+        resolved_runtime = {**resolved_route, **runtime_overrides}
 
         merged_config = merge_unified_config(
             raw_config=self.raw_config,
             profile=profile,
-            runtime_overrides=runtime_overrides,
+            runtime_overrides=resolved_runtime,
             io_overrides=io_overrides,
             algorithm_overrides=algorithm_overrides,
         )
 
         runtime = merged_config["runtime"]
         config_hash = hash_jsonable(canonical_config_projection(merged_config))
-        route_key = f"{runtime['platform']}:{runtime['confounding']}"
+        selector = (
+            runtime["application_route"]
+            if runtime["mode"] == "application"
+            else runtime["confounding"]
+        )
+        route_key = f"{runtime['mode']}:{selector}"
         output_root = merged_config["io"]["output_root"]
         sample_name = merged_config["io"]["sample_name"]
         run_dir = build_run_dir(
@@ -161,13 +210,17 @@ class REVISEPipeline:
             sample_name=sample_name,
             route_key=route_key,
             io_cfg=merged_config["io"],
+            mode=runtime["mode"],
+            cf=runtime.get("confounding"),
         )
-        if route_key.startswith("sim2real:"):
+        if runtime["mode"] == "benchmark":
             log_dir = build_task_dir(
                 output_root=output_root,
                 sample_name=sample_name,
                 route_key=route_key,
                 io_cfg=merged_config["io"],
+                mode=runtime["mode"],
+                cf=runtime.get("confounding"),
             )
         else:
             log_dir = run_dir
@@ -187,6 +240,8 @@ class REVISEPipeline:
                     config_hash=config_hash,
                     dry_run=dry_run,
                     finalize_callback=finalize_callback,
+                    application_config_metadata=application_config_metadata,
+                    route_warning=route_warning,
                 )
             except BaseException as exc:
                 manifest_after = _manifest_identity(manifest_path)
@@ -214,6 +269,8 @@ class REVISEPipeline:
         config_hash: str,
         dry_run: bool,
         finalize_callback,
+        application_config_metadata: Optional[Dict[str, Any]],
+        route_warning: Optional[str],
     ):
         logger_name = f"REVISEUnified::{sample_name}::{route_key}"
         if log_dir == run_dir:
@@ -222,6 +279,8 @@ class REVISEPipeline:
             run_name=logger_name,
             run_dir=log_dir,
         )
+        if route_warning:
+            logger.warning("[framework] %s", route_warning)
         logger.info("[framework] start unified run route=%s strategy=%s", route_key, runtime["strategy"])
 
         set_global_seed(seed=runtime.get("seed"), deterministic=bool(runtime.get("deterministic", True)))
@@ -238,6 +297,9 @@ class REVISEPipeline:
             config_hash=config_hash,
             dry_run=bool(dry_run),
             finalize_callback=finalize_callback,
+            application_config_metadata=copy.deepcopy(
+                application_config_metadata or {}
+            ),
             software_versions=collect_software_versions(merged_config),
         )
         ctx.set_provenance_callback(self._write_final_metadata, notify=False)
@@ -302,7 +364,10 @@ class REVISEPipeline:
                     ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
-                logger.exception("[framework] run failed")
+                log_exception_to_run_file(
+                    logger,
+                    f"[framework] run failed: {type(exc).__name__}: {exc}",
+                )
                 raise
 
     def _run_dry_validation(self, ctx: PipelineContext) -> None:
@@ -371,6 +436,15 @@ class REVISEPipeline:
             ),
         }
         current_provenance = getattr(ctx, "provenance", {})
+        application_config = copy.deepcopy(
+            getattr(ctx, "application_config_metadata", {})
+        )
+        if application_config:
+            provenance["application_config"] = {
+                key: application_config[key]
+                for key in _APPLICATION_CONFIG_PROVENANCE_KEYS
+                if key in application_config
+            }
         for result_key in ("result", "results"):
             result_value = copy.deepcopy(current_provenance.get(result_key))
             if result_value is not None:

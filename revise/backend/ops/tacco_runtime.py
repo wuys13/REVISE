@@ -8,7 +8,8 @@ SUPPORTED_TACCO_VERSION = "0.5.0"
 _INSTALL_HINT = (
     'run: python -m pip install "revise-svc[tacco]" '
     'or python -m pip install "tacco==0.5.0"; if a different OT algorithm '
-    'is acceptable, explicitly select POT (application CLI: "--ot-method pot"); '
+    "is acceptable, explicitly select POT (application YAML: "
+    '"algorithm.ot_method: pot"); '
     "REVISE does not fall back automatically"
 )
 

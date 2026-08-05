@@ -6,6 +6,7 @@ include reconstruct.py
 include reproduce/benchmark_main.py
 include reproduce/benchmark_main.sh
 recursive-include revise *.py *.yaml
+recursive-include configs/application *.yaml
 recursive-include constraints *.txt
 prune tests
 prune **/__pycache__

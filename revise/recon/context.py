@@ -35,6 +35,7 @@ class PipelineContext:
     config_hash: Optional[str] = None
     dry_run: bool = False
     finalize_callback: Optional[Callable[["PipelineContext"], None]] = None
+    application_config_metadata: Dict[str, Any] = field(default_factory=dict)
 
     runner_config: Any = None
     runner: Any = None
@@ -360,12 +361,15 @@ class PipelineContext:
 
     @property
     def route(self) -> Dict[str, Any]:
-        return {
-            "platform": self.runtime.get("platform"),
-            "confounding": self.runtime.get("confounding"),
+        route = {
             "mode": self.runtime.get("mode"),
             "task": self.runtime.get("task"),
             "svc_kind": self.runtime.get("svc_kind"),
             "strategy": self.runtime.get("strategy"),
             "compatibility_mode": self.runtime.get("compatibility_mode"),
         }
+        if self.runtime.get("mode") == "application":
+            route["application_route"] = self.runtime.get("application_route")
+        else:
+            route["confounding"] = self.runtime.get("confounding")
+        return route

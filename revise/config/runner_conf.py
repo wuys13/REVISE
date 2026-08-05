@@ -109,6 +109,15 @@ def resolve_input_specs(runtime, io_config) -> tuple[InputSpec, ...]:
     if key not in REQUIRED_IO_BY_MODE_TASK:
         raise ValueError(f"Unsupported mode/task input layout: {mode}:{task}")
 
+    if mode == "application" and io_config.get("st_path") and io_config.get("sc_ref_path"):
+        return (
+            InputSpec(
+                "st",
+                configured_st_source_path(io_config, str(io_config["st_path"])),
+            ),
+            InputSpec("sc_ref", str(io_config["sc_ref_path"])),
+        )
+
     required = REQUIRED_IO_BY_MODE_TASK[key]
     missing = sorted(
         name for name in required if io_config.get(name) in (None, "")

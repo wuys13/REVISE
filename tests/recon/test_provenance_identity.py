@@ -16,6 +16,7 @@ from revise.config.runner_conf import resolve_input_specs
 from revise.config import (
     load_raw_config,
     merge_unified_config,
+    resolve_semantic_route,
 )
 from revise.framework import REVISEPipeline
 from revise.recon.context import PipelineContext
@@ -27,10 +28,19 @@ CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
 def _resolved_config(profile, algorithm_overrides=None):
+    raw = load_raw_config(CONFIG_PATH)
+    selector = {
+        "application_sp": {"svc_type": "sp-SVC"},
+        "application_sc": {"svc_type": "sc-SVC"},
+        "application_sc_sr": {"svc_type": "sc-SVC-sr"},
+    }[profile]
+    route = resolve_semantic_route(raw, **selector)
+    route.pop("profile")
+    route.pop("warning")
     return merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
+        raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=route,
         io_overrides={},
         algorithm_overrides=algorithm_overrides or {},
     )
@@ -41,9 +51,8 @@ def _config(tmp_path: Path) -> dict:
         "runtime": {
             "seed": 17,
             "deterministic": True,
-            "platform": "sp_svc",
-            "confounding": "bin2cell",
             "mode": "application",
+            "application_route": "sp-SVC",
             "task": "sp_svc",
             "svc_kind": "sp",
             "strategy": "SpSvcApplicationStrategy",
@@ -109,6 +118,8 @@ def test_config_hash_excludes_only_input_and_output_locators(tmp_path):
         {
             "data_root",
             "output_root",
+            "st_path",
+            "sc_ref_path",
             "st_file",
             "sc_ref_file",
             "gt_svc_file",
@@ -120,6 +131,8 @@ def test_config_hash_excludes_only_input_and_output_locators(tmp_path):
     for key in (
         "data_root",
         "output_root",
+        "st_path",
+        "sc_ref_path",
         "st_file",
         "sc_ref_file",
         "gt_svc_file",
@@ -203,7 +216,7 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
     configs = []
     for name, data_root in (("left", left_data), ("right", right_data)):
         svc = REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / f"{name}-output"),
@@ -262,7 +275,7 @@ def test_pipeline_computes_input_identities_once(
 
     monkeypatch.setattr(policies, "input_identities", counted)
     REVISEPipeline().run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(data_root),
             "output_root": str(tmp_path / "output"),
@@ -290,7 +303,7 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
         if replacement is not None:
             pm_path.write_text(replacement, encoding="utf-8")
         svc = REVISEPipeline().run(
-            profile="application_sc_sr",
+            svc_type="sc-SVC-sr",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / name),
@@ -328,7 +341,7 @@ def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
 
     with pytest.raises(ValueError, match="pm_on_cell"):
         REVISEPipeline().run(
-            profile="application_sc_sr",
+            svc_type="sc-SVC-sr",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(output_root),
@@ -357,7 +370,7 @@ def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path
     monkeypatch.setattr(policies, "input_identities", fail_identities)
     with pytest.raises(ValueError, match="input identities"):
         REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(output_root),
@@ -378,8 +391,8 @@ def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path
 def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
     output_root = tmp_path / "output"
     with pytest.raises(ValueError, match="Out of range float values"):
-        REVISEPipeline()._run_with_algorithm_overrides(
-            profile="application_sp",
+        REVISEPipeline()._execute_run(
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path / "data"),
                 "output_root": str(output_root),
@@ -400,7 +413,7 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
         config_path="revise/revise.yaml",
         profile="application_sp",
         runtime=config["runtime"],
-        route_key="sp_svc:bin2cell",
+        route_key="application:sp-SVC",
         run_dir=tmp_path / "run",
         logger=logging.getLogger("test-unresolved-provenance"),
     )
@@ -439,3 +452,57 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     assert ctx.provenance["results"] == manifest["results"]
     assert manifest["input_identities"] == []
     assert "data_fingerprint" not in manifest
+
+
+def test_application_config_provenance_is_namespaced_without_overwriting_engine_identity(
+    tmp_path,
+):
+    config = _config(tmp_path)
+    application_config = {
+        "source_path": str(tmp_path / "application.yaml"),
+        "source_sha256": "a" * 64,
+        "declared_root": ".",
+        "resolved_root": str(tmp_path),
+        "cwd": str(tmp_path),
+        "resolved_paths": {
+            "st": str(tmp_path / "st.h5ad"),
+            "reference": str(tmp_path / "sc.h5ad"),
+            "output": str(tmp_path / "output"),
+        },
+        "declared_action": "run",
+        "effective_action": "preflight",
+        "dry_run_override": True,
+        "config_path": "must-not-shadow-canonical-engine-truth",
+    }
+    ctx = PipelineContext(
+        merged_config=config,
+        raw_config={},
+        config_path="revise/revise.yaml",
+        profile="application_sp",
+        runtime=config["runtime"],
+        route_key="application:sp-SVC",
+        run_dir=tmp_path / "run",
+        logger=logging.getLogger("test-application-config-provenance"),
+        application_config_metadata=application_config,
+    )
+
+    REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
+
+    manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
+    assert manifest["config_path"] == "revise/revise.yaml"
+    assert manifest["application_config"] == {
+        key: value
+        for key, value in application_config.items()
+        if key != "config_path"
+    }
+    assert set(manifest["application_config"]) == {
+        "source_path",
+        "source_sha256",
+        "declared_root",
+        "resolved_root",
+        "cwd",
+        "resolved_paths",
+        "declared_action",
+        "effective_action",
+        "dry_run_override",
+    }

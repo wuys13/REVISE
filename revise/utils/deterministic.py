@@ -12,6 +12,8 @@ import numpy as np
 _LOCATION_ONLY_IO_KEYS = {
     "data_root",
     "output_root",
+    "st_path",
+    "sc_ref_path",
     "st_file",
     "sc_ref_file",
     "gt_svc_file",

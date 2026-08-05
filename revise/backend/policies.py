@@ -26,10 +26,16 @@ class ModeValidationPolicy(InputValidationPolicy):
 
         io_cfg = ctx.io
         data_root = io_cfg.get("data_root")
-        if not data_root:
-            raise ValueError("io.data_root is required")
-        if not Path(data_root).exists():
-            raise FileNotFoundError(f"io.data_root does not exist: {data_root}")
+        direct_application = bool(
+            mode == "application"
+            and io_cfg.get("st_path")
+            and io_cfg.get("sc_ref_path")
+        )
+        if not direct_application:
+            if not data_root:
+                raise ValueError("io.data_root is required")
+            if not Path(data_root).exists():
+                raise FileNotFoundError(f"io.data_root does not exist: {data_root}")
 
         sample_name = io_cfg.get("sample_name")
         if not sample_name:
@@ -46,7 +52,11 @@ class ModeValidationPolicy(InputValidationPolicy):
                 f"Supported combinations: {supported}"
             )
 
-        required = REQUIRED_IO_BY_MODE_TASK[key]
+        required = (
+            {"st_path", "sc_ref_path"}
+            if direct_application
+            else REQUIRED_IO_BY_MODE_TASK[key]
+        )
         missing = sorted(k for k in required if io_cfg.get(k) in (None, ""))
         if missing:
             raise ValueError(
@@ -66,7 +76,7 @@ class ModeValidationPolicy(InputValidationPolicy):
         try:
             identities = input_identities(specs)
             ctx.pm_on_cell = None
-            if str(task) == "sc_svc_sr":
+            if str(task) == "sc_svc_sr" and data_root:
                 pm_path = pm_on_cell_path_from_data_root(str(data_root))
                 ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
                     pm_path
@@ -86,10 +96,15 @@ class ModeValidationPolicy(InputValidationPolicy):
                 "Invalid input identities: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
+        validation_columns = dict(ctx.columns)
+        if mode == "application" and str(task) == "sc_svc":
+            validation_columns["select_cell_type"] = (
+                ctx.merged_config.get("sc", {}) or {}
+            ).get("select_ct")
         report = input_service.preflight(
             specs,
             runtime=runtime,
-            columns=ctx.columns,
+            columns=validation_columns,
         )
         run_dir = Path(ctx.run_dir)
         run_dir.mkdir(parents=True, exist_ok=True)

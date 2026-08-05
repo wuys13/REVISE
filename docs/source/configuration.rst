@@ -1,180 +1,163 @@
 Configuration
 =============
 
-``revise/revise.yaml`` contains defaults, route profiles, routing rules, and
-locked low-level values. ``REVISEPipeline.run()`` resolves one configuration in
-this order:
+Application users pass one strict YAML to ``python reconstruct.py --config``
+or ``revise-reconstruct --config``. The full top-level schema is
+``application``, ``paths``, ``algorithm``, ``inputs``,
+``global_anchoring``, ``local_refinement``, ``output``, and ``execution`` plus
+``schema_version``. Unknown, missing, misspelled, and route-inapplicable fields
+fail before scientific computation.
 
-1. package defaults;
-2. the selected profile;
-3. runtime and IO overrides;
-4. dedicated high-level options such as ``--ot-method``.
+The package-owned ``revise/revise.yaml`` remains the sole engine authority for
+defaults, profiles, routing, expert settings, and locked values. It is not an
+application field and is not passed to application ``--config``.
 
-Unknown keys and incomplete OT sections fail validation rather than being
-silently ignored. The merged configuration is written into the canonical run
-evidence. For advanced settings, copy ``revise/revise.yaml``, edit the relevant
-profile, and select that file with ``--config``. There is no generic CLI
-key/value override surface.
+Application and Benchmark selection are deliberately separate. Application
+YAML supplies ``application.svc_type``; Benchmark supplies its confounding
+factor. Both reach the same engine execution Interface, whose router resolves
+profile, task, SVC kind, and strategy. Application runtime/provenance contains
+``application_route`` and no Benchmark ``confounding`` field.
+
+Root and path contract
+----------------------
+
+``paths.root_dir: .`` means the launch current working directory, not the
+application YAML directory. Otherwise it must be an existing absolute
+directory. All child input, data-root, and output values must be non-empty
+relative paths beneath that root: they cannot be absolute, use ``~``, resolve
+to the root itself, or escape it with ``..``.
+
+Input modes are mutually exclusive:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Mode
+     - Required fields
+     - Resolution
+   * - ``direct``
+     - ``inputs.st.path``, ``inputs.st.format``,
+       ``inputs.reference.path``, ``inputs.reference.format``, and
+       ``inputs.reference.patient_key``
+     - ST ``<root-dir>/<st-path>``; reference
+       ``<root-dir>/<reference-path>``
+   * - ``legacy_layout``
+     - ``inputs.data_root``, ``inputs.st.file``, ``inputs.st.format``,
+       ``inputs.reference.file``, ``inputs.reference.format``, and
+       ``inputs.reference.patient_key``
+     - ST ``<root-dir>/<data-root>/<sample-name>_<st-file>``; reference
+       ``<root-dir>/<data-root>/<reference-file>``
+
+Both modes resolve ``output.path`` as ``<root-dir>/<output-path>``. Direct mode
+clears the internal data-root/file locators and does not probe
+``PM_on_cell.csv``. Legacy layout fixes the optional sc-SVC-sr prior at
+``<data-root>/PM_on_cell.csv``; it has no separate application field.
+
+Route-specific fields
+---------------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Type
+     - Required route fields
+     - Maintained template
+   * - ``sc-SVC``
+     - ``global_anchoring.broad_column``,
+       ``local_refinement.subtype_column``, and one concrete
+       ``local_refinement.select_cell_type``
+     - ``Xenium_T.yaml``, ``Xenium_Fib.yaml``, or ``Xenium_Mono.yaml``; each
+       carries a fixed ``select_cell_type`` value
+   * - ``sp-SVC``
+     - ``global_anchoring.broad_column``; optional non-negative finite
+       ``local_refinement.strength``
+     - ``VisiumHD.yaml`` with strength ``0.2``
+   * - ``sc-SVC-sr``
+     - ``global_anchoring.broad_column``; optional non-negative finite
+       ``local_refinement.strength``
+     - ``Visium.yaml`` with strength ``0.0``
+
+``application.sample_name`` is also the reference-selection value when the
+configured ``inputs.reference.patient_key`` column exists. If that column is
+absent, the reference is not filtered; this is the maintained Visium-template
+case.
 
 GA and LR OT selection
 ----------------------
 
-REVISE exposes two OT stages:
+REVISE has two OT stages: ``ot.ga.solver`` controls Global Anchoring and
+``ot.lr.solver`` controls Local Refinement. ``algorithm`` has only the optional
+``ot_method`` field. ``algorithm.ot_method`` controls both GA and LR; omitting
+it keeps the selected engine profile authoritative. The value is ``pot`` or
+``tacco``; there is no public mixed-stage application override.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 1 2 2
-
-   * - Stage
-     - Meaning
-     - Solver key
-   * - GA
-     - Global Anchoring between ST and the reference
-     - ``ot.ga.solver``
-   * - LR
-     - Local Refinement inside the platform strategy
-     - ``ot.lr.solver``
-
-Each solver key accepts ``pot`` or ``tacco``. The installed/source CLI offers
-one high-level switch:
-
-.. code-block:: bash
-
-   revise-reconstruct ... --ot-method tacco
-
-This selects TACCO for both ``ot.ga.solver`` and ``ot.lr.solver`` in the
-resolved request. ``--ot-method pot`` does the same for POT. When the option is
-omitted, the configuration retains the two stage values independently. A mixed
-diagnostic request can therefore be written in a custom configuration:
-
-.. code-block:: yaml
-
-   ot:
-     ga:
-       solver: tacco
-     lr:
-       solver: pot
-
-The ``application_sc`` profile defaults both stages to TACCO and reads the
-high-level annotation arguments from the profile itself:
-
-.. code-block:: yaml
-
-   sc:
-     resolutions: [0.6, 0.7, 0.8]
-     tacco_annotate:
-       multi_center: 1
-       lamb: 0.001
-
-These two values are forwarded to the Level1, Level2, and ``SVC_cluster``
-``tacco.tl.annotate`` calls. They are validated and locked against runtime
-algorithm overrides.
-
-Run the normal command with ``--config path/to/custom-revise.yaml``.
-
-TACCO behavior
---------------
-
-TACCO 0.5.0 is an optional dependency. Choosing it performs a dependency and
-version check during preflight. A missing package, incompatible version,
-unsupported conditioning combination, invalid result, or solver exception
-fails the run. REVISE does not fall back to POT and records requested,
-attempted, and completed solver events separately. If TACCO is unavailable and
-a different algorithm is acceptable, application users may explicitly rerun
-with ``--ot-method pot``; this is a solver change, not an automatic fallback.
+The standard sc-SVC profile selects TACCO 0.5.0. Missing, incompatible, or
+failed TACCO stops preflight or execution with directed failure. REVISE does
+not fall back to POT. Explicitly choosing ``algorithm.ot_method: pot`` is a
+solver change, not an automatic fallback.
 
 Assignment and local refinement
 -------------------------------
 
-Global anchoring produces a validated posterior ``Q`` and ``argmax(Q)`` labels.
-The only public local-refinement option is:
+Global Anchoring produces validated posterior ``Q`` and ``argmax(Q)`` labels.
+The only public local-refinement option is a non-negative finite strength:
 
 .. code-block:: yaml
 
    local_refinement:
      strength: 0.2
 
-sp-SVC defaults to ``0.2``. sc-SVC-sr defaults to ``0.0`` and accepts an
-explicit non-negative finite strength. Standard sc-SVC and imputation reject
-this option and omit ``local_refinement`` from resolved configuration. sp-SVC
-uses ``Q`` in local OT; sc-SVC-sr first projects ``Q`` to virtual cells;
-standard sc-SVC uses only ``argmax(Q)`` for cohort routing. There are no
-policy, compatibility-mode, reference-mode, or one-hot-fallback settings.
-Application and benchmark entrypoints expose the same single override as
-``--local-refinement-strength``.
+sp-SVC defaults to ``0.2``. sc-SVC-sr defaults to ``0.0``. Strength zero does
+not skip Local Refinement; it only disables assignment-posterior strengthening
+of the LR cost. sp-SVC conditions local OT with ``Q``; sc-SVC-sr projects
+``Q`` to virtual cells first. Standard sc-SVC uses only ``argmax(Q)`` for
+cohort routing and rejects strength. There are no policy, compatibility-mode,
+reference-mode, or one-hot-fallback application settings.
 
-The manifest records exactly ``route``, ``applied``, and ``strength`` under
-``local_refinement``. Mandatory sc-SVC-sr expression allocation is recorded
-separately under ``sr_allocation``.
+The manifest records only ``route``, ``applied``, and ``strength`` under
+``local_refinement``; mandatory sc-SVC-sr allocation is separate under
+``sr_allocation``. It does not expose solver-event telemetry.
 
-POT parameter example
----------------------
+Action and evidence
+-------------------
 
-This is an illustrative stage-scoped request, not the default for every route.
-The resolved route profile remains the source of truth:
+``execution.action`` is ``run`` or ``preflight``. The truth table is:
 
-.. code-block:: yaml
+.. list-table::
+   :header-rows: 1
 
-   ot:
-     ga:
-       solver: pot
-       pot:
-         reg: 0.1
-         reg_m: 0.0
-         reg_type: entropy
-     lr:
-       solver: pot
-       pot:
-         reg: 0.1
-         reg_m: 0.0
-         reg_type: entropy
+   * - YAML action
+     - ``--dry-run``
+     - Effective action
+   * - ``run``
+     - absent
+     - ``run``
+   * - ``run``
+     - present
+     - ``preflight``
+   * - ``preflight``
+     - absent or present
+     - ``preflight``
 
-Locked parameters have no generic CLI bypass. Change the governed profile and
-its tests when a paper-facing low-level value needs to change.
+Preflight may write run evidence, including ``preflight.json`` and
+``provenance.json``, but does not publish a result H5AD.
 
-Runtime and IO
---------------
+Application identity is namespaced under ``application_config`` with
+``source_path``, ``source_sha256``, ``declared_root``, ``resolved_root``,
+``cwd``, ``resolved_paths``, ``declared_action``, ``effective_action``, and
+``dry_run_override``. Top-level ``config_path`` and ``config_hash`` remain the
+top-level engine configuration identity and are not overwritten by the
+application YAML identity.
 
-The canonical CLI manages task identity, ``runtime.seed``, and its public
-inputs and outputs through dedicated parameters. Common IO values are:
+For an official bare template name, the CLI first checks
+``configs/application/<name>.yaml`` in the launch directory and then reads the
+package template. An existing explicit file always wins; arbitrary missing
+paths are not guessed.
 
-.. code-block:: yaml
+Output
+------
 
-   io:
-     data_root: data
-     output_root: output
-     sample_name: sample
-     st_file: st.h5ad
-     sc_ref_file: sc_ref.h5ad
-
-The input resolver applies the same route-specific path rules in preflight and
-full execution. sp-SVC and sc-SVC-sr publish
-``<output-root>/<sample-name>/SVC.h5ad``. Standard sc-SVC publishes its pair
-under ``<output-root>/<sample-name>/sc-SVC/<cell-type>/``. The canonical run
-directory contains ``provenance.json`` and internal evidence.
-
-Python API
-----------
-
-Programmatic callers use the same configuration-resolution and validation path:
-
-.. code-block:: python
-
-   from revise.framework import REVISEPipeline
-
-   pipeline = REVISEPipeline(config_path="path/to/custom-revise.yaml")
-   result = pipeline.run(
-       profile="application_sp",
-       runtime_overrides={"platform": "sp_svc", "confounding": "bin2cell"},
-       io_overrides={
-           "data_root": "data",
-           "output_root": "output",
-           "sample_name": "sample",
-           "st_file": "st.h5ad",
-           "sc_ref_file": "sc_ref.h5ad",
-       },
-   )
-
-Direct API use returns an ``SVC`` carrier. Route-specific public result
-publication is a contract of ``reconstruct.py``/``revise-reconstruct``, not of
-every low-level pipeline call.
+sp-SVC and sc-SVC-sr publish
+``<output-root>/<sample-name>/SVC.h5ad``. Standard sc-SVC publishes both
+``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad`` and
+``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad``.

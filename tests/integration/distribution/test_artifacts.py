@@ -99,6 +99,18 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         sdist_names = list(members)
 
     assert "revise/revise.yaml" in wheel_names
+    packaged_templates = {
+        f"revise/application/templates/{filename}"
+        for filename in (
+            "Xenium_T.yaml",
+            "Xenium_Fib.yaml",
+            "Xenium_Mono.yaml",
+            "VisiumHD.yaml",
+            "Visium.yaml",
+        )
+    }
+    assert packaged_templates <= set(wheel_names)
+    assert "reconstruct.py" not in wheel_names
     assert "revise-reconstruct = revise.application.cli:main" in entry_points
     assert (
         "revise-build-histology-priors = revise.preprocess.cli:main"
@@ -127,6 +139,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
     for pattern in [
         "revise/**/*.py",
         "revise/**/*.yaml",
+        "configs/application/*.yaml",
         "constraints/*.txt",
     ]:
         expected_sdist.update(
@@ -162,10 +175,24 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         assert actual_wheel_sources == expected_wheel_sources
         for source_path in expected_wheel_sources:
             assert archive.read(source_path) == (ROOT / source_path).read_bytes()
+        for package_path in packaged_templates:
+            filename = Path(package_path).name
+            assert archive.read(package_path) == (
+                ROOT / "configs" / "application" / filename
+            ).read_bytes()
         license_name = next(
             name for name in wheel_names if name.endswith("/licenses/LICENSE")
         )
         assert archive.read(license_name) == (ROOT / "LICENSE").read_bytes()
+
+    with tarfile.open(artifacts["sdist"], "r:gz") as archive:
+        for package_path in packaged_templates:
+            filename = Path(package_path).name
+            packaged = archive.extractfile(members[package_path])
+            mirrored = archive.extractfile(members[f"configs/application/{filename}"])
+            assert packaged is not None
+            assert mirrored is not None
+            assert packaged.read() == mirrored.read()
 
 
 @pytest.mark.parametrize("role", ["wheel", "sdist"])

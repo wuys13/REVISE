@@ -22,6 +22,7 @@ environment variables documented in their modules and CI jobs.
 | `application/test_cli_contract.py` | `revise/application/service.py` | Canonical publication, rollback, and result manifest | Application edits | Synthetic AnnData only |
 | `application/test_cli_dry_run.py` | `revise/application/cli.py` | Source CLI preflight without reconstruction | Application/config edits | No scientific stages |
 | `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
+| `application/test_request.py` | `revise/application/request.py`, `configs/application/` | Strict application YAML schema, route fields, and path compilation | Application config edits | Request compilation only; no scientific kernels |
 | `application/test_service.py` | `revise/application/service.py` | sc-SVC pair publication and rollback | Result-assembly edits | No kernels or real data |
 | `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
 | `backend/test_local_refinement_conditioning.py` | `revise/backend/ops/assignment.py`, `posterior_conditioning.py` | Strict global posterior axes and fixed local OT cost conditioning | Assignment/local-refinement edits | Synthetic matrices only |
@@ -56,7 +57,7 @@ environment variables documented in their modules and CI jobs.
 | `recon/test_run_manifest.py` | Framework/provenance run envelope | Unique run directories, locks, and terminal manifests | Run-lifecycle edits | Local filesystem only |
 | `recon/test_runtime_validation_errors.py` | Framework validation policies | Error typing and command failure semantics | Validation edits | Synthetic invalid requests |
 | `repository/test_documentation_contract.py` | README/docs/package metadata | Public claims match code and tests | Documentation/interface edits | Claim consistency only |
-| `repository/test_entrypoint_boundaries.py` | `reconstruct.py`, `reproduce/benchmark_main.*`, and `revise.benchmark` | The root exposes only reconstruction while benchmark launchers locate package-owned implementations | Entrypoint or package-boundary changes | Wrapper/path behavior only |
+| `repository/test_entrypoint_boundaries.py` | `reconstruct.py`, `revise.application.cli`, `reproduce/benchmark_main.*`, and `revise.benchmark` | The root is a thin reconstruction wrapper while the package owns the canonical CLI | Entrypoint or package-boundary changes | Entrypoint/path behavior only |
 | `repository/test_import_side_effects.py` | Package imports and optional analysis imports | Host environment stays unchanged; lazy optional imports | Import/dependency edits | Subprocess import behavior |
 | `repository/test_optional_dependencies.py` | `pyproject.toml` extras and optional imports | Missing extras fail with install guidance | Dependency edits | Dependency boundary only |
 | `repository/test_repository_layout.py` | Repository root/package ownership | Removed maintenance surfaces and package-owned utilities | Repository cleanup | File/layout assertions |

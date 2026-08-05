@@ -44,22 +44,56 @@ Install REVISE:
 pip install revise-svc
 ```
 
-Provide one spatial-transcriptomics H5AD and one matched single-cell reference.
-The installed command is `revise-reconstruct`:
+Choose the application template that matches the ST data:
+
+| ST data | Template | REVISE route |
+| --- | --- | --- |
+| Xenium T-cell data | [`configs/application/Xenium_T.yaml`](configs/application/Xenium_T.yaml) | `sc-SVC` |
+| Xenium fibroblast data | [`configs/application/Xenium_Fib.yaml`](configs/application/Xenium_Fib.yaml) | `sc-SVC` |
+| Xenium mono/macro data | [`configs/application/Xenium_Mono.yaml`](configs/application/Xenium_Mono.yaml) | `sc-SVC` |
+| Visium HD bins or pseudo-cells | [`configs/application/VisiumHD.yaml`](configs/application/VisiumHD.yaml) | `sp-SVC` |
+| Visium or another multi-cell spot assay | [`configs/application/Visium.yaml`](configs/application/Visium.yaml) | `sc-SVC-sr` |
+
+These files are present in a source checkout. With a package-only installation,
+copy the selected file from the packaged `revise.application/templates`
+resource into your project with Python's standard `importlib.resources`, edit
+the copy, and pass its local path to `--config` (see the
+[installation guide](docs/source/installation.rst)). A bare official template
+name first uses `configs/application/<name>.yaml` in the launch directory and
+then falls back to the packaged resource.
+
+Edit the selected YAML before running it. All templates require the sample name,
+run root, ST/reference paths, broad reference annotation, and output path.
+The Xenium templates additionally require the subtype annotation and carry the
+fixed broad cell types `T`, `Fibroblast`, and `Mono_Macro` in
+`local_refinement.select_cell_type`; confirm that the selected label exists in
+the reference after patient filtering. Visium HD and Visium expose
+only `local_refinement.strength`. Visium's `0.0` still runs LR; it only disables
+assignment-posterior strengthening of the LR cost.
+
+From a source checkout, validate the complete request first:
 
 ```bash
-revise-reconstruct \
-  --svc-type sp-SVC \
-  --sample-name sample \
-  --data-root data \
-  --st-file st.h5ad \
-  --sc-ref-file sc_ref.h5ad \
-  --output-root output
+python reconstruct.py --config configs/application/VisiumHD.yaml --dry-run
 ```
 
-This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`. Choose another
-`--svc-type` using the guidance below.
-`sp-SVC` and `sc-SVC-sr` publish:
+Then run the same YAML without the safety override:
+
+```bash
+python reconstruct.py --config configs/application/VisiumHD.yaml
+```
+
+After installation, the installed command `revise-reconstruct` is the
+equivalent entry name:
+
+```bash
+revise-reconstruct --config configs/application/VisiumHD.yaml
+```
+
+`--dry-run` can force `preflight` when the YAML declares `execution.action:
+run`; it can never turn a YAML preflight into a reconstruction. Preflight may
+write run evidence but does not publish a result H5AD. `sp-SVC` and
+`sc-SVC-sr` publish:
 
 ```text
 output/sample/SVC.h5ad
@@ -72,14 +106,18 @@ output/sample/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
 output/sample/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
 ```
 
-The associated `provenance.json` records the selected type, resolved route,
-configuration, inputs, stages, and artifacts. In a source checkout,
-[`python reconstruct.py`](reconstruct.py) provides the equivalent entry point.
+The associated `provenance.json` keeps the application YAML identity under
+`application_config` (`source_path`, `source_sha256`, root and resolved paths,
+and declared/effective action). Top-level `config_path` and `config_hash`
+remain the engine configuration identity. [`revise/application/cli.py`](revise/application/cli.py)
+is the canonical CLI; [`reconstruct.py`](reconstruct.py) is only the
+source-checkout wrapper, and the installed `revise-reconstruct` command points
+to that same `main()` implementation.
 
 <details>
-<summary><strong>Which --svc-type should I choose?</strong></summary>
+<summary><strong>What does each template reconstruct?</strong></summary>
 
-| Your ST data | Typical platform and input rows | `--svc-type` | What REVISE reconstructs |
+| Your ST data | Typical platform and input rows | Route | What REVISE reconstructs |
 | --- | --- | --- | --- |
 | **hST-like** high-resolution sequencing data | Visium HD; each row is a bin or pseudo-cell | `sp-SVC` | Reference-annotated expression with spatial refinement for the retained high-resolution units |
 | **iST** imaging-based data | iST-like segmented-cell inputs, such as Xenium, CosMx, or MERFISH | `sc-SVC` | Segmented-cell positions combined with reference-informed cell-state refinement and gene completion |
@@ -92,67 +130,63 @@ cells without a supplied center remain at their source spot center.
 </details>
 
 <details>
-<summary><strong>Input file layout and AnnData requirements</strong></summary>
+<summary><strong>Application YAML inputs and AnnData requirements</strong></summary>
 
-The example command resolves these paths:
-
-```text
-data/
-├── sample_st.h5ad
-└── sc_ref.h5ad
-```
-
-`--sample-name sample` and `--st-file st.h5ad` resolve to
-`data/sample_st.h5ad`; the reference resolves directly to
-`data/sc_ref.h5ad`.
+`inputs.mode: direct` is recommended. Set `inputs.st.path` and
+`inputs.reference.path` explicitly. `paths.root_dir: .` means the launch current
+working directory, not the application YAML directory; otherwise it must be an
+existing absolute directory. Input and output values are relative children of
+that root and cannot escape it with `..`. The package-internal
+`revise/revise.yaml` remains authoritative.
 
 - Both inputs must have non-empty `X`, unique `obs_names`, unique `var_names`,
   and at least one shared gene.
 - The ST input must contain finite two-dimensional coordinates in
   `obsm["spatial"]`.
-- Every route requires the configured broad annotation selected by
-  `--cell-type-col` (default `obs["Level1"]`). Only standard `sc-SVC` requires
-  the configured subtype annotation selected by `--sub-cell-type-col`
-  (default `obs["Level2"]`). `sc-SVC-sr` composition and expression allocation
-  use the broad assignment and do not require a subtype column.
+- Every route requires `global_anchoring.broad_column` in reference `obs`. Only
+  standard `sc-SVC` accepts and requires `local_refinement.subtype_column`.
+  `sc-SVC-sr` composition and expression allocation use the broad assignment.
 - If the reference contains the default `Patient` column, at least one row must
-  match `--sample-name`; use `--patient-key` to select another column.
+  match `application.sample_name`; change `inputs.reference.patient_key` to
+  select another column. If the configured column is absent, as in the Visium
+  reference, the reference is not filtered.
 - For sST inputs with segmentation-derived centers, the optional
   `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
   index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
   `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
   scale as `obsm["spatial"]`. Missing centers fall back to the spot center. The
   optional sample-local probability prior uses the case-sensitive path
-  `<data-root>/PM_on_cell.csv`. Its axes must exactly equal
+  `<data-root>/PM_on_cell.csv` in `legacy_layout` mode. Its axes must exactly equal
   the active virtual-cell IDs and normalized cell types; values must be finite
   probabilities whose rows sum to one. REVISE reorders exact axes but does not
   clip or normalize PM. Without that file, these coordinates are retained while
   cell types are assigned to the existing rows by a seeded random permutation
-  of each spot's inferred quota.
+  of each spot's inferred quota. Direct mode never probes a legacy data root for
+  `PM_on_cell.csv`; use `legacy_layout` when this sidecar is part of the input.
 
 </details>
 
 <details>
-<summary><strong>Frequently used reconstruction parameters</strong></summary>
+<summary><strong>SpatialData, legacy layout, and algorithm controls</strong></summary>
 
-- `--seed`: controls deterministic random choices; default `42`.
-- `--ot-method pot|tacco`: selects one OT implementation for both Global
-  Anchoring and Local Refinement. Standard `sc-SVC` defaults to TACCO and
-  therefore requires the `tacco` extra; the other application profiles retain
-  their configured solver. If TACCO is unavailable and a different algorithm
-  is acceptable, explicitly pass `--ot-method pot`. REVISE never falls back
-  automatically.
-- `--select-ct`: required for `sc-SVC`; names the one concrete broad cell type
-  to reconstruct.
-- `--cell-type-col`: selects the broad reference annotation column for all
-  three routes.
-- `--sub-cell-type-col`: selects the refined annotation required only by
-  standard `sc-SVC`; `sc-SVC-sr` does not require this column.
+ST `format` accepts `h5ad`, `spatialdata`, or `auto`; the reference remains
+H5AD. SpatialData table and spatial-element selections live under
+`inputs.st.spatialdata.table` and `inputs.st.spatialdata.element`. REVISE does
+not expose a coordinate-conversion promise through this entry point.
 
-For advanced algorithm configuration, copy `revise/revise.yaml`, edit the
-relevant profile, and pass it with `--config`.
+`inputs.mode: legacy_layout` retains the prior application convention:
+`inputs.data_root`, `inputs.st.file`, and `application.sample_name` resolve the
+ST path as `<root-dir>/<data-root>/<sample-name>_<st-file>`, while the reference
+resolves as `<root-dir>/<data-root>/<reference-file>`. Direct mode clears these
+legacy locators and never probes `PM_on_cell.csv`; legacy layout fixes the
+optional prior at `<data-root>/PM_on_cell.csv`.
 
-Run `revise-reconstruct --help` for the complete command contract.
+`execution.seed` and `algorithm.ot_method` are optional. The latter controls
+both GA and LR; omitting it keeps the selected engine profile authoritative.
+Standard `sc-SVC` defaults to TACCO and requires the `tacco` extra; REVISE never
+changes solvers automatically. Unknown or route-inapplicable application
+fields are errors; the engine YAML and generic key/value overrides are not
+public application controls.
 
 </details>
 
@@ -295,8 +329,8 @@ from revise.framework import REVISEPipeline
 
 pipeline = REVISEPipeline()
 svc = pipeline.run(
-    profile="application_sc",
-    runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
+    svc_type="sc-SVC",
+    runtime_overrides={"seed": 42},
     io_overrides={
         "data_root": "raw_data/Real_application",
         "output_root": "output/sc_SVC_case",
@@ -307,6 +341,10 @@ svc = pipeline.run(
     },
 )
 ```
+
+Application selects reconstruction with `svc_type`. Benchmark execution uses
+the separate `cf` selector for its confounding family; callers do not select
+profiles or route Application through Benchmark confounding names.
 
 </details>
 

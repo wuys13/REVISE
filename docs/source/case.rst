@@ -2,21 +2,16 @@ Reconstruction Types
 ====================
 
 The installed/source interface selects one public 1.x reconstruction type
-with ``--svc-type``. sp-SVC and sc-SVC-sr publish ``SVC.h5ad``; standard
-sc-SVC publishes separate spatial and reference-expression carriers.
+through ``application.svc_type`` in a strict application YAML. sp-SVC and
+sc-SVC-sr publish ``SVC.h5ad``; standard sc-SVC publishes separate spatial and
+reference-expression carriers.
 
 sp-SVC
 ------
 
 .. code-block:: bash
 
-   revise-reconstruct \
-     --svc-type sp-SVC \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output
+   revise-reconstruct --config configs/application/VisiumHD.yaml
 
 The manifest records ``result.type`` as ``sp-SVC``.
 
@@ -28,35 +23,24 @@ service validates and publishes both without merging their expression spaces:
 
 .. code-block:: bash
 
-   revise-reconstruct \
-     --svc-type sc-SVC \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output \
-     --select-ct T
+   revise-reconstruct --config configs/application/Xenium_T.yaml
 
-The outputs are ``output/sample/sc-SVC/T/sc_SVC_spatial.h5ad`` and
-``output/sample/sc-SVC/T/sc_SVC_expr.h5ad``. The manifest records both logical
+The outputs are
+``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad`` and
+``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad``. The manifest records both logical
 roles. This default route requires TACCO. Install the ``tacco`` extra from a
 published package with ``python -m pip install "revise-svc[tacco]"`` or from a
-source checkout with ``python -m pip install ".[tacco]"``. If a different
-algorithm is acceptable, append ``--ot-method pot`` explicitly; REVISE does
-not fall back automatically.
+source checkout with ``python -m pip install ".[tacco]"``. Choose the Xenium
+template whose fixed ``local_refinement.select_cell_type`` matches the broad
+label in the reference. If a different algorithm is acceptable, set
+``algorithm.ot_method: pot`` explicitly; REVISE does not fall back automatically.
 
 sc-SVC-sr
 ---------
 
 .. code-block:: bash
 
-   revise-reconstruct \
-     --svc-type sc-SVC-sr \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output
+   revise-reconstruct --config configs/application/Visium.yaml
 
 The manifest records ``result.type`` as ``sc-SVC-sr``. Missing curated
 spot-to-cell and PM-on-cell inputs use the quota and seeded random allocation
@@ -66,8 +50,8 @@ Shared provenance
 -----------------
 
 Each public AnnData artifact links to the canonical run's ``provenance.json``.
-The manifest records requested, attempted, and completed stages. Inspect it
-rather than inferring success from directory existence.
+The manifest records stage status and errors, not solver-event telemetry.
+Inspect it rather than inferring success from directory existence.
 
 Paper notebook compatibility
 ----------------------------

@@ -5,17 +5,13 @@ defaults:
     seed: 42
     deterministic: true
     compatibility_mode: false
-    platform: sp_svc
-    confounding: bin2cell
-    mode: application
-    task: sp_svc
-    svc_kind: sp
-    strategy: SpSvcApplicationStrategy
 
   io:
     data_root: raw_data
     output_root: results_unified
     sample_name: P2CRC
+    st_path: null
+    sc_ref_path: null
     st_file: Xenium.h5ad
     sc_ref_file: adata_sc_all_reanno.h5ad
     gt_svc_file: selected_xenium.h5ad
@@ -110,69 +106,59 @@ defaults:
     method: mean
 
 router:
-  sim2real:
-    segmentation:
-      mode: benchmark
-      task: sp_svc
-      svc_kind: sp
-      strategy: SpSvcBenchmarkSegStrategy
-    bin2cell:
-      mode: benchmark
-      task: sp_svc
-      svc_kind: sp
-      strategy: SpSvcBenchmarkSegStrategy
-    batch_effect:
-      mode: benchmark
-      task: sc_svc_sr
-      svc_kind: sc
-      strategy: ScSvcSrBenchmarkStrategy
-    spot_size:
-      mode: benchmark
-      task: sc_svc_sr
-      svc_kind: sc
-      strategy: ScSvcSrBenchmarkStrategy
-    gene_panel:
-      mode: benchmark
-      task: sc_svc_impute
-      svc_kind: sc
-      strategy: ScSvcImputeBenchmarkStrategy
-    gene_dropout:
-      mode: benchmark
-      task: sc_svc_impute
-      svc_kind: sc
-      strategy: ScSvcImputeBenchmarkStrategy
-
-  sp_svc:
-    bin2cell:
-      mode: application
+  application:
+    sp-SVC:
+      profile: application_sp
       task: sp_svc
       svc_kind: sp
       strategy: SpSvcApplicationStrategy
-
-  sc_svc:
-    segmentation:
-      mode: application
+    sc-SVC:
+      profile: application_sc
       task: sc_svc
       svc_kind: sc
       strategy: ScSvcApplicationStrategy
-
-  sc_svc_sr:
-    spot_size:
-      mode: application
+    sc-SVC-sr:
+      profile: application_sc_sr
       task: sc_svc_sr
       svc_kind: sc
       strategy: ScSvcSrApplicationStrategy
 
+  benchmark:
+    segmentation:
+      profile: benchmark_seg
+      task: sp_svc
+      svc_kind: sp
+      strategy: SpSvcBenchmarkSegStrategy
+    bin2cell:
+      profile: benchmark_bin2cell
+      task: sp_svc
+      svc_kind: sp
+      strategy: SpSvcBenchmarkSegStrategy
+    batch_effect:
+      profile: benchmark_sr_batch
+      task: sc_svc_sr
+      svc_kind: sc
+      strategy: ScSvcSrBenchmarkStrategy
+    spot_size:
+      profile: benchmark_sr_spot_size
+      task: sc_svc_sr
+      svc_kind: sc
+      strategy: ScSvcSrBenchmarkStrategy
+    gene_panel:
+      profile: benchmark_impute_panel
+      task: sc_svc_impute
+      svc_kind: sc
+      strategy: ScSvcImputeBenchmarkStrategy
+    gene_dropout:
+      profile: benchmark_impute_dropout
+      task: sc_svc_impute
+      svc_kind: sc
+      strategy: ScSvcImputeBenchmarkStrategy
+
 profiles:
-  application_sp:
-    runtime:
-      platform: sp_svc
-      confounding: bin2cell
+  application_sp: {}
 
   application_sc:
-    runtime:
-      platform: sc_svc
-      confounding: segmentation
     preprocess:
       st_min_transcripts: 60
       st_min_cells: 100
@@ -196,9 +182,6 @@ profiles:
         lamb: 0.001
 
   application_sc_hyper:
-    runtime:
-      platform: sc_svc
-      confounding: segmentation
     graph:
       alpha: 0.2
     sc:
@@ -210,16 +193,11 @@ profiles:
         strategy: ScSvcHyperApplicationStrategy
 
   application_sc_sr:
-    runtime:
-      platform: sc_svc_sr
-      confounding: spot_size
     graph:
       alpha: 0.2
 
   benchmark_seg:
     runtime:
-      platform: sim2real
-      confounding: segmentation
       compatibility_mode: true
     benchmark:
       evaluate: true
@@ -236,8 +214,6 @@ profiles:
 
   benchmark_bin2cell:
     runtime:
-      platform: sim2real
-      confounding: bin2cell
       compatibility_mode: true
     benchmark:
       evaluate: true
@@ -254,8 +230,6 @@ profiles:
 
   benchmark_sr_batch:
     runtime:
-      platform: sim2real
-      confounding: batch_effect
       compatibility_mode: true
     benchmark:
       evaluate: true
@@ -283,8 +257,6 @@ profiles:
 
   benchmark_sr_spot_size:
     runtime:
-      platform: sim2real
-      confounding: spot_size
       compatibility_mode: true
     benchmark:
       evaluate: true
@@ -312,8 +284,6 @@ profiles:
 
   benchmark_impute_panel:
     runtime:
-      platform: sim2real
-      confounding: gene_panel
       compatibility_mode: true
     benchmark:
       evaluate: true
@@ -330,8 +300,6 @@ profiles:
 
   benchmark_impute_dropout:
     runtime:
-      platform: sim2real
-      confounding: gene_dropout
       compatibility_mode: true
     benchmark:
       evaluate: true

@@ -89,4 +89,4 @@ include-package-data = true
 version = { attr = "revise._version.__version__" }
 
 [tool.setuptools.package-data]
-revise = ["revise.yaml"]
+revise = ["revise.yaml", "application/templates/*.yaml"]

@@ -8,12 +8,11 @@ from revise.framework import REVISEPipeline
 def sp_svc(
     *,
     pipeline: REVISEPipeline,
-    profile: str = "application_sp",
     runtime_overrides: Dict[str, Any] | None = None,
     io_overrides: Dict[str, Any] | None = None,
 ):
     return pipeline.run(
-        profile=profile,
+        svc_type="sp-SVC",
         runtime_overrides=runtime_overrides or {},
         io_overrides=io_overrides or {},
     )
@@ -22,12 +21,11 @@ def sp_svc(
 def sc_svc(
     *,
     pipeline: REVISEPipeline,
-    profile: str = "application_sc",
     runtime_overrides: Dict[str, Any] | None = None,
     io_overrides: Dict[str, Any] | None = None,
 ):
     return pipeline.run(
-        profile=profile,
+        svc_type="sc-SVC",
         runtime_overrides=runtime_overrides or {},
         io_overrides=io_overrides or {},
     )

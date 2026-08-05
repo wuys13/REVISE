@@ -483,7 +483,7 @@ def test_ist_adapter_requires_one_concrete_cell_type(
     strategy = getattr(adapters, strategy_name)()
     with pytest.raises(
         ValueError,
-        match="sc-SVC --select-ct must name one concrete cell type",
+        match="route.select_cell_type must name one concrete broad cell type",
     ):
         strategy.solve_ot(ctx)
 
@@ -544,18 +544,19 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
 
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
-def test_unified_cli_switches_global_and_local_methods_together(method):
+def test_application_ot_method_switches_global_and_local_together(method):
     from revise.application import service
 
-    args = SimpleNamespace(
+    request = SimpleNamespace(
         svc_type="sc-SVC",
         ot_method=method,
-        select_ct="T",
-        cell_type_col="Level1",
-        sub_cell_type_col="Level2",
+        local_refinement_strength=None,
+        select_cell_type="T",
+        broad_column="Level1",
+        subtype_column="Level2",
     )
 
-    overrides = service._build_algorithm_overrides(args)
+    overrides = service._build_algorithm_overrides(request)
 
     assert overrides["ot"]["ga"]["solver"] == method
     assert overrides["ot"]["lr"]["solver"] == method

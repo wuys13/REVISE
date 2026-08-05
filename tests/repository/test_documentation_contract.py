@@ -27,6 +27,15 @@ CLAIM_DOCS = (
     ROOT / "docs/source/architecture.rst",
     ROOT / "docs/source/limitations.rst",
 )
+APPLICATION_DOCS = (
+    ROOT / "README.md",
+    ROOT / "docs/index.rst",
+    ROOT / "docs/source/installation.rst",
+    ROOT / "docs/source/quickstart.rst",
+    ROOT / "docs/source/configuration.rst",
+    ROOT / "docs/source/concepts.rst",
+    ROOT / "docs/source/case.rst",
+)
 
 
 def _read(path: Path) -> str:
@@ -86,27 +95,23 @@ def test_visium_case_custom_config_preserves_profile_defaults():
         assert f'case_profile.setdefault("{section}", {{}}).update(' in source
 
 
-def test_quickstart_matches_application_input_resolution_and_route_fields():
+def test_quickstart_matches_application_yaml_entry_and_route_fields():
     quickstart = _read(ROOT / "docs/source/quickstart.rst")
     normalized = " ".join(quickstart.split())
-    runner_contract = runpy.run_path(ROOT / "revise/config/runner_conf.py")
 
-    specs = runner_contract["resolve_input_specs"](
-        {"mode": "application", "task": "sp_svc"},
-        {
-            "data_root": "data",
-            "sample_name": "sample",
-            "st_file": "st.h5ad",
-            "sc_ref_file": "sc_ref.h5ad",
-        },
-    )
-    paths = {spec.role: spec.path for spec in specs}
-    st_path = paths["st"]
-    sc_path = paths["sc_ref"]
-    assert st_path == "data/sample_st.h5ad"
-    assert sc_path == "data/sc_ref.h5ad"
-    assert st_path in quickstart
-    assert sc_path in quickstart
+    for filename in (
+        "Xenium_T.yaml",
+        "Xenium_Fib.yaml",
+        "Xenium_Mono.yaml",
+        "VisiumHD.yaml",
+        "Visium.yaml",
+    ):
+        assert f"configs/application/{filename}" in quickstart
+    assert "python reconstruct.py --config" in quickstart
+    assert "revise-reconstruct --config" in quickstart
+    assert "inputs.mode" in quickstart
+    assert "inputs.st.path" in quickstart
+    assert "inputs.reference.path" in quickstart
     assert "unique ``obs_names`` and unique ``var_names``" in normalized
     assert "Every route requires the configured broad annotation" in normalized
     assert "Only standard sc-SVC requires the configured subtype annotation" in normalized
@@ -116,6 +121,66 @@ def test_quickstart_matches_application_input_resolution_and_route_fields():
     ) in normalized
     assert "default ``Patient`` column" in normalized
     assert "--spot-size" not in quickstart
+    for removed in ("--svc-type", "--st-file", "--select-ct", "--ot-method"):
+        assert removed not in quickstart
+
+
+def test_application_docs_match_strict_schema_and_root_resolution():
+    text = _joined(APPLICATION_DOCS)
+    normalized = " ".join(text.split())
+
+    for section in (
+        "application",
+        "paths",
+        "algorithm",
+        "inputs",
+        "global_anchoring",
+        "local_refinement",
+        "output",
+        "execution",
+    ):
+        assert f"``{section}``" in text
+    for obsolete in (
+        "`annotations.",
+        "`route.",
+        "base_config",
+        "output.root",
+        "../../",
+    ):
+        assert obsolete not in text
+    assert "``paths.root_dir: .`` means the launch current working directory" in normalized
+    assert "not the application YAML directory" in normalized
+    assert "existing absolute directory" in normalized
+    assert "must be relative children of ``paths.root_dir``" in normalized
+    assert "cannot escape it with ``..``" in normalized
+
+
+def test_application_docs_cover_templates_modes_actions_and_provenance():
+    text = _joined(APPLICATION_DOCS)
+    normalized = " ".join(text.split())
+
+    assert "importlib.resources" in text
+    assert "revise.application/templates" in text
+    assert "``inputs.mode: direct``" in text
+    assert "``inputs.mode: legacy_layout``" in text
+    assert "<root-dir>/<data-root>/<sample-name>_<st-file>" in text
+    assert "<root-dir>/<data-root>/<reference-file>" in text
+    assert "<data-root>/PM_on_cell.csv" in text
+    assert "does not probe ``PM_on_cell.csv``" in normalized
+    assert "``algorithm.ot_method`` controls both GA and LR" in normalized
+    assert "omitting it keeps the selected engine profile authoritative" in normalized
+    assert "may write run evidence" in normalized
+    assert "does not publish a result H5AD" in normalized
+    for field in (
+        "source_path",
+        "source_sha256",
+        "resolved_root",
+        "resolved_paths",
+        "declared_action",
+        "effective_action",
+    ):
+        assert f"``{field}``" in text
+    assert "top-level engine configuration identity" in normalized
 
 
 def test_installation_describes_base_and_optional_capability_layers():
@@ -143,13 +208,14 @@ def test_installation_describes_base_and_optional_capability_layers():
     )
     assert "Standard sc-SVC default solver" in installation
     assert "required by the default standard sc-SVC route" in normalized
-    assert "--ot-method pot" in installation
+    assert "algorithm.ot_method: pot" in installation
     assert "never selects POT as an automatic fallback" in normalized
 
 
 def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     text = _joined()
     service = _read(ROOT / "revise/application/service.py")
+    publication = _read(ROOT / "revise/application/publication.py")
     case = _read(ROOT / "docs/source/case.rst")
     configuration = _read(ROOT / "docs/source/configuration.rst")
     api_diagram = _read(ROOT / "docs/source/api/classes_revise.svg")
@@ -164,12 +230,12 @@ def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     assert "sp_SVC.h5ad" in compatibility_case
     for sc_filename in ("sc_SVC_expr.h5ad", "sc_SVC_spatial.h5ad"):
         assert sc_filename in canonical_case
-        assert sc_filename in service
+        assert sc_filename in publication
         assert sc_filename in compatibility_case
     assert "<output-root>/<sample-name>/SVC.h5ad" in text
-    assert 'output_dir / "SVC.h5ad"' in service
-    assert 'output_dir / "sc_SVC_expr.h5ad"' in service
-    assert 'output_dir / "sc_SVC_spatial.h5ad"' in service
+    assert 'output_dir / "SVC.h5ad"' in publication
+    assert 'output_dir / "sc_SVC_expr.h5ad"' in publication
+    assert 'output_dir / "sc_SVC_spatial.h5ad"' in publication
     assert "result.type" in text
     assert "sp-SVC" in text
     assert "sc-SVC" in text
@@ -201,25 +267,25 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     service = _read(ROOT / "revise/application/service.py")
     runtime = _read(ROOT / "revise/backend/ops/tacco_runtime.py")
 
-    assert "--ot-method" in text
+    assert "algorithm.ot_method" in text
     assert "ot.ga.solver" in text
     assert "ot.lr.solver" in text
     assert "TACCO 0.5.0" in text
     assert "does not fall back" in text.lower()
     assert "annotate.mode" not in text
     assert "local_ot.method" not in text
-    assert '"ga": {"solver": args.ot_method}' in service
-    assert '"lr": {"solver": args.ot_method}' in service
+    assert '"ga": {"solver": request.ot_method}' in service
+    assert '"lr": {"solver": request.ot_method}' in service
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
     for document in normalized_docs:
-        assert "--ot-method pot" in document
+        assert "algorithm.ot_method" in document
     (
         normalized_readme,
         normalized_installation,
         normalized_quickstart,
         normalized_config,
     ) = normalized_docs
-    assert "never falls back automatically" in normalized_readme
+    assert "never changes solvers automatically" in normalized_readme
     assert "never selects POT as an automatic fallback" in normalized_installation
     assert "never switches algorithms automatically" in normalized_quickstart
     assert "not an automatic fallback" in normalized_config
@@ -469,6 +535,8 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
 
 def test_docs_state_minimal_manifest_and_publication_guarantees():
     architecture = " ".join(_read(ROOT / "docs/source/architecture.rst").split())
+    configuration = " ".join(_read(ROOT / "docs/source/configuration.rst").split())
+    concepts = " ".join(_read(ROOT / "docs/source/concepts.rst").split())
     limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").split())
     combined = f"{architecture} {limitations}"
 
@@ -478,6 +546,7 @@ def test_docs_state_minimal_manifest_and_publication_guarantees():
     assert "``input_identities`` records one content identity per external role" in architecture
     assert "no aggregate data fingerprint" in architecture
     assert "no OT or Assignment event state machine" in architecture
+    assert "solver events" not in f"{configuration} {concepts}"
     assert "Software identity is collected once per run" in architecture
     assert "same-directory temporary H5AD" in combined
     assert "reloads it before replacement" in combined

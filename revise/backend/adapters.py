@@ -294,7 +294,9 @@ def _as_float_list(values: Any, default: List[float]) -> List[float]:
 def _require_concrete_cell_type(value: Any) -> str:
     select_ct = value.strip() if isinstance(value, str) else ""
     if select_ct.lower() in {"", "all", "*", "__all__", "all_cell_types"}:
-        raise ValueError("sc-SVC --select-ct must name one concrete cell type")
+        raise ValueError(
+            "route.select_cell_type must name one concrete broad cell type"
+        )
     return select_ct
 
 
@@ -776,7 +778,7 @@ class SpSvcBenchmarkSegStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        case_subdir = benchmark_case_leaf(ctx.route_key, io_cfg)
+        case_subdir = benchmark_case_leaf(ctx.runtime.get("confounding"), io_cfg)
 
         conf = BenchmarkSegConf(
             sample_name=io_cfg["sample_name"],
@@ -843,7 +845,7 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        case_subdir = benchmark_case_leaf(ctx.route_key, io_cfg)
+        case_subdir = benchmark_case_leaf(ctx.runtime.get("confounding"), io_cfg)
 
         conf = BenchmarkSrConf(
             sample_name=io_cfg["sample_name"],
@@ -1000,7 +1002,7 @@ class ScSvcImputeBenchmarkStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        case_subdir = benchmark_case_leaf(ctx.route_key, io_cfg)
+        case_subdir = benchmark_case_leaf(ctx.runtime.get("confounding"), io_cfg)
 
         conf = BenchmarkImputeConf(
             sample_name=io_cfg["sample_name"],

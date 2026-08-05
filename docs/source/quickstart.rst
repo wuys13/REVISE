@@ -1,117 +1,187 @@
 Quick Start
 ===========
 
-REVISE has two public entry points: Benchmark and Application. Paper notebooks
-require a repository checkout and their corresponding external data.
+REVISE has separate entry points for benchmark reproduction and application
+reconstruction. Paper notebooks require a source checkout and external data.
 
 Benchmark
 ---------
 
-Run one Sim2Real-ST confounding family from the repository root:
+From the repository root, ``python reproduce/benchmark_main.py`` runs one confounding family;
+``bash reproduce/benchmark_main.sh`` launches the bounded multi-family workflow.
+Benchmark notebooks are under
+``reproduce/benchmark/``.
+
+Choose and copy a template
+--------------------------
+
+Source-checkout users select one maintained file:
+
+.. list-table::
+   :header-rows: 1
+
+   * - ST data / sample
+     - Template
+     - Declared inputs
+   * - Xenium T / ``P1CRC``
+     - ``configs/application/Xenium_T.yaml``
+     - ``raw_data/Real_application/P1CRC_Xenium.h5ad`` and
+       ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
+   * - Xenium fibroblast / ``P1CRC``
+     - ``configs/application/Xenium_Fib.yaml``
+     - ``raw_data/Real_application/P1CRC_Xenium.h5ad`` and
+       ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
+   * - Xenium mono/macro / ``P1CRC``
+     - ``configs/application/Xenium_Mono.yaml``
+     - ``raw_data/Real_application/P1CRC_Xenium.h5ad`` and
+       ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
+   * - Visium HD / ``P1CRC``
+     - ``configs/application/VisiumHD.yaml``
+     - ``raw_data/Real_application/P1CRC_HD.h5ad`` and
+       ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
+   * - Visium / ``REVISEVisiumMouseBrain``
+     - ``configs/application/Visium.yaml``
+     - ``raw_data/visium_mouse_brain/ST_mouse_brain_prepared.h5ad`` and
+       ``raw_data/visium_mouse_brain/scRNA_mouse_brain_prepared.h5ad``
+
+Installed-package users can copy the matching file from the packaged
+``revise.application/templates`` resource into their project, then edit it.
+Alternatively, a bare official name first checks
+``configs/application/<name>.yaml`` in the launch directory and then uses the
+packaged resource. This is the standard ``importlib.resources`` interface, not
+another REVISE API:
+
+.. code-block:: python
+
+   from importlib.resources import as_file, files
+   from shutil import copyfile
+
+   resource = files("revise.application").joinpath("templates", "VisiumHD.yaml")
+   with as_file(resource) as source:
+       copyfile(source, "VisiumHD.yaml")
+
+The real P1CRC and mouse-brain H5AD files are not distributed in the package.
+Replace paths or stage those files beneath the chosen run root before use.
+
+Application YAML
+----------------
+
+The complete schema contains ``application``, ``paths``, ``algorithm``,
+``inputs``, ``global_anchoring``, ``local_refinement``, ``output``, and
+``execution`` (plus ``schema_version``). A complete Visium HD request is:
+
+.. code-block:: yaml
+
+   schema_version: 1
+
+   application:
+     svc_type: sp-SVC
+     sample_name: sample
+
+   paths:
+     root_dir: .
+
+   algorithm:
+     ot_method: pot
+
+   inputs:
+     mode: direct
+     st:
+       path: data/sample_st.h5ad
+       format: h5ad
+     reference:
+       path: data/sc_ref.h5ad
+       format: h5ad
+       patient_key: Patient
+
+   global_anchoring:
+     broad_column: Level1
+
+   local_refinement:
+     strength: 0.2
+
+   output:
+     path: output
+
+   execution:
+     action: run
+     seed: 42
+
+``paths.root_dir: .`` means the launch current working directory, not the
+application YAML directory. The other accepted form is an existing absolute
+directory. Input, data-root, and output paths must be relative children of
+``paths.root_dir`` and cannot escape it with ``..``.
+
+``inputs.mode: direct`` requires ``inputs.st.path`` and
+``inputs.reference.path`` and resolves ST, reference, and output as
+``<root-dir>/<st-path>``, ``<root-dir>/<reference-path>``, and
+``<root-dir>/<output-path>``. It clears the legacy locator fields before
+invoking the engine and does not probe ``PM_on_cell.csv``.
+
+``inputs.mode: legacy_layout`` uses these formulas:
+
+- ST: ``<root-dir>/<data-root>/<sample-name>_<st-file>``;
+- reference: ``<root-dir>/<data-root>/<reference-file>``;
+- optional PM prior: ``<data-root>/PM_on_cell.csv``.
+
+The full engine configuration ``revise/revise.yaml`` is package-internal and
+authoritative. ``algorithm`` contains only optional ``ot_method``.
+``algorithm.ot_method`` controls both GA and LR; omitting it keeps the selected
+engine profile authoritative.
+
+Template-specific fields are intentionally small:
+
+- ``Xenium_T.yaml``, ``Xenium_Fib.yaml``, and ``Xenium_Mono.yaml`` select
+  ``sc-SVC`` and require ``local_refinement.subtype_column``. They carry the
+  fixed selections ``T``, ``Fibroblast``, and ``Mono_Macro``; each selected
+  label must exist after reference patient filtering.
+- Visium HD selects ``sp-SVC`` with ``local_refinement.strength: 0.2``.
+- Visium selects ``sc-SVC-sr`` with ``local_refinement.strength: 0.0``. Zero
+  does not skip LR; it only disables assignment-posterior strengthening of the
+  LR cost.
+
+Both H5AD inputs require non-empty ``X``, unique ``obs_names`` and unique
+``var_names``, and at least one shared gene. ST requires finite two-dimensional
+coordinates in ``obsm["spatial"]``. Every route requires the configured broad
+annotation in reference ``obs``. Only standard sc-SVC requires the configured
+subtype annotation. sc-SVC-sr composition and expression allocation use the
+broad assignment and do not require a subtype column. The default ``Patient``
+column is selected by ``inputs.reference.patient_key``.
+``application.sample_name`` also selects matching reference rows when that
+column exists. If it is absent, as in the Visium reference, REVISE does not
+filter the reference.
+
+Run
+---
+
+From a source checkout:
 
 .. code-block:: bash
 
-   python reproduce/benchmark_main.py \
-     --confounding segmentation \
-     --data-root raw_data/Sim2Real-ST \
-     --sample-name P2CRC/cut_part1 \
-     --dataset-task segmentation \
-     --output-root output/benchmark
+   python reconstruct.py --config configs/application/VisiumHD.yaml --dry-run
+   python reconstruct.py --config configs/application/VisiumHD.yaml
 
-This command runs one confounding family, which may contain multiple leaf
-cases.
-
-``--confounding`` accepts ``segmentation``, ``bin2cell``, ``batch_effect``,
-``spot_size``, ``gene_panel``, or ``gene_dropout``. Run the bounded multi-family
-launcher with:
+The installed command is equivalent and also accepts the official external
+template path:
 
 .. code-block:: bash
 
-   bash reproduce/benchmark_main.sh
+   revise-reconstruct --config configs/application/VisiumHD.yaml --dry-run
+   revise-reconstruct --config configs/application/VisiumHD.yaml
 
-Benchmark analysis notebooks are tracked under ``reproduce/benchmark/``.
+The action truth table is strict: YAML ``run`` runs unless ``--dry-run`` forces
+preflight; YAML ``preflight`` remains preflight with or without the flag.
+Preflight may write run evidence, including ``preflight.json`` and
+``provenance.json``, but does not publish a result H5AD.
 
-Application inputs
-------------------
+Standard sc-SVC selects TACCO by profile. Install
+``python -m pip install "revise-svc[tacco]"`` for a published package or
+``python -m pip install ".[tacco]"`` from source. A missing or incompatible
+TACCO fails with installation guidance; REVISE never switches algorithms
+automatically and does not fall back to POT.
 
-For ``--sample-name sample``, ``--st-file st.h5ad``, and
-``--sc-ref-file sc_ref.h5ad``, use the flat input layout resolved by the CLI:
-
-.. code-block:: text
-
-   data/
-   |-- sample_st.h5ad
-   `-- sc_ref.h5ad
-
-The resolved paths are ``data/sample_st.h5ad`` and ``data/sc_ref.h5ad``. Both
-inputs require non-empty ``X``, unique ``obs_names`` and unique ``var_names``.
-The ST input requires two spatial coordinate columns in ``obsm["spatial"]``.
-Every route requires the configured broad annotation in reference ``obs``
-(``Level1`` by default). Only standard sc-SVC requires the configured subtype
-annotation (``Level2`` by default). sc-SVC-sr composition and expression
-allocation use the broad assignment and do not require a subtype column. The
-inputs must share at least one gene.
-
-If the reference has the default ``Patient`` column, its values are matched to
-``--sample-name``. Select another column with ``--patient-key``.
-
-Application command
--------------------
-
-.. code-block:: bash
-
-   python reconstruct.py \
-     --svc-type sp-SVC \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output
-
-Use ``--svc-type sc-SVC`` for molecular completion and ``--svc-type
-sc-SVC-sr`` for spot super-resolution. ``--cell-type-col`` selects the broad
-reference annotation on every route. ``--sub-cell-type-col`` selects the
-refined annotation required only by standard sc-SVC. sc-SVC-sr uses the broad
-assignment for composition and expression allocation. sc-SVC requires
-``--select-ct`` naming one concrete broad cell type. Its application profile
-defaults to TACCO; install it with
-``python -m pip install ".[tacco]"`` from source or ``python -m pip install
-"revise-svc[tacco]"`` from a published package. If TACCO is unavailable and a
-different algorithm is acceptable, explicitly add ``--ot-method pot``. REVISE
-never switches algorithms automatically.
-
-For sc-SVC-sr, optional segmentation-derived centers use a DataFrame in
-``st_adata.uns["revise_cell_locations"]`` with a unique ``cell_id`` index and
-``spot_name/x/y`` columns. Its assignments agree with
-``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
-and scale as ``obsm["spatial"]``; rows without centers remain at the spot center.
-The optional sample-local probability prior uses the case-sensitive path
-``<data-root>/PM_on_cell.csv``. Its rows must exactly equal
-the active virtual-cell IDs and its columns must exactly equal the active
-normalized cell-type labels. Values must be numeric and finite within
-``[0, 1]``; every row must sum to one with zero relative tolerance and an
-absolute tolerance of ``1e-6``. REVISE only reorders exact axes and never clips
-or normalizes PM. It is not a case table, cohort registry, or generic assignment
-posterior. Without that file, those coordinates are retained while inferred
-cell types are assigned to the existing rows by a seeded random permutation.
-
-After installation, the equivalent package command is:
-
-.. code-block:: bash
-
-   revise-reconstruct \
-     --svc-type sp-SVC \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output
-
-Append ``--dry-run`` to validate the resolved route, inputs, and dependencies
-without running reconstruction.
-
-Application output
-------------------
+Application output and evidence
+-------------------------------
 
 ``sp-SVC`` and ``sc-SVC-sr`` publish:
 
@@ -119,41 +189,29 @@ Application output
 
    <output-root>/<sample-name>/SVC.h5ad
 
-Standard ``sc-SVC`` publishes:
+Standard ``sc-SVC`` publishes two carriers:
 
 .. code-block:: text
 
    <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
    <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
 
-Each file links to the canonical run's ``provenance.json``. The manifest
-records the result role, route, stages, configuration, per-role input
-identities, software identity, and artifacts.
+Each file links to the canonical run's ``provenance.json``. Application request
+identity is namespaced under ``application_config`` as ``source_path``,
+``source_sha256``, ``declared_root``, ``resolved_root``, ``cwd``,
+``resolved_paths``, ``declared_action``, ``effective_action``, and
+``dry_run_override``. The top-level engine configuration identity remains
+separate in ``config_path`` and ``config_hash``. There is no solver-event
+telemetry.
 
 Paper reproduction notebooks
 ----------------------------
 
-Curated application notebooks are tracked under ``reproduce/case/``. Standard
-sc-SVC now preserves the notebook spatial and reference-expression carriers as
-separate public outputs.
+Curated application notebooks are under ``reproduce/case/``. Their presence
+does not prove that the current package reran the real datasets.
 
 Application utilities
 ---------------------
 
-Build optional morphology-derived priors with the installed package command:
-
-.. code-block:: bash
-
-   revise-build-histology-priors \
-     --st-h5ad st.h5ad \
-     --mask segmented_cells.tif \
-     --out-h5ad st_with_histology_priors.h5ad
-
-Compute biology-facing post-reconstruction metrics through the package-owned
-analysis layer:
-
-.. code-block:: bash
-
-   revise-compute-biological-metrics \
-     --input-h5ad output/sample/SVC.h5ad \
-     --output-dir output/sample/biological_metrics
+Optional morphology priors and biology-facing metrics remain available through
+``revise-build-histology-priors`` and ``revise-compute-biological-metrics``.

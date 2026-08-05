@@ -12,8 +12,9 @@ System map
 
    reconstruct.py / revise-reconstruct
    `-- revise.application.cli
+       |-- revise.application.request
        `-- revise.application.service
-       `-- REVISEPipeline.run()
+           `-- REVISEPipeline._execute_run(svc_type=..., cf=None)
            |-- load and validate merged configuration
            |-- resolve and preflight route inputs
            |-- create canonical run envelope
@@ -33,6 +34,13 @@ deterministic setup, run/provenance lifecycle, and strategy dispatch. The
 unified pipeline owns stage order. Strategies change stage internals without
 creating a second lifecycle.
 
+``revise.application.cli`` owns the public argument parser and run/preflight
+dispatch. ``reconstruct.py`` is a thin source-checkout wrapper. The request
+compiler maps one application YAML to a validated request; the service maps
+that request to selector, IO, algorithm, and publication inputs, while the
+engine router alone resolves profile/task/strategy. ``revise.application.publication``
+owns the H5AD publication transaction.
+
 Configuration and routing
 -------------------------
 
@@ -41,12 +49,19 @@ Configuration and routing
 - ``defaults`` for runtime, IO, columns, preprocessing, graph, OT, and route
   behavior;
 - ``profiles`` for declared application and benchmark requests;
-- ``router`` mappings from internal route/confounding to strategy;
+- ``router.application`` mappings from SVC data type to profile and strategy;
+- ``router.benchmark`` mappings from confounding family to profile and strategy;
 - ``locked_params`` for governed low-level values.
 
 GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
 preserve the same two-stage selection even when a legacy runner has a different
 internal call shape.
+
+Application and Benchmark keep separate request/case preparation. They meet at
+one engine execution Seam: Application supplies ``svc_type`` and no ``cf``;
+Benchmark supplies ``cf`` and no ``svc_type``. If both are supplied,
+``svc_type`` wins with a warning. Application provenance records
+``application_route`` and never records Benchmark ``confounding`` semantics.
 
 Assignment boundary
 -------------------
