@@ -1,334 +1,57 @@
-# REVISE
-
-<p align="center">
-  <img src="./logo/REVISE.png" alt="REVISE logo" height="240" />
-  <img src="./logo/Sim2Real-ST.png" alt="Sim2Real-ST logo" height="240" />
-  <img src="./logo/SVC.png" alt="SVC logo" height="240" />
-</p>
-
-[![PyPI](https://img.shields.io/pypi/v/revise-svc.svg)](https://pypi.org/project/revise-svc/)
-[![Documentation Status](https://readthedocs.org/projects/revise-svc/badge/?version=latest)](https://revise-svc.readthedocs.io/en/latest/?badge=latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-REVISE (REconstruction via Vision-integrated Spatial Estimation) reconstructs
-**Spatially-inferred Virtual Cells (SVCs)** from spatial transcriptomics data
-and a matched single-cell RNA-seq reference. Spatial or morphology-derived
-priors can be used when available.
-
-## Quick start
-
-REVISE supports Python 3.10 and 3.11. A clean environment is recommended.
-
-<details>
-<summary><strong>Create an environment with uv or conda</strong></summary>
-
-With uv:
-
-```bash
-uv venv --python 3.11
-source .venv/bin/activate
-```
-
-Or with conda:
-
-```bash
-conda create -n revise python=3.11 -y
-conda activate revise
-```
-
-</details>
-
-Install REVISE:
-
-```bash
-pip install revise-svc
-```
-
-Provide one spatial-transcriptomics H5AD and one matched single-cell reference.
-The installed command is `revise-reconstruct`:
-
-```bash
-revise-reconstruct \
-  --svc-type hST-SVC \
-  --sample-name sample \
-  --data-root data \
-  --st-file st.h5ad \
-  --sc-ref-file sc_ref.h5ad \
-  --output-root output
-```
-
-This example reads `data/sample_st.h5ad` and `data/sc_ref.h5ad`. Choose another
-`--svc-type` using the guidance below.
-Every route publishes exactly one public reconstruction file:
-
-```text
-output/sample/hST-SVC/SVC.h5ad
-```
-
-The associated `provenance.json` records the selected type, resolved route,
-configuration, inputs, stages, and artifacts. In a source checkout,
-[`python reconstruct.py`](reconstruct.py) provides the equivalent entry point.
-
-<details>
-<summary><strong>Which --svc-type should I choose?</strong></summary>
-
-| Your ST data | Typical platform and input rows | `--svc-type` | What REVISE reconstructs |
-| --- | --- | --- | --- |
-| **hST-like** high-resolution sequencing data | Visium HD; each row is a bin or pseudo-cell | `hST-SVC` | Reference-annotated expression with spatial refinement for the retained high-resolution units |
-| **iST** imaging-based data | iST-like segmented-cell inputs, such as Xenium, CosMx, or MERFISH | `iST-SVC` | Segmented-cell positions combined with reference-informed cell-state refinement and gene completion |
-| **sST** spot-based data | Visium; each row is a multi-cell spot | `sST-SVC` | Reference-informed virtual-cell expression and cell-type composition within each spot |
-
-`sST-SVC` does not by itself infer true sub-spot cell positions. When the ST
-H5AD contains segmentation-derived cell centers, REVISE uses them. Virtual
-cells without a supplied center remain at their source spot center.
-
-</details>
-
-<details>
-<summary><strong>Input file layout and AnnData requirements</strong></summary>
-
-The example command resolves these paths:
-
-```text
-data/
-├── sample_st.h5ad
-└── sc_ref.h5ad
-```
-
-`--sample-name sample` and `--st-file st.h5ad` resolve to
-`data/sample_st.h5ad`; the reference resolves directly to
-`data/sc_ref.h5ad`.
-
-- Both inputs must have non-empty `X`, unique `obs_names`, unique `var_names`,
-  and at least one shared gene.
-- The ST input must contain finite two-dimensional coordinates in
-  `obsm["spatial"]`.
-- Every route requires the configured broad annotation selected by
-  `--cell-type-col` (default `obs["Level1"]`). Only `iST-SVC` requires
-  the configured subtype annotation selected by `--sub-cell-type-col`
-  (default `obs["Level2"]`). `sST-SVC` composition and expression allocation
-  use the broad assignment and do not require a subtype column.
-- If the reference contains the default `Patient` column, at least one row must
-  match `--sample-name`; use `--patient-key` to select another column.
-- For sST inputs with segmentation-derived centers, the optional
-  `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
-  index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
-  `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
-  scale as `obsm["spatial"]`. Missing centers fall back to the spot center. The
-  optional sample-local probability prior is derived from the resolved ST
-  path as `<st-parent>/<st-stem>_PM_on_cell.csv`. Its axes must exactly equal
-  the active virtual-cell IDs and normalized cell types; values must be finite
-  probabilities whose rows sum to one. REVISE reorders exact axes but does not
-  clip or normalize PM. Without that file, these coordinates are retained while
-  cell types are assigned to the existing rows by a seeded random permutation
-  of each spot's inferred quota.
-
-</details>
-
-<details>
-<summary><strong>Frequently used reconstruction parameters</strong></summary>
-
-- `--seed`: controls deterministic random choices; default `42`.
-- `--ot-method pot|tacco`: selects one OT implementation for both Global
-  Anchoring and Local Refinement. `iST-SVC` defaults to TACCO and
-  therefore requires the `tacco` extra; the other application profiles retain
-  their configured solver. If TACCO is unavailable and a different algorithm
-  is acceptable, explicitly pass `--ot-method pot`. REVISE never falls back
-  automatically.
-- `--ist-mapping mean|random`: only for `iST-SVC`; the default `mean` assigns
-  each spatial row its cluster's mean expression, while `random` selects a
-  seeded, recorded donor row from the same cluster.
-- `--cell-type-col`: selects the broad reference annotation column for all
-  three routes.
-- `--sub-cell-type-col`: selects the refined annotation required only by
-  `iST-SVC`; `sST-SVC` does not require this column.
-- `--select-ct`: repeat for the concrete iST cell types to reconstruct. If it
-  is omitted, iST stops after GA and writes `selection_assessment.json` and
-  `GA_posterior.csv` (first column `spot_id`) for review.
-
-For advanced algorithm configuration, copy `revise/revise.yaml`, edit the
-relevant profile, and pass it with `--config`.
-
-Run `revise-reconstruct --help` for the complete command contract.
-
-</details>
-
-<details>
-<summary><strong>Source installation, optional capabilities, and development setup</strong></summary>
-
-To install the current repository source:
-
-```bash
-git clone https://github.com/wuys13/REVISE.git
-cd REVISE
-pip install .
-```
-
-The base package contains reconstruction, the POT implementation, clustering,
-and the core scientific stack. Install additional capabilities only when
-needed:
-
-| Capability | Installation | Purpose |
-| --- | --- | --- |
-| iST-SVC default solver | `pip install "revise-svc[tacco]"` | Installs TACCO 0.5.0, required by the default iST-SVC route |
-| Pathway analysis | `pip install "revise-svc[pathway]"` | Dependencies used by pathway analysis notebooks |
-| Cell-cell interaction analysis | `pip install "revise-svc[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
-| Trajectory analysis | `pip install "revise-svc[trajectory]"` | Dependencies used by trajectory analysis notebooks |
-| SpatialData input | `pip install "revise-svc[spatialdata]"` | SpatialData/Zarr input support |
-
-For optional groups from a source checkout, replace `revise-svc` with `.`. For
-development:
-
-```bash
-pip install -e ".[dev]"
-```
-
-Installation does not download research data or external analysis databases.
-
-</details>
-
-Detailed documentation: <https://revise-svc.readthedocs.io/en/latest/>
-
-## What REVISE Covers
-
-Sim2Real-ST benchmarks six confounding factors across spatial transcriptomics
-platform types:
-
-- Spatially heterogeneous factors: image segmentation artifacts and bin-to-cell
-  assignment errors.
-- Spatially homogeneous factors: spot size, batch effect, gene panel
-  limitation, and gene dropout.
-
-![Spatial transcriptomics limitations](png/ST_limitations.png)
-
-<p align="center">Confounding factors that limit current spatial transcriptomics technologies</p>
-
-REVISE 2.0 reconstructs three complementary public SVC types:
-
-- `hST-SVC`: spatial refinement for high-resolution spatial transcriptomics.
-- `iST-SVC`: molecular completion and cell-state refinement for imaging-based
-  spatial transcriptomics.
-- `sST-SVC`: spot-level super-resolution reconstruction.
-
-![REVISE overview](png/REVISE_overview.png)
-
-<p align="center">Overview of the REVISE framework</p>
-
-All three public selectors publish exactly:
-
-```text
-<output-root>/<sample-name>/<svc-type>/SVC.h5ad
-```
-
-The run's `provenance.json` records `result={filename,type}` together with the
-resolved route, configuration, inputs, stages, and artifacts. Only `iST-SVC`
-adds top-level assembly evidence describing its `mean` or `random` ownership.
-
-## Reproduce
-
-The notebooks and their carrier filenames are **1.x historical reproduction
-material**, not current 2.0 output. Paper datasets and reproduced results are available from
-<https://zenodo.org/records/17705737>. The repository keeps benchmark launchers
-and curated notebooks under [`reproduce/`](reproduce/); see
-[`reproduce/README.md`](reproduce/README.md) for the entry-point map.
-
-<details>
-<summary><strong>Run the Sim2Real-ST benchmarks</strong></summary>
-
-From a source checkout, run one confounding family:
-
-```bash
-python reproduce/benchmark_main.py \
-  --confounding segmentation \
-  --data-root raw_data/Sim2Real-ST \
-  --sample-name P2CRC/cut_part1 \
-  --dataset-task segmentation \
-  --output-root output/benchmark
-```
-
-Supported values are `segmentation`, `bin2cell`, `batch_effect`, `spot_size`,
-`gene_panel`, and `gene_dropout`. Run the bounded multi-family launcher with:
-
-```bash
-bash reproduce/benchmark_main.sh
-```
-
-The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
-
-</details>
-
-<details>
-<summary><strong>Open the application and downstream-analysis notebooks</strong></summary>
-
-![SVC applications](png/SVC_applications.png)
-
-<p align="center">Biological insights enabled by SVC reconstruction</p>
-
-Application reconstruction and downstream-analysis notebooks are under
-[`reproduce/case/`](reproduce/case/). Some require the optional `pathway`,
-`cci`, or `trajectory` installation groups and their corresponding external
-reference resources.
-
-</details>
-
-<details>
-<summary><strong>Reproduction scope and validation status</strong></summary>
-
-These notebooks are 1.x historical reproduction material, not current 2.0
-output. They preserve the paper workflows, but their presence does not mean
-that the current source checkout has rerun every real-data analysis. Real-data
-end-to-end validation remains a separate release step. Installation does not
-download the paper datasets, reproduced results, or external analysis
-databases.
-
-</details>
-
-## Python API
-
-<details>
-<summary><strong>Run the reconstruction pipeline from Python</strong></summary>
-
-```python
-from revise.framework import REVISEPipeline
-
-pipeline = REVISEPipeline()
-svc = pipeline.run(
-    profile="application_sc",
-    runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
-    io_overrides={
-        "data_root": "raw_data/Real_application",
-        "output_root": "output/sc_SVC_case",
-        "sample_name": "P2CRC",
-        "st_file": "Xenium.h5ad",
-        "sc_ref_file": "adata_sc_all_reanno.h5ad",
-        "patient_key": "Patient",
-    },
-)
-```
-
-This low-level Python surface intentionally uses internal profile and route IDs
-such as `application_sc` and `sc_svc`. They are not public `--svc-type`
-selectors and do not publish the route-qualified 2.0 result; use
-`revise-reconstruct` or `python reconstruct.py` for that application contract.
-
-</details>
-
-## Repository Layout
-
-<details>
-<summary><strong>Show the top-level repository structure</strong></summary>
-
-- `revise/`: installable reconstruction and analysis package.
-- `reproduce/`: benchmark launchers and benchmark/application notebooks.
-- `docs/`: detailed user and method documentation.
-- `logo/`, `png/`: public project and scientific figures.
-- `tests/`: behavioral, scientific-contract, packaging, and CLI tests.
-- `.github/`: continuous integration.
-- `constraints/`: tested Python 3.10/3.11 dependency constraints.
-
-</details>
-
-## License
-
-REVISE is released under the [MIT License](LICENSE). Third-party datasets and
-notebook resources may have separate terms.
+REVISE 1.0 → 2.0 迁移与完善任务清单
+1. 1.0 优化同步与整体设计保持
+1.1 1.0 已有优化迁移
+梳理 1.0 中已完成的优化内容，确保 2.0 架构同步更新。
+包括但不限于：
+参数优化；
+流程优化；
+模块接口调整；
+已验证的稳定性改进。
+1.2 2.0 三大类 SVC 设计整合
+当前 2.0 已实现 SVC 归入三大类别的最终设计方向。
+后续需要：
+将已有 1.0 优化内容迁移并 apply 到 2.0 三类 SVC 架构中；
+保持已有模块设计一致性；
+避免迁移过程中破坏 2.0 的统一接口和扩展性。
+
+2. 规范化重建评估体系
+2.1 重建质量监控
+建立统一的 reconstruction evaluation framework：
+增加标准化 warning / logging 机制；
+对每次 reconstruction 自动评估：
+是否存在异常情况；
+是否满足预设质量标准；
+是否需要用户进一步检查。
+2.2 评估指标体系完善
+后续进一步明确：
+必要 warning 类型；
+阈值设置；
+不同数据类型（sp-SVC / sc-SVC / sc-SVC-sr）的评价标准；
+失败模式分类与反馈。
+
+3. 指标体系与接口重新对接
+3.1 通用评价指标接口
+重新整理并接入已有 benchmark / evaluation 指标：
+聚类与空间结构：
+ARI 等 clustering metrics；
+spatial domain consistency metrics。
+3.2 Cell type / marker 评价接口
+重新接入细胞类型相关指标：
+cell type marker specificity；
+TMP、MER 等 marker evaluation metrics；
+相关 annotation quality assessment。
+3.3 下游应用分析接口
+恢复并统一应用层分析接口，包括：
+CCI 分析
+ligand-receptor interaction；
+cell-cell communication analysis。
+Pathway 分析
+pathway activity；
+functional program evaluation。
+Cell type neighborhood 分析
+spatial neighborhood；
+niche / microenvironment analysis。
+
+总体目标
+完成从 REVISE 1.0 → REVISE 2.0 的工程与分析体系迁移：
+保持 1.0 已验证优化，同时适配 2.0 统一 SVC 架构；建立标准化 reconstruction quality control；恢复完整 evaluation 与 downstream analysis ecosystem。
