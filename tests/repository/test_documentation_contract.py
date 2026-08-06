@@ -111,7 +111,7 @@ def test_quickstart_matches_application_yaml_entry_and_route_fields():
     assert "revise-reconstruct --config" in quickstart
     assert "inputs.st.path" in quickstart
     assert "inputs.reference.path" in quickstart
-    assert "unique ``obs_names`` and unique ``var_names``" in normalized
+    assert "unique ``obs_names`` and ``var_names``" in normalized
     assert "Every route requires the configured broad annotation" in normalized
     assert "Only standard sc-SVC requires the configured subtype annotation" in normalized
     assert (
@@ -165,7 +165,7 @@ def test_application_docs_cover_templates_inputs_actions_and_provenance():
     assert "``algorithm.ot_method`` controls both GA and LR" in normalized
     assert "omitting it keeps the selected engine profile authoritative" in normalized
     assert "may write run evidence" in normalized
-    assert "does not publish a result H5AD" in normalized
+    assert "does not write an H5AD" in normalized
     for field in (
         "source_path",
         "source_sha256",
@@ -207,7 +207,7 @@ def test_installation_describes_base_and_optional_capability_layers():
     assert "never selects POT as an automatic fallback" in normalized
 
 
-def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
+def test_public_docs_use_one_run_directory_for_single_and_sc_pair_outputs():
     text = _joined()
     entrypoint = _read(ROOT / "reconstruct.py")
     case = _read(ROOT / "docs/source/case.rst")
@@ -218,7 +218,8 @@ def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
         "Paper notebook compatibility", maxsplit=1
     )
 
-    assert "<output-dir>/<output-name>.h5ad" in text
+    assert "<output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/" in text
+    assert "<output-dir>/<output-name>.h5ad" not in text
     assert 'f"{config.output_name}.h5ad"' in entrypoint
     assert 'f"{config.output_name}_expr.h5ad"' in entrypoint
     assert 'f"{config.output_name}_spatial.h5ad"' in entrypoint
@@ -229,6 +230,7 @@ def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     assert "H5AD result(s) + manifest" in api_diagram
     assert "SVC.h5ad + manifest type" not in api_diagram
     assert "single public result file" not in configuration
+    assert "shared fixed-name copies" in configuration
     assert "optional legacy merge" not in test_guide
 
 
@@ -338,7 +340,7 @@ def test_assignment_docs_match_route_specific_runtime_contract():
     assert "does not reweight GraphCluster with ``Q``" in architecture
     assert "``route``, ``applied``, and ``strength``" in architecture
     assert "authoritative failure explanation" in architecture
-    assert "same-directory temporary H5AD" in architecture
+    assert "creates no temporary H5AD files" in architecture
     assert "not that posterior compatibility improves" in limitations
 
 
@@ -357,7 +359,7 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
         "_run_case",
         lambda *args, **kwargs: {
             "ok": True,
-            "profile": kwargs["profile"],
+            "profile": kwargs["confounding"],
             "run_dir": "synthetic",
             "summary": {},
             "error": None,
@@ -487,7 +489,7 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
     ) == "data/PM_on_cell.csv"
     assert "<data-root>/PM_on_cell.csv" in normalized
     assert "case-sensitive" in concepts
-    assert "no CLI path override" in concepts
+    assert "exact ``inputs.pm_on_cell.path``" in concepts
     assert "sample-local probability prior" in normalized
     assert "rows must exactly equal the active virtual-cell IDs" in normalized
     assert "columns must exactly equal the active normalized cell-type labels" in normalized
@@ -518,7 +520,7 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
     )
 
 
-def test_docs_state_minimal_manifest_and_publication_guarantees():
+def test_docs_state_minimal_manifest_and_output_persistence_guarantees():
     architecture = " ".join(_read(ROOT / "docs/source/architecture.rst").split())
     configuration = " ".join(_read(ROOT / "docs/source/configuration.rst").split())
     concepts = " ".join(_read(ROOT / "docs/source/concepts.rst").split())
@@ -533,12 +535,14 @@ def test_docs_state_minimal_manifest_and_publication_guarantees():
     assert "no OT or Assignment event state machine" in architecture
     assert "solver events" not in f"{configuration} {concepts}"
     assert "Software identity is collected once per run" in architecture
-    assert "same-directory temporary H5AD" in combined
-    assert "reloads it before replacement" in combined
-    assert "best-effort caught-exception rollback" in combined
-    assert "not reader-atomic or crash-atomic" in combined
-    assert "caller must guarantee one writer per stable public target" in combined
-    assert "violating that precondition is undefined" in combined
+    assert "one unique run directory per invocation" in combined
+    assert "written directly into that directory" in combined
+    assert "no temporary H5AD files or shared fixed-name copies" in combined
+    assert "does not use ``os.replace`` for H5AD output" in combined
+    assert "A caught write or later lifecycle failure removes H5AD files" in combined
+    assert "failed manifest records ``output_cleanup_errors``" in combined
+    assert "An uncatchable process death or power loss can leave a partial H5AD" in combined
+    assert "it cannot mix files with an earlier or concurrent run" in combined
 
 
 def test_public_data_and_repository_claims_are_precise():

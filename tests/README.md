@@ -19,11 +19,14 @@ environment variables documented in their modules and CI jobs.
 | Test file | Production owner | Detects / corresponding implementation | When used | Proof boundary |
 | --- | --- | --- | --- | --- |
 | `analysis/test_cli.py` | `revise/analysis/` | Biological-metrics console entry and delegation | Package/analysis edits | Static entry contract only |
-| `application/test_cli_contract.py` | `revise/application/service.py` | Canonical publication, rollback, and result manifest | Application edits | Synthetic AnnData only |
-| `application/test_cli_dry_run.py` | `revise/application/cli.py` | Source CLI preflight without reconstruction | Application/config edits | No scientific stages |
-| `application/test_public_contract.py` | `revise/application/` | 1.x selector and internal route mapping | Every application change | Public vocabulary and dispatch only |
-| `application/test_request.py` | `revise/application/request.py`, `configs/application/` | Strict application YAML schema, route fields, and path compilation | Application config edits | Request compilation only; no scientific kernels |
-| `application/test_service.py` | `revise/application/service.py` | sc-SVC pair publication and rollback | Result-assembly edits | No kernels or real data |
+| `application/test_cli_contract.py` | `reconstruct.py` | Canonical Application CLI and output contract | Application edits | Synthetic AnnData only |
+| `application/test_cli_dry_run.py` | `reconstruct.py` | Source CLI preflight and run-directory reporting without reconstruction | Application/config edits | No scientific stages |
+| `application/test_cli_fallback.py` | `reconstruct.py`, packaging metadata | Source and installed-entry fallback behavior | Entrypoint/package edits | Dispatch only |
+| `application/test_preflight_selection.py` | `revise/io/`, `reconstruct.py` | Selected-cell-type validation against the full reference | sc-SVC input edits | Synthetic metadata only |
+| `application/test_publication.py` | `reconstruct.py`, `revise/recon/context.py` | Direct single-run output persistence and failure cleanup | Output/lifecycle edits | Synthetic AnnData and catchable failures |
+| `application/test_request.py` | `revise/application/config.py`, `configs/application/` | Strict application YAML schema, route fields, and path compilation | Application config edits | Request compilation only; no scientific kernels |
+| `application/test_service.py` | `reconstruct.py` | sc-SVC output-path expansion inside one run directory | Result-assembly edits | No kernels or real data |
+| `application/test_templates.py` | `revise/application/templates/`, `configs/application/` | Packaged and source template parity | Template edits | Static YAML contract only |
 | `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
 | `backend/test_local_refinement_conditioning.py` | `revise/backend/ops/assignment.py`, `posterior_conditioning.py` | Strict global posterior axes and fixed local OT cost conditioning | Assignment/local-refinement edits | Synthetic matrices only |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
@@ -50,7 +53,7 @@ environment variables documented in their modules and CI jobs.
 | `preprocess/test_cli.py` | `revise/preprocess/` | Histology-prior console entry | Preprocess packaging edits | Static entry contract only |
 | `preprocess/test_histology_priors.py` | `revise/preprocess/histology_priors.py`, `revise/backend/ops/meta.py` | Segmentation centers persist in the standard cell-location table and missing centers use spot coordinates | Histology/SR input edits | Synthetic coordinates only |
 | `recon/test_cross_process_determinism.py` | `revise/recon/` and deterministic utilities | Same-seed identities across processes | Determinism edits | Synthetic components |
-| `recon/test_failure_provenance.py` | `revise/recon/context.py`, `revise/framework.py` | Failure/interruption manifests and publication compensation | Lifecycle edits | Catchable failures, not power loss |
+| `recon/test_failure_provenance.py` | `revise/recon/context.py`, `revise/framework.py` | Failure/interruption manifests and direct-output cleanup | Lifecycle edits | Catchable failures, not power loss |
 | `recon/test_lifecycle_trace.py` | `revise/recon/pipeline.py` | Fixed stage order and trace transitions | Pipeline-stage edits | Synthetic strategy |
 | `recon/test_local_refinement_record.py` | `revise/recon/context.py` | Minimal route/applied/strength record and monotonic applied state | Local-refinement provenance edits | In-memory/durable record only |
 | `recon/test_provenance_identity.py` | `revise/utils/provenance.py` | Hashes, canonical identities, and deterministic paths | Provenance edits | Identity mechanics only |

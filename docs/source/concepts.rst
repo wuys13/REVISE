@@ -25,12 +25,16 @@ Routes and result types
      - spot-level observations
      - ``sc-SVC-sr``
 
-sp-SVC and sc-SVC-sr publish ``<output-dir>/<output-name>.h5ad``.
-Standard sc-SVC publishes separate spatial and reference-expression H5AD files
-as ``<output-dir>/<output-name>_spatial.h5ad`` and
-``<output-dir>/<output-name>_expr.h5ad``. Its
-``provenance.json`` records both logical roles separately from the internal
-route.
+Every Application invocation allocates one run directory at
+``<output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/``.
+sp-SVC and sc-SVC-sr write ``<output.name>.h5ad`` directly there. Standard
+sc-SVC writes separate spatial and reference-expression H5AD files as
+``<output.name>_spatial.h5ad`` and ``<output.name>_expr.h5ad`` in that same
+directory; its ``provenance.json`` records both logical roles separately from
+the internal route. The run envelope also contains ``merged_config.json`` and
+``run.log``; completed input validation adds ``preflight.json``. Dry runs use an
+independent run directory and write no H5AD; repeated formal runs receive new
+timestamp/UUID leaves.
 
 Shared lifecycle
 ----------------
@@ -72,7 +76,8 @@ cell count. The optional ``PM_on_cell.csv`` is a sample-local probability prior
 for assigning those quota slots in the current sample. Application declares it
 with the exact ``inputs.pm_on_cell.path``; when omitted, no sidecar is probed.
 Its rows must exactly equal the active virtual-cell IDs and its columns must
-exactly equal the active normalized cell-type labels. After exact set equality,
+exactly equal the active normalized cell-type labels; both axes are
+case-sensitive. After exact set equality,
 REVISE only reindexes them into active order. Values must be numeric and finite
 within ``[0, 1]``, and every row must sum to one with zero relative tolerance
 and an absolute tolerance of ``1e-6``. REVISE never clips or normalizes PM.
@@ -80,6 +85,9 @@ PM is the assignment's prior score matrix, not a case table, cohort registry,
 or generic assignment posterior. If the file is missing, one seeded random
 permutation assigns the quota slots to the existing virtual-cell rows inside
 each spot.
+
+Benchmark runs retain the historical ``<data-root>/PM_on_cell.csv`` location.
+Application runs instead declare the exact ``inputs.pm_on_cell.path`` above.
 
 The tested invariant is exact per-spot composition, plus repeatability for the
 same seed. Which virtual-cell row receives a type can change with the seed.
@@ -106,7 +114,7 @@ Evidence versus interpretation
 ------------------------------
 
 Automated tests establish route selection, array/label invariants, resolved OT
-configuration, deterministic identities, failure states, output publication, and
+configuration, deterministic identities, failure states, output persistence, and
 small synthetic execution. They do not establish biological validation,
 cross-solver biological parity, or production-scale suitability. See
 :doc:`limitations` before interpreting an SVC or benchmark table.

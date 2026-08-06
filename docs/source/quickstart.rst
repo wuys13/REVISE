@@ -109,8 +109,9 @@ application YAML directory. The other accepted form is an existing absolute
 directory. Input and output paths must be relative children of
 ``paths.root_dir`` and cannot escape it with ``..``.
 
-Application inputs are always exact direct paths. ST and reference resolve as
-``<root-dir>/<st-path>`` and ``<root-dir>/<reference-path>``. An optional
+Application inputs are always exact direct paths. ``inputs.st.path`` and
+``inputs.reference.path`` resolve as ``<root-dir>/<st-path>`` and
+``<root-dir>/<reference-path>``. An optional
 sc-SVC-sr prior is also an exact ``inputs.pm_on_cell.path``; when omitted, no
 sidecar is searched and seeded random quota-slot assignment is used.
 
@@ -130,14 +131,18 @@ Template-specific fields are intentionally small:
   does not skip LR; it only disables assignment-posterior strengthening of the
   LR cost.
 
-Both H5AD inputs require non-empty ``X``, unique ``obs_names`` and unique
-``var_names``, and at least one shared gene. ST requires finite two-dimensional
-coordinates in ``obsm["spatial"]``. Every route requires the configured broad
-annotation in reference ``obs``. Only standard sc-SVC requires the configured
-subtype annotation. sc-SVC-sr composition and expression allocation use the
-broad assignment and do not require a subtype column. Application does not
-filter the reference by patient; prepare the reference before running if it
-contains multiple cohorts.
+Both H5AD inputs require a real numeric ``X`` containing only finite,
+non-negative values and at least one non-zero value, unique ``obs_names`` and
+``var_names``, and at least one shared gene. Preflight scans ``X`` without
+changing it; all-zero observations or variables are warnings. It does not infer
+or compare ST/reference expression semantics such as counts versus normalized
+values. ST requires finite two-dimensional coordinates in
+``obsm["spatial"]``. Every route requires the configured broad annotation in
+reference ``obs``. Only standard sc-SVC requires the configured subtype
+annotation. sc-SVC-sr composition and expression allocation use the broad
+assignment and do not require a subtype column. Application does not filter the
+reference by patient; prepare the reference before running if it contains
+multiple cohorts.
 
 Run
 ---
@@ -159,8 +164,9 @@ template path:
 
 Without ``--dry-run`` the request runs; ``--dry-run`` is the only preflight
 switch.
-Preflight may write run evidence, including ``preflight.json`` and
-``provenance.json``, but does not publish a result H5AD.
+Every invocation allocates one run directory, including a dry run. Preflight
+writes run evidence there, including ``preflight.json`` and
+``provenance.json``, but a dry run does not write an H5AD.
 
 Standard sc-SVC selects TACCO by profile. Install
 ``python -m pip install "revise-svc[tacco]"`` for a published package or
@@ -171,26 +177,27 @@ automatically and does not fall back to POT.
 Application output and evidence
 -------------------------------
 
-``sp-SVC`` and ``sc-SVC-sr`` publish:
+All Application outputs and evidence live in the one run directory
 
 .. code-block:: text
 
-   <output-dir>/<output-name>.h5ad
+   <output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/
 
-Standard ``sc-SVC`` publishes two carriers:
+The run envelope contains ``provenance.json``, ``merged_config.json``, and
+``run.log``; completed input validation adds ``preflight.json``. A successful
+formal ``sp-SVC`` or ``sc-SVC-sr`` run writes
+``<output.name>.h5ad`` directly there. A formal standard ``sc-SVC`` run writes
+``<output.name>_spatial.h5ad`` and ``<output.name>_expr.h5ad`` as siblings in
+the same directory; both are linked by the single provenance record. A
+``--dry-run`` has its own independent run directory and no H5AD. Repeating a
+formal run creates another ``<timestamp_uuid>`` directory. No temporary H5AD,
+shared fixed-name copy, or ``os.replace`` H5AD output step is used.
 
-.. code-block:: text
-
-   <output-dir>/<output-name>_spatial.h5ad
-   <output-dir>/<output-name>_expr.h5ad
-
-Each file links to the canonical run's ``provenance.json``. Application request
-identity is namespaced under ``application_config`` as ``source_path``,
-``source_sha256``, ``declared_root``, ``resolved_root``, ``cwd``,
-``resolved_inputs``, ``output_paths``, and ``effective_action``. The top-level
-engine configuration identity remains
-separate in ``config_path`` and ``config_hash``. There is no solver-event
-telemetry.
+Application request identity is namespaced under ``application_config`` as
+``source_path``, ``source_sha256``, ``declared_root``, ``resolved_root``,
+``cwd``, ``resolved_inputs``, ``output_paths``, and ``effective_action``. The
+top-level engine configuration identity remains separate in ``config_path``
+and ``config_hash``. There is no solver-event telemetry.
 
 Paper reproduction notebooks
 ----------------------------

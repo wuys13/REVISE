@@ -55,13 +55,28 @@ Benchmark runs retain the historical ``<data-root>/PM_on_cell.csv`` convention.
 Application runs declare an exact ``inputs.pm_on_cell.path`` instead, so the
 logical output name and input YAML make the selected prior explicit.
 
-Publication
------------
+Output persistence
+------------------
 
-The 1.x single-file and paired entrypoint stages same-directory temporary H5AD
-files before replacement. Paired outputs are not reader-atomic or crash-atomic,
-and replacement does not provide rollback after a process failure. The caller
-must guarantee one writer per stable public target.
+Application output persistence is scoped to one unique run directory per invocation:
+``<output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/``. Final
+H5AD artifact(s) are written directly into that directory beside the run
+envelope: ``provenance.json``, ``merged_config.json``, and ``run.log``.
+Completed input validation adds ``preflight.json``. Standard sc-SVC keeps its
+spatial and expression files in the same run directory. Dry runs allocate an
+independent run directory and write no H5AD; repeated formal runs allocate a
+new leaf. Application creates no temporary H5AD files or shared fixed-name
+copies and does not use ``os.replace`` for H5AD output.
+
+A caught write or later lifecycle failure removes H5AD files created by that
+run while retaining its failed manifest and log. If the filesystem refuses a
+cleanup operation, the failed manifest records ``output_cleanup_errors``
+instead of hiding the original run failure. If terminal provenance itself
+cannot be persisted, the last manifest can remain ``running``. An uncatchable
+process death or power loss can leave a partial H5AD inside the isolated
+directory and can additionally leave its run lock. Neither state is a
+successful result; because every Application leaf must be fresh, it cannot mix
+files with an earlier or concurrent run.
 
 Metrics
 -------
