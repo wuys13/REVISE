@@ -112,66 +112,6 @@ ASSIGNMENT_GUIDANCE_MIGRATION_ERROR = (
 )
 ROUTE_NAMESPACES = {"application", "benchmark"}
 ROUTE_LEAF_KEYS = {"profile", "task", "svc_kind", "strategy"}
-BUILTIN_ROUTE_CONTRACTS = {
-    "application": {
-        "sp-SVC": {
-            "profile": "application_sp",
-            "task": "sp_svc",
-            "svc_kind": "sp",
-            "strategy": "SpSvcApplicationStrategy",
-        },
-        "sc-SVC": {
-            "profile": "application_sc",
-            "task": "sc_svc",
-            "svc_kind": "sc",
-            "strategy": "ScSvcApplicationStrategy",
-        },
-        "sc-SVC-sr": {
-            "profile": "application_sc_sr",
-            "task": "sc_svc_sr",
-            "svc_kind": "sc",
-            "strategy": "ScSvcSrApplicationStrategy",
-        },
-    },
-    "benchmark": {
-        "segmentation": {
-            "profile": "benchmark_seg",
-            "task": "sp_svc",
-            "svc_kind": "sp",
-            "strategy": "SpSvcBenchmarkSegStrategy",
-        },
-        "bin2cell": {
-            "profile": "benchmark_bin2cell",
-            "task": "sp_svc",
-            "svc_kind": "sp",
-            "strategy": "SpSvcBenchmarkSegStrategy",
-        },
-        "batch_effect": {
-            "profile": "benchmark_sr_batch",
-            "task": "sc_svc_sr",
-            "svc_kind": "sc",
-            "strategy": "ScSvcSrBenchmarkStrategy",
-        },
-        "spot_size": {
-            "profile": "benchmark_sr_spot_size",
-            "task": "sc_svc_sr",
-            "svc_kind": "sc",
-            "strategy": "ScSvcSrBenchmarkStrategy",
-        },
-        "gene_panel": {
-            "profile": "benchmark_impute_panel",
-            "task": "sc_svc_impute",
-            "svc_kind": "sc",
-            "strategy": "ScSvcImputeBenchmarkStrategy",
-        },
-        "gene_dropout": {
-            "profile": "benchmark_impute_dropout",
-            "task": "sc_svc_impute",
-            "svc_kind": "sc",
-            "strategy": "ScSvcImputeBenchmarkStrategy",
-        },
-    },
-}
 LOCKED_PARAMS_KEYS = {"keys"}
 
 
@@ -405,43 +345,6 @@ def _validate_router(
                     f"Unknown profile {route_map['profile']!r} in "
                     f"router.{namespace}.{selector}"
                 )
-            _validate_builtin_route_contract(
-                namespace,
-                selector,
-                route_map,
-                ctx=f"router.{namespace}.{selector}",
-            )
-
-
-def _validate_builtin_route_contract(
-    namespace: str,
-    selector: str,
-    route: Dict[str, Any],
-    *,
-    ctx: str,
-) -> None:
-    namespace_contracts = BUILTIN_ROUTE_CONTRACTS.get(namespace, {})
-    expected = namespace_contracts.get(selector)
-    if expected is None:
-        raise ConfigError(
-            f"Unsupported route selector in {ctx}: mode={namespace!r}, "
-            f"selector={selector!r}; available={sorted(namespace_contracts)}"
-        )
-
-    mismatches = []
-    for key in ("profile", "task", "svc_kind", "strategy"):
-        if key not in route:
-            continue
-        actual_value = route.get(key)
-        expected_value = expected[key]
-        if actual_value != expected_value:
-            mismatches.append(
-                f"{key}: expected={expected_value!r}, actual={actual_value!r}"
-            )
-    if mismatches:
-        raise ConfigError(
-            f"Incompatible route combination in {ctx}: " + "; ".join(mismatches)
-        )
 
 
 def resolve_semantic_route(
@@ -462,12 +365,6 @@ def resolve_semantic_route(
             raise ConfigError(
                 f"invalid svc_type {svc_type!r}; available values: {sorted(routes)}"
             )
-        _validate_builtin_route_contract(
-            "application",
-            svc_type,
-            route,
-            ctx=f"router.application.{svc_type}",
-        )
         warning = None
         if cf is not None:
             warning = (
@@ -485,12 +382,6 @@ def resolve_semantic_route(
     route = routes.get(cf)
     if route is None:
         raise ConfigError(f"invalid cf {cf!r}; available values: {sorted(routes)}")
-    _validate_builtin_route_contract(
-        "benchmark",
-        str(cf),
-        route,
-        ctx=f"router.benchmark.{cf}",
-    )
     return {
         "mode": "benchmark",
         "confounding": cf,
@@ -567,11 +458,7 @@ def set_by_dotted_path(config: Dict[str, Any], dotted_key: str, value: Any, crea
     cur[leaf] = value
 
 
-def _validate_runtime(
-    merged: Dict[str, Any],
-    *,
-    profile: str | None = None,
-) -> None:
+def _validate_runtime(merged: Dict[str, Any]) -> None:
     runtime = merged.get("runtime", {})
     required = ["mode", "task", "svc_kind", "strategy"]
     missing = [k for k in required if runtime.get(k) in (None, "")]
@@ -583,11 +470,6 @@ def _validate_runtime(
             raise ConfigError(
                 "Application runtime requires application_route and no confounding"
             )
-        if bool(runtime.get("compatibility_mode", False)):
-            raise ConfigError(
-                "Application runtime does not support compatibility_mode; "
-                "use the single run-directory output contract"
-            )
     elif mode == "benchmark":
         if not runtime.get("confounding") or runtime.get("application_route") is not None:
             raise ConfigError(
@@ -596,31 +478,8 @@ def _validate_runtime(
     else:
         raise ConfigError(f"Unknown runtime.mode: {mode!r}")
 
-    selector = (
-        runtime["application_route"]
-        if mode == "application"
-        else runtime["confounding"]
-    )
-    route = {
-        "task": runtime["task"],
-        "svc_kind": runtime["svc_kind"],
-        "strategy": runtime["strategy"],
-    }
-    if profile is not None:
-        route["profile"] = profile
-    _validate_builtin_route_contract(
-        str(mode),
-        str(selector),
-        route,
-        ctx="resolved.runtime",
-    )
 
-
-def _validate_resolved_config(
-    merged: Dict[str, Any],
-    *,
-    profile: str | None = None,
-) -> None:
+def _validate_resolved_config(merged: Dict[str, Any]) -> None:
     """Strictly validate the complete config after every merge and route update."""
     _validate_sections(merged, "resolved")
     _validate_ot_section(
@@ -628,7 +487,7 @@ def _validate_resolved_config(
         "resolved.ot",
         resolved=True,
     )
-    _validate_runtime(merged, profile=profile)
+    _validate_runtime(merged)
     sc_cfg = _ensure_mapping(merged.get("sc", {}), "resolved.sc")
     if sc_cfg.get("svc_completeness") is not True:
         raise ConfigError("sc.svc_completeness must be exactly true")
@@ -746,8 +605,6 @@ def merge_unified_config(
             )
     merged = deep_merge(merged, algorithm_overrides)
 
-    # Route identity must be valid before task-specific config normalization.
-    _validate_runtime(merged, profile=profile)
     _resolve_local_refinement(merged)
-    _validate_resolved_config(merged, profile=profile)
+    _validate_resolved_config(merged)
     return ResolvedConfig(merged)

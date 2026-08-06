@@ -226,7 +226,7 @@ def test_framework_dry_run_persists_the_same_five_stage_truth(
     _write_application_inputs(tmp_path, "dry-run-case")
 
     svc = framework.REVISEPipeline().run(
-        svc_type="sp-SVC",
+        profile="application_sp",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(output_root),

@@ -11,30 +11,11 @@ from revise.config import ConfigError, load_raw_config, merge_unified_config
 CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
-def _runtime_for_profile(profile: str):
-    raw_config = load_raw_config(CONFIG_PATH)
-    for namespace, routes in raw_config["router"].items():
-        for selector, route in routes.items():
-            if route["profile"] != profile:
-                continue
-            selector_key = (
-                "application_route" if namespace == "application" else "confounding"
-            )
-            return {
-                "mode": namespace,
-                selector_key: selector,
-                "task": route["task"],
-                "svc_kind": route["svc_kind"],
-                "strategy": route["strategy"],
-            }
-    raise AssertionError(f"No test route uses profile {profile!r}")
-
-
 def _merge(profile: str, algorithm_overrides=None):
     return merge_unified_config(
         raw_config=load_raw_config(CONFIG_PATH),
         profile=profile,
-        runtime_overrides=_runtime_for_profile(profile),
+        runtime_overrides={},
         io_overrides={},
         algorithm_overrides=algorithm_overrides or {},
     )
