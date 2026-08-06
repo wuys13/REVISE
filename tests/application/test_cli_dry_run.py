@@ -86,16 +86,9 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
         (tmp_path / "sample_st.h5ad").resolve()
     )
     assert Path(payload["preflight"]).is_file()
-    run_dir = Path(payload["preflight"]).parent
-    assert Path(payload["outputs"]["svc"]).parent == run_dir
-    assert payload["application_config"]["output_paths"]["svc"] == str(
-        run_dir / "sample_sp-SVC.h5ad"
-    )
     assert not list(output_root.rglob("*.h5ad"))
-    assert not list(run_dir.glob("*.h5ad"))
-    assert not list(run_dir.glob("*.tmp.h5ad"))
     provenance = json.loads(
-        (run_dir / "provenance.json").read_text()
+        (Path(payload["preflight"]).parent / "provenance.json").read_text()
     )
     assert provenance["application_config"] == {
         "source_path": str(config_path.resolve()),
@@ -110,7 +103,7 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
         },
         "output_name": "sample_sp-SVC",
         "output_paths": {
-            "svc": str((run_dir / "sample_sp-SVC.h5ad").resolve()),
+            "svc": str((output_root / "sample_sp-SVC.h5ad").resolve()),
         },
         "effective_action": "preflight",
         "cli_overrides": {},

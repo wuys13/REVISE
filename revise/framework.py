@@ -134,7 +134,6 @@ class REVISEPipeline:
         dry_run: bool = False,
         finalize_callback=None,
         application_config_metadata: Optional[Dict[str, Any]] = None,
-        run_directory: Optional[str | Path] = None,
     ):
         # 1) Resolve final runtime config from single YAML entry:
         # defaults -> profile -> runtime/io overrides -> algorithm overrides.
@@ -187,34 +186,14 @@ class REVISEPipeline:
         route_key = f"{runtime['mode']}:{selector}"
         output_root = merged_config["io"]["output_root"]
         sample_name = merged_config["io"]["sample_name"]
-        if run_directory is None:
-            run_dir = build_run_dir(
-                output_root=output_root,
-                sample_name=sample_name,
-                route_key=route_key,
-                io_cfg=merged_config["io"],
-                mode=runtime["mode"],
-                cf=runtime.get("confounding"),
-            )
-        else:
-            if runtime["mode"] != "application":
-                raise ConfigError(
-                    "run_directory is supported only for Application runs"
-                )
-            run_dir = Path(run_directory)
-            output_root_path = Path(output_root).resolve()
-            resolved_run_dir = run_dir.resolve()
-            expected_parent = (
-                output_root_path
-                / str(sample_name)
-                / route_key.replace(":", "__")
-            ).resolve()
-            if resolved_run_dir.parent != expected_parent:
-                raise ConfigError(
-                    "Application run_directory must be one unique run leaf under "
-                    f"{expected_parent}: run_directory={resolved_run_dir}"
-                )
-            run_dir = resolved_run_dir
+        run_dir = build_run_dir(
+            output_root=output_root,
+            sample_name=sample_name,
+            route_key=route_key,
+            io_cfg=merged_config["io"],
+            mode=runtime["mode"],
+            cf=runtime.get("confounding"),
+        )
         if runtime["mode"] == "benchmark":
             log_dir = build_task_dir(
                 output_root=output_root,
@@ -227,10 +206,7 @@ class REVISEPipeline:
         else:
             log_dir = run_dir
 
-        with exclusive_run_directory(
-            run_dir,
-            require_new=runtime["mode"] == "application",
-        ):
+        with exclusive_run_directory(run_dir):
             manifest_path = run_dir / "provenance.json"
             manifest_before = _manifest_identity(manifest_path)
             try:
@@ -316,9 +292,13 @@ class REVISEPipeline:
                 self._write_final_metadata(ctx)
                 self._write_initial_metadata(ctx)
 
+                if self.registry is None:
+                    self.registry = build_default_registry()
+                strategy = self.registry.get(runtime["strategy"])
+
                 if ctx.dry_run:
                     # Preflight resolves the same strategy as a formal run but
-                    # stops before scientific stages and result persistence.
+                    # stops before scientific stages and publication.
                     self._run_dry_validation(ctx)
                     ctx.svc = SVC(
                         expr=None,
@@ -331,10 +311,6 @@ class REVISEPipeline:
                     logger.info("[framework] dry-run validated route=%s", route_key)
                     return ctx.svc
 
-                if self.registry is None:
-                    self.registry = build_default_registry()
-                strategy = self.registry.get(runtime["strategy"])
-
                 pipeline = UnifiedReconstructionPipeline(
                     strategy=strategy,
                     validation_policy=ModeValidationPolicy(),
@@ -342,11 +318,12 @@ class REVISEPipeline:
                 )
 
                 svc = pipeline.run(ctx)
+                ctx.commit_pending_publication()
                 logger.info("[framework] finished unified run route=%s", route_key)
                 return svc
             except _SigtermInterrupt as exc:
                 try:
-                    ctx.cleanup_failed_outputs()
+                    ctx.rollback_pending_publication()
                     ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise KeyboardInterrupt("received SIGTERM") from persistence_error
@@ -357,7 +334,7 @@ class REVISEPipeline:
                 raise KeyboardInterrupt("received SIGTERM") from None
             except KeyboardInterrupt as exc:
                 try:
-                    ctx.cleanup_failed_outputs()
+                    ctx.rollback_pending_publication()
                     ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
@@ -365,7 +342,7 @@ class REVISEPipeline:
                 raise
             except Exception as exc:
                 try:
-                    ctx.cleanup_failed_outputs()
+                    ctx.rollback_pending_publication()
                     ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
@@ -450,7 +427,7 @@ class REVISEPipeline:
                 for key in _APPLICATION_CONFIG_PROVENANCE_KEYS
                 if key in application_config
             }
-        for result_key in ("result", "results", "output_cleanup_errors"):
+        for result_key in ("result", "results"):
             result_value = copy.deepcopy(current_provenance.get(result_key))
             if result_value is not None:
                 provenance[result_key] = result_value

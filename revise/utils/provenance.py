@@ -132,28 +132,10 @@ def completed_artifact(role: str, path: str | Path) -> Dict[str, Any]:
 
 
 @contextmanager
-def exclusive_run_directory(
-    run_dir: str | Path,
-    *,
-    require_new: bool = False,
-):
-    """Own one run directory and preserve an unfinished run envelope.
-
-    Application invocations use ``require_new=True`` so a terminal run can
-    never be reused or mixed with a later invocation. Benchmark tasks retain
-    their historical fixed-directory reuse contract.
-    """
+def exclusive_run_directory(run_dir: str | Path):
+    """Prevent concurrent writers and preserve an unfinished run envelope."""
     directory = Path(run_dir)
-    if require_new:
-        directory.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            directory.mkdir()
-        except FileExistsError as exc:
-            raise RuntimeError(
-                f"Application run directory must be new: {directory}"
-            ) from exc
-    else:
-        directory.mkdir(parents=True, exist_ok=True)
+    directory.mkdir(parents=True, exist_ok=True)
     lock_path = directory / ".revise-run.lock"
     try:
         lock_path.mkdir()
