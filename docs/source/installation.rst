@@ -23,8 +23,9 @@ For development and test tools:
 
    python -m pip install -e ".[dev]"
 
-The package contains ``revise/revise.yaml``, so installed code can construct
-``REVISEPipeline()`` without a checkout-relative configuration path.
+The package contains its engine configuration and Application templates. The
+normal installed entry point is ``revise-reconstruct``; Python callers use
+``from reconstruct import run_application`` with the same YAML.
 
 Application templates
 ---------------------

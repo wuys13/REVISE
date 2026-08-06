@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
   <title id="title">REVISE current reconstruction architecture</title>
-  <desc id="desc">The public CLI and Python API feed REVISEPipeline, unified configuration and routing, a pipeline context, the fixed reconstruction lifecycle, backend strategies, and one platform SVC output.</desc>
+  <desc id="desc">The public YAML CLI and run_application API feed the shared REVISE engine, fixed reconstruction lifecycle, backend strategies, and route-specific outputs.</desc>
   <style>
     .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; }
     .primary { fill: #e0f2fe; stroke: #0369a1; }
@@ -18,7 +18,7 @@
 
   <rect x="30" y="40" width="230" height="82" rx="10" class="box primary" />
   <text x="145" y="72" text-anchor="middle" class="text">CLI / Python API</text>
-  <text x="145" y="98" text-anchor="middle" class="small">revise-reconstruct · REVISEPipeline</text>
+  <text x="145" y="98" text-anchor="middle" class="small">revise-reconstruct · run_application</text>
 
   <rect x="330" y="40" width="230" height="82" rx="10" class="box primary" />
   <text x="445" y="72" text-anchor="middle" class="text">REVISEPipeline</text>

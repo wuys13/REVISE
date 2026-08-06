@@ -25,9 +25,10 @@ Routes and result types
      - spot-level observations
      - ``sc-SVC-sr``
 
-sp-SVC and sc-SVC-sr publish ``<output-root>/<sample-name>/SVC.h5ad``.
+sp-SVC and sc-SVC-sr publish ``<output-dir>/<output-name>.h5ad``.
 Standard sc-SVC publishes separate spatial and reference-expression H5AD files
-under ``<output-root>/<sample-name>/sc-SVC/<cell-type>/``. Its
+as ``<output-dir>/<output-name>_spatial.h5ad`` and
+``<output-dir>/<output-name>_expr.h5ad``. Its
 ``provenance.json`` records both logical roles separately from the internal
 route.
 
@@ -68,9 +69,8 @@ coordinate; REVISE does not invent a sub-spot coordinate for them.
 The LR contribution proportions are converted with ``np.round`` and then
 repaired in stable order until each spot has an exact quota equal to its virtual
 cell count. The optional ``PM_on_cell.csv`` is a sample-local probability prior
-for assigning those quota slots in the current sample. Its case-sensitive path
-is ``<data-root>/PM_on_cell.csv`` in ``legacy_layout`` mode; direct mode does
-not probe this legacy sidecar, and there is no CLI path override.
+for assigning those quota slots in the current sample. Application declares it
+with the exact ``inputs.pm_on_cell.path``; when omitted, no sidecar is probed.
 Its rows must exactly equal the active virtual-cell IDs and its columns must
 exactly equal the active normalized cell-type labels. After exact set equality,
 REVISE only reindexes them into active order. Values must be numeric and finite

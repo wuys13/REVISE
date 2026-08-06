@@ -1,10 +1,10 @@
 API
 ===
 
-The stable public Python entry point is ``REVISEPipeline``. Application callers
-select one SVC data type with ``svc_type``; Benchmark callers select one
-confounding family with ``cf``. The package-owned router then resolves the
-profile and backend strategy.
+The stable public Application Python entry point is ``run_application``. It
+accepts the same YAML contract as the CLI. ``REVISEPipeline`` remains the
+engine-level interface; Benchmark callers select one confounding family with
+``cf``. The package-owned router then resolves the profile and strategy.
 
 Start with :doc:`../quickstart` for runnable examples and :doc:`../architecture`
 for the full lifecycle. This page is the reference surface for classes and
@@ -18,23 +18,27 @@ extension points.
 
 .. code-block:: python
 
-    from revise.framework import REVISEPipeline
+    from reconstruct import run_application
 
-    pipeline = REVISEPipeline()
-    svc = pipeline.run(
-        svc_type="sc-SVC",
-        runtime_overrides={"seed": 42},
-        io_overrides={
-            "data_root": "raw_data/Real_application",
-            "output_root": "output/sc_SVC_case",
-            "sample_name": "P2CRC",
-            "st_file": "Xenium.h5ad",
-            "sc_ref_file": "adata_sc_all_reanno.h5ad",
-        },
+    execution = run_application(
+        "configs/application/Xenium_T.yaml",
+        dry_run=True,
     )
 
 Pipeline
 ~~~~~~~~
+
+Application entry point
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. autosummary::
+    :toctree: generated
+    :nosignatures:
+
+    reconstruct.run_application
+    reconstruct.ApplicationExecution
+
+The engine pipeline remains available for Benchmark and advanced integrations:
 
 .. autosummary::
     :toctree: generated
@@ -44,20 +48,6 @@ Pipeline
     revise.recon.context.PipelineContext
     revise.recon.pipeline.UnifiedReconstructionPipeline
     revise.svc.SVC
-
-Facade Helpers
-~~~~~~~~~~~~~~
-
-The facade helpers are thin wrappers around ``REVISEPipeline.run`` for callers
-that want named sp-SVC or sc-SVC functions while still using the unified config
-surface.
-
-.. autosummary::
-    :toctree: generated
-    :nosignatures:
-
-    revise.recon.facade.sp_svc
-    revise.recon.facade.sc_svc
 
 Configuration
 ~~~~~~~~~~~~~
@@ -109,8 +99,9 @@ Backend Compatibility Runners
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 These classes are kept for notebooks, parity checks, and low-level debugging.
-New application and benchmark code should prefer ``REVISEPipeline`` or the
-application or benchmark entrypoints.
+New Application code should import ``run_application`` from ``reconstruct``.
+Benchmark and low-level integration code may use ``REVISEPipeline`` or the
+benchmark entrypoint.
 Direct sp-SVC and sc-SVC-sr runner callers receive the resolved
 ``local_refinement_strength`` value. Standard sc-SVC and imputation callers do
 not provide it. Assignment ``Q`` is validated at the global-assignment boundary

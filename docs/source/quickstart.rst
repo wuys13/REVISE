@@ -76,7 +76,6 @@ The complete schema contains ``application``, ``paths``, ``algorithm``,
 
    application:
      svc_type: sp-SVC
-     sample_name: sample
 
    paths:
      root_dir: .
@@ -85,14 +84,12 @@ The complete schema contains ``application``, ``paths``, ``algorithm``,
      ot_method: pot
 
    inputs:
-     mode: direct
      st:
        path: data/sample_st.h5ad
        format: h5ad
      reference:
        path: data/sc_ref.h5ad
        format: h5ad
-       patient_key: Patient
 
    global_anchoring:
      broad_column: Level1
@@ -101,28 +98,21 @@ The complete schema contains ``application``, ``paths``, ``algorithm``,
      strength: 0.2
 
    output:
-     path: output
+     dir: output
+     name: sample_sp-SVC
 
    execution:
-     action: run
      seed: 42
 
 ``paths.root_dir: .`` means the launch current working directory, not the
 application YAML directory. The other accepted form is an existing absolute
-directory. Input, data-root, and output paths must be relative children of
+directory. Input and output paths must be relative children of
 ``paths.root_dir`` and cannot escape it with ``..``.
 
-``inputs.mode: direct`` requires ``inputs.st.path`` and
-``inputs.reference.path`` and resolves ST, reference, and output as
-``<root-dir>/<st-path>``, ``<root-dir>/<reference-path>``, and
-``<root-dir>/<output-path>``. It clears the legacy locator fields before
-invoking the engine and does not probe ``PM_on_cell.csv``.
-
-``inputs.mode: legacy_layout`` uses these formulas:
-
-- ST: ``<root-dir>/<data-root>/<sample-name>_<st-file>``;
-- reference: ``<root-dir>/<data-root>/<reference-file>``;
-- optional PM prior: ``<data-root>/PM_on_cell.csv``.
+Application inputs are always exact direct paths. ST and reference resolve as
+``<root-dir>/<st-path>`` and ``<root-dir>/<reference-path>``. An optional
+sc-SVC-sr prior is also an exact ``inputs.pm_on_cell.path``; when omitted, no
+sidecar is searched and seeded random quota-slot assignment is used.
 
 The full engine configuration ``revise/revise.yaml`` is package-internal and
 authoritative. ``algorithm`` contains only optional ``ot_method``.
@@ -134,7 +124,7 @@ Template-specific fields are intentionally small:
 - ``Xenium_T.yaml``, ``Xenium_Fib.yaml``, and ``Xenium_Mono.yaml`` select
   ``sc-SVC`` and require ``local_refinement.subtype_column``. They carry the
   fixed selections ``T``, ``Fibroblast``, and ``Mono_Macro``; each selected
-  label must exist after reference patient filtering.
+  label must exist in the full reference.
 - Visium HD selects ``sp-SVC`` with ``local_refinement.strength: 0.2``.
 - Visium selects ``sc-SVC-sr`` with ``local_refinement.strength: 0.0``. Zero
   does not skip LR; it only disables assignment-posterior strengthening of the
@@ -145,11 +135,9 @@ Both H5AD inputs require non-empty ``X``, unique ``obs_names`` and unique
 coordinates in ``obsm["spatial"]``. Every route requires the configured broad
 annotation in reference ``obs``. Only standard sc-SVC requires the configured
 subtype annotation. sc-SVC-sr composition and expression allocation use the
-broad assignment and do not require a subtype column. The default ``Patient``
-column is selected by ``inputs.reference.patient_key``.
-``application.sample_name`` also selects matching reference rows when that
-column exists. If it is absent, as in the Visium reference, REVISE does not
-filter the reference.
+broad assignment and do not require a subtype column. Application does not
+filter the reference by patient; prepare the reference before running if it
+contains multiple cohorts.
 
 Run
 ---
@@ -169,8 +157,8 @@ template path:
    revise-reconstruct --config configs/application/VisiumHD.yaml --dry-run
    revise-reconstruct --config configs/application/VisiumHD.yaml
 
-The action truth table is strict: YAML ``run`` runs unless ``--dry-run`` forces
-preflight; YAML ``preflight`` remains preflight with or without the flag.
+Without ``--dry-run`` the request runs; ``--dry-run`` is the only preflight
+switch.
 Preflight may write run evidence, including ``preflight.json`` and
 ``provenance.json``, but does not publish a result H5AD.
 
@@ -187,20 +175,20 @@ Application output and evidence
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/SVC.h5ad
+   <output-dir>/<output-name>.h5ad
 
 Standard ``sc-SVC`` publishes two carriers:
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
-   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
+   <output-dir>/<output-name>_spatial.h5ad
+   <output-dir>/<output-name>_expr.h5ad
 
 Each file links to the canonical run's ``provenance.json``. Application request
 identity is namespaced under ``application_config`` as ``source_path``,
 ``source_sha256``, ``declared_root``, ``resolved_root``, ``cwd``,
-``resolved_paths``, ``declared_action``, ``effective_action``, and
-``dry_run_override``. The top-level engine configuration identity remains
+``resolved_inputs``, ``output_paths``, and ``effective_action``. The top-level
+engine configuration identity remains
 separate in ``config_path`` and ``config_hash``. There is no solver-event
 telemetry.
 

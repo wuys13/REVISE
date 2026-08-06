@@ -23,35 +23,15 @@ Root and path contract
 
 ``paths.root_dir: .`` means the launch current working directory, not the
 application YAML directory. Otherwise it must be an existing absolute
-directory. All child input, data-root, and output values must be non-empty
-relative paths beneath that root: they cannot be absolute, use ``~``, resolve
-to the root itself, or escape it with ``..``.
+directory. All child input and output values must be non-empty
+relative paths beneath that root: they cannot be absolute, use ``~``, or escape
+it with ``..``.
 
-Input modes are mutually exclusive:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Mode
-     - Required fields
-     - Resolution
-   * - ``direct``
-     - ``inputs.st.path``, ``inputs.st.format``,
-       ``inputs.reference.path``, ``inputs.reference.format``, and
-       ``inputs.reference.patient_key``
-     - ST ``<root-dir>/<st-path>``; reference
-       ``<root-dir>/<reference-path>``
-   * - ``legacy_layout``
-     - ``inputs.data_root``, ``inputs.st.file``, ``inputs.st.format``,
-       ``inputs.reference.file``, ``inputs.reference.format``, and
-       ``inputs.reference.patient_key``
-     - ST ``<root-dir>/<data-root>/<sample-name>_<st-file>``; reference
-       ``<root-dir>/<data-root>/<reference-file>``
-
-Both modes resolve ``output.path`` as ``<root-dir>/<output-path>``. Direct mode
-clears the internal data-root/file locators and does not probe
-``PM_on_cell.csv``. Legacy layout fixes the optional sc-SVC-sr prior at
-``<data-root>/PM_on_cell.csv``; it has no separate application field.
+Application has one input mode: exact direct paths. ST and reference resolve as
+``<root-dir>/<st-path>`` and ``<root-dir>/<reference-path>``. An optional
+sc-SVC-sr prior is declared as ``inputs.pm_on_cell.path``; omission means no
+sidecar search and seeded random quota-slot assignment. Benchmark keeps its
+legacy data-root semantics outside this Application schema.
 
 Route-specific fields
 ---------------------
@@ -77,10 +57,8 @@ Route-specific fields
        ``local_refinement.strength``
      - ``Visium.yaml`` with strength ``0.0``
 
-``application.sample_name`` is also the reference-selection value when the
-configured ``inputs.reference.patient_key`` column exists. If that column is
-absent, the reference is not filtered; this is the maintained Visium-template
-case.
+Application does not filter the reference by patient. Prepare the reference
+before running when it contains multiple cohorts.
 
 GA and LR OT selection
 ----------------------
@@ -121,31 +99,16 @@ The manifest records only ``route``, ``applied``, and ``strength`` under
 Action and evidence
 -------------------
 
-``execution.action`` is ``run`` or ``preflight``. The truth table is:
-
-.. list-table::
-   :header-rows: 1
-
-   * - YAML action
-     - ``--dry-run``
-     - Effective action
-   * - ``run``
-     - absent
-     - ``run``
-   * - ``run``
-     - present
-     - ``preflight``
-   * - ``preflight``
-     - absent or present
-     - ``preflight``
+The request runs by default. ``--dry-run`` (or ``dry_run=True`` in
+``run_application``) changes only the effective action to ``preflight``.
 
 Preflight may write run evidence, including ``preflight.json`` and
 ``provenance.json``, but does not publish a result H5AD.
 
 Application identity is namespaced under ``application_config`` with
 ``source_path``, ``source_sha256``, ``declared_root``, ``resolved_root``,
-``cwd``, ``resolved_paths``, ``declared_action``, ``effective_action``, and
-``dry_run_override``. Top-level ``config_path`` and ``config_hash`` remain the
+``cwd``, ``resolved_inputs``, ``output_paths``, and ``effective_action``.
+Top-level ``config_path`` and ``config_hash`` remain the
 top-level engine configuration identity and are not overwritten by the
 application YAML identity.
 
@@ -157,7 +120,6 @@ paths are not guessed.
 Output
 ------
 
-sp-SVC and sc-SVC-sr publish
-``<output-root>/<sample-name>/SVC.h5ad``. Standard sc-SVC publishes both
-``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad`` and
-``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad``.
+sp-SVC and sc-SVC-sr publish ``<output-dir>/<output-name>.h5ad``. Standard
+sc-SVC publishes ``<output-dir>/<output-name>_spatial.h5ad`` and
+``<output-dir>/<output-name>_expr.h5ad``.

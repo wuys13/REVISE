@@ -11,10 +11,8 @@ System map
 .. code-block:: text
 
    reconstruct.py / revise-reconstruct
-   `-- revise.application.cli
-       |-- revise.application.request
-       `-- revise.application.service
-           `-- REVISEPipeline._execute_run(svc_type=..., cf=None)
+       `-- reconstruct.run_application
+           `-- REVISEPipeline.run(svc_type=..., cf=None)
            |-- load and validate merged configuration
            |-- resolve and preflight route inputs
            |-- create canonical run envelope
@@ -34,12 +32,11 @@ deterministic setup, run/provenance lifecycle, and strategy dispatch. The
 unified pipeline owns stage order. Strategies change stage internals without
 creating a second lifecycle.
 
-``revise.application.cli`` owns the public argument parser and run/preflight
-dispatch. ``reconstruct.py`` is a thin source-checkout wrapper. The request
-compiler maps one application YAML to a validated request; the service maps
-that request to selector, IO, algorithm, and publication inputs, while the
-engine router alone resolves profile/task/strategy. ``revise.application.publication``
-owns the H5AD publication transaction.
+``reconstruct.py`` owns the public argument parser, YAML overrides, engine
+mapping, and H5AD output writing. The package ``revise.application.config``
+module only compiles YAML into a validated configuration. Application and
+Benchmark meet at ``REVISEPipeline.run``; the engine router resolves the
+profile/task/strategy for the selector supplied by each frontend.
 
 Configuration and routing
 -------------------------
@@ -96,18 +93,18 @@ sc-SVC-sr use:
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/SVC.h5ad
+   <output-dir>/<output-name>.h5ad
 
-Standard sc-SVC publishes ``sc_SVC_spatial.h5ad`` and ``sc_SVC_expr.h5ad``
-under a cell-type subdirectory. The manifest records each public result role
+Standard sc-SVC publishes ``<output-name>_spatial.h5ad`` and
+``<output-name>_expr.h5ad`` in the configured output directory. The manifest records each public result role
 and the internal route separately. Strategy artifacts remain in the canonical
 run but are not additional public output contracts.
 
-For both the single-file and paired 1.x outputs, the publisher writes a
-same-directory temporary H5AD, reloads it before replacement, and provides
-best-effort caught-exception rollback. The pair is not reader-atomic or
-crash-atomic. The caller must guarantee one writer per stable public target;
-violating that precondition is undefined.
+For both the single-file and paired 1.x outputs, the entrypoint writes all
+same-directory temporary H5AD files before replacing public targets. The pair
+is not reader-atomic or crash-atomic, and replacement does not provide rollback
+after a process failure. The caller must guarantee one writer per stable public
+target.
 
 ``provenance.json.local_refinement`` is the minimal route-level evidence:
 ``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,
@@ -134,8 +131,8 @@ The ``local_refinement.applied`` flag changes to true only after at least one
 route-owned local refinement unit completes successfully. It is independent of
 posterior conditioning and its strength: a completed local OT refinement with
 strength zero is still applied. Failure and interruption continue through the
-normal stage error and publication rollback; stage/run errors remain the
-authoritative failure explanation.
+normal stage error path; stage/run errors remain the authoritative failure
+explanation.
 
 Extension boundary
 ------------------

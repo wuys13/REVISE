@@ -51,18 +51,17 @@ values in ``[0, 1]``, and row sums within an absolute tolerance of ``1e-6``. It
 does not clip, normalize, or interpret this software contract as biological
 validation. PM is not a case table, cohort registry, or generic assignment
 posterior.
-Because the path is fixed at ``<data-root>/PM_on_cell.csv``, all sc-SVC-sr
-runs sharing one data root also share one prior. Use separate data roots when
-different runs require different PM matrices.
+Benchmark runs retain the historical ``<data-root>/PM_on_cell.csv`` convention.
+Application runs declare an exact ``inputs.pm_on_cell.path`` instead, so the
+logical output name and input YAML make the selected prior explicit.
 
 Publication
 -----------
 
-The 1.x single-file and paired publishers stage a same-directory temporary
-H5AD, reload it before replacement, and use best-effort caught-exception
-rollback. Paired outputs are not reader-atomic or crash-atomic. The caller must
-guarantee one writer per stable public target; violating that precondition is
-undefined.
+The 1.x single-file and paired entrypoint stages same-directory temporary H5AD
+files before replacement. Paired outputs are not reader-atomic or crash-atomic,
+and replacement does not provide rollback after a process failure. The caller
+must guarantee one writer per stable public target.
 
 Metrics
 -------

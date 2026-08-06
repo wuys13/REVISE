@@ -3,8 +3,8 @@ Reconstruction Types
 
 The installed/source interface selects one public 1.x reconstruction type
 through ``application.svc_type`` in a strict application YAML. sp-SVC and
-sc-SVC-sr publish ``SVC.h5ad``; standard sc-SVC publishes separate spatial and
-reference-expression carriers.
+sc-SVC-sr publishes ``<output-name>.h5ad``; standard sc-SVC publishes separate
+spatial and reference-expression carriers.
 
 sp-SVC
 ------
@@ -13,7 +13,7 @@ sp-SVC
 
    revise-reconstruct --config configs/application/VisiumHD.yaml
 
-The manifest records ``result.type`` as ``sp-SVC``.
+The manifest records the logical output name and ``sp-SVC`` route.
 
 sc-SVC
 ------
@@ -26,8 +26,8 @@ service validates and publishes both without merging their expression spaces:
    revise-reconstruct --config configs/application/Xenium_T.yaml
 
 The outputs are
-``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad`` and
-``<output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad``. The manifest records both logical
+``<output-dir>/<output-name>_spatial.h5ad`` and
+``<output-dir>/<output-name>_expr.h5ad``. The manifest records both logical
 roles. This default route requires TACCO. Install the ``tacco`` extra from a
 published package with ``python -m pip install "revise-svc[tacco]"`` or from a
 source checkout with ``python -m pip install ".[tacco]"``. Choose the Xenium
@@ -42,7 +42,7 @@ sc-SVC-sr
 
    revise-reconstruct --config configs/application/Visium.yaml
 
-The manifest records ``result.type`` as ``sc-SVC-sr``. Missing curated
+The manifest records the logical output name and ``sc-SVC-sr`` route. Missing curated
 spot-to-cell and PM-on-cell inputs use the quota and seeded random allocation
 described in :doc:`concepts`.
 
@@ -56,7 +56,6 @@ Inspect it rather than inferring success from directory existence.
 Paper notebook compatibility
 ----------------------------
 
-Historical notebooks may consume copies such as ``sp_SVC.h5ad``. Standard
-sc-SVC intentionally preserves the notebook-compatible
-``sc_SVC_expr.h5ad``/``sc_SVC_spatial.h5ad`` pair as its current public
-contract.
+Historical notebooks may consume copies with older names. Standard sc-SVC
+publishes the configured ``<output-name>_expr.h5ad``/``<output-name>_spatial.h5ad``
+pair as its current public contract.

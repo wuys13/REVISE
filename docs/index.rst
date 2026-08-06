@@ -30,19 +30,18 @@ sp-SVC and sc-SVC-sr publish:
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/SVC.h5ad
+   <output-dir>/<output-name>.h5ad
 
 Standard sc-SVC publishes its paired carriers:
 
 .. code-block:: text
 
-   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_spatial.h5ad
-   <output-root>/<sample-name>/sc-SVC/<cell-type>/sc_SVC_expr.h5ad
+   <output-dir>/<output-name>_spatial.h5ad
+   <output-dir>/<output-name>_expr.h5ad
 
-Each result links to the run's ``provenance.json``. Single-output runs use
-``result.type``; sc-SVC records both roles under ``results``. The manifest also
-records the application request, internal route, engine configuration, stages,
-inputs, and artifacts.
+Each result links to the run's ``provenance.json``. The manifest records the
+logical output name and role together with the application request, internal
+route, engine configuration, stages, inputs, and artifacts.
 
 .. toctree::
    :caption: Start Here
