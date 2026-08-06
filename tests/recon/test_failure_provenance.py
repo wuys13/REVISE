@@ -278,7 +278,7 @@ def test_post_allocation_failure_keeps_refinement_and_allocation_evidence(
     }
     assert "result" not in manifest
     assert not any(
-        artifact["role"] == "public_result"
+        artifact["role"] == "output:direct"
         for artifact in manifest["artifacts"]
     )
 
@@ -291,31 +291,31 @@ def test_finalize_callback_failure_marks_finalize_and_run_failed(tmp_path):
     pipeline = REVISEPipeline()
     pipeline.registry = _Registry(_FrameworkStrategy("ok"))
 
-    def fail_publication(ctx):
-        raise OSError("public result write failed")
+    def fail_output_write(ctx):
+        raise OSError("direct result write failed")
 
-    with pytest.raises(OSError, match="public result write failed"):
+    with pytest.raises(OSError, match="direct result write failed"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
                 "sample_name": "callback-case",
             },
-            finalize_callback=fail_publication,
+            finalize_callback=fail_output_write,
         )
 
     manifest = _framework_manifest(output_root, "callback-case")
     assert manifest["run"]["status"] == "failed"
     assert manifest["stages"][3]["status"] == "failed"
     assert not any(
-        artifact["role"] == "public_result"
+        artifact["role"] == "output:direct"
         and artifact["status"] == "completed"
         for artifact in manifest["artifacts"]
     )
 
 
-def test_finalize_callback_can_register_public_result_before_success(tmp_path):
+def test_finalize_callback_can_register_direct_result_before_success(tmp_path):
     from revise.framework import REVISEPipeline
 
     output_root = tmp_path / "callback-success"
@@ -323,33 +323,32 @@ def test_finalize_callback_can_register_public_result_before_success(tmp_path):
     pipeline = REVISEPipeline()
     pipeline.registry = _Registry(_FrameworkStrategy("ok"))
 
-    def publish(ctx):
-        path = output_root / "callback-case" / "public.bin"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"published")
-        ctx.record_artifact(completed_artifact("public_result", path))
+    def persist(ctx):
+        path = Path(ctx.run_dir) / "result.bin"
+        path.write_bytes(b"completed")
+        ctx.record_artifact(completed_artifact("output:direct", path))
 
     pipeline.run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(output_root),
             "sample_name": "callback-case",
         },
-        finalize_callback=publish,
+        finalize_callback=persist,
     )
 
     manifest = _framework_manifest(output_root, "callback-case")
     assert manifest["run"]["status"] == "succeeded"
     assert manifest["stages"][3]["status"] == "succeeded"
     assert any(
-        artifact["role"] == "public_result"
+        artifact["role"] == "output:direct"
         and artifact["status"] == "completed"
         for artifact in manifest["artifacts"]
     )
 
 
-def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
+def test_framework_cleans_direct_output_when_success_manifest_fails(tmp_path):
     from revise.framework import REVISEPipeline
 
     class FailSuccessfulManifest(REVISEPipeline):
@@ -358,57 +357,90 @@ def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
                 raise OSError("success manifest failed")
             return super()._write_final_metadata(ctx)
 
-    output_root = tmp_path / "publication-rollback"
-    public_path = output_root / "callback-case" / "SVC.h5ad"
-    public_path.parent.mkdir(parents=True)
-    public_path.write_bytes(b"previous-result")
+    output_root = tmp_path / "output-cleanup"
     _write_framework_inputs(tmp_path, "callback-case")
     pipeline = FailSuccessfulManifest()
     pipeline.registry = _Registry(_FrameworkStrategy("ok"))
+    created = {}
 
-    def publish(ctx):
-        previous_result = copy.deepcopy(ctx.provenance.get("result"))
-        public_path.write_bytes(b"new-result")
-        artifact = completed_artifact("public_result", public_path)
+    def persist(ctx):
+        output_path = Path(ctx.run_dir) / "SVC.h5ad"
+        output_path.write_bytes(b"new-result")
+        created["path"] = output_path
+        artifact = completed_artifact("output:direct", output_path)
         ctx.provenance["result"] = {
             "filename": "SVC.h5ad",
             "type": "sp-SVC",
         }
         ctx.record_artifact(artifact)
 
-        def commit():
-            return None
-
-        def rollback():
-            public_path.write_bytes(b"previous-result")
-            if previous_result is None:
-                ctx.provenance.pop("result", None)
-                ctx.svc.provenance.pop("result", None)
+        def cleanup():
+            output_path.unlink(missing_ok=True)
+            ctx.provenance.pop("result", None)
+            ctx.svc.provenance.pop("result", None)
             ctx.artifact_records[:] = [
                 record for record in ctx.artifact_records if record != artifact
             ]
 
-        ctx.set_pending_publication(commit=commit, rollback=rollback)
+        ctx.register_output_failure_cleanup(cleanup)
 
     with pytest.raises(OSError, match="success manifest failed"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
                 "sample_name": "callback-case",
             },
-            finalize_callback=publish,
+            finalize_callback=persist,
         )
 
     manifest = _framework_manifest(output_root, "callback-case")
-    assert public_path.read_bytes() == b"previous-result"
+    assert not created["path"].exists()
     assert manifest["run"]["status"] == "failed"
     assert "result" not in manifest
     assert not any(
-        artifact["role"] == "public_result"
+        artifact["role"] == "output:direct"
         for artifact in manifest["artifacts"]
     )
+
+
+def test_output_cleanup_error_does_not_block_failed_manifest(tmp_path):
+    from revise.framework import REVISEPipeline
+
+    class FailSuccessfulManifest(REVISEPipeline):
+        def _write_final_metadata(self, ctx):
+            if ctx.run_status == "succeeded":
+                raise OSError("success manifest failed")
+            return super()._write_final_metadata(ctx)
+
+    output_root = tmp_path / "cleanup-error"
+    _write_framework_inputs(tmp_path, "callback-case")
+    pipeline = FailSuccessfulManifest()
+    pipeline.registry = _Registry(_FrameworkStrategy("ok"))
+
+    def persist(ctx):
+        def fail_cleanup():
+            raise OSError("injected cleanup failure")
+
+        ctx.register_output_failure_cleanup(fail_cleanup)
+
+    with pytest.raises(OSError, match="success manifest failed"):
+        pipeline.run(
+            svc_type="sp-SVC",
+            io_overrides={
+                "data_root": str(tmp_path),
+                "output_root": str(output_root),
+                "sample_name": "callback-case",
+            },
+            finalize_callback=persist,
+        )
+
+    manifest = _framework_manifest(output_root, "callback-case")
+    assert manifest["run"]["status"] == "failed"
+    assert manifest["output_cleanup_errors"] == [
+        {"type": "OSError", "message": "injected cleanup failure"}
+    ]
 
 
 @pytest.mark.parametrize("selected", STAGE_NAMES)
@@ -433,7 +465,7 @@ def test_framework_each_stage_failure_keeps_terminal_manifest(
 
     with pytest.raises(InjectedTermination, match=f"failed at {selected}"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -478,7 +510,7 @@ def test_framework_retries_terminal_manifest_without_masking_science_error(
 
     with pytest.raises(RuntimeError, match="framework validation failed") as exc_info:
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -510,7 +542,7 @@ def test_persistent_terminal_write_failure_preserves_running_disk_truth(
 
     with pytest.raises(RuntimeError, match="framework validation failed") as exc_info:
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -568,7 +600,7 @@ def test_framework_sigterm_is_persisted_and_host_handler_is_restored(tmp_path):
 
     with pytest.raises(KeyboardInterrupt, match="received SIGTERM"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -608,7 +640,7 @@ def test_framework_sigterm_chains_custom_handler_after_terminal_persistence(
 
         with pytest.raises(KeyboardInterrupt, match="received SIGTERM"):
             pipeline.run(
-                profile="application_sp",
+                svc_type="sp-SVC",
                 io_overrides={
                     "data_root": str(tmp_path),
                     "output_root": str(output_root),
@@ -656,7 +688,7 @@ class Registry:
 pipeline = REVISEPipeline()
 pipeline.registry = Registry()
 pipeline.run(
-    profile="application_sp",
+    svc_type="sp-SVC",
     io_overrides={{
         "data_root": {str(tmp_path)!r},
         "output_root": {str(output_root)!r},
@@ -710,7 +742,50 @@ class _ArtifactStrategy(_FrameworkStrategy):
         )
 
 
-def test_only_completed_artifacts_are_registered_before_finalize_failure(tmp_path):
+class _SuccessfulArtifactStrategy(_FrameworkStrategy):
+    def __init__(self) -> None:
+        super().__init__("success")
+
+    def finalize_svc(self, ctx) -> SVC:
+        return SVC(
+            expr=None,
+            spatial=None,
+            svc_kind="sp",
+            artifacts={"outputs": {"result": _WrittenOutput(b"complete")}},
+        )
+
+
+def test_application_engine_sink_writes_h5ad_directly_under_run_dir(tmp_path):
+    from revise.framework import REVISEPipeline
+
+    output_root = tmp_path / "artifact-output"
+    _write_framework_inputs(tmp_path, "artifact-case")
+    pipeline = REVISEPipeline()
+    pipeline.registry = _Registry(_SuccessfulArtifactStrategy())
+
+    pipeline.run(
+        svc_type="sp-SVC",
+        io_overrides={
+            "data_root": str(tmp_path),
+            "output_root": str(output_root),
+            "sample_name": "artifact-case",
+        },
+    )
+
+    manifest_path = next((output_root / "artifact-case").rglob("provenance.json"))
+    run_dir = manifest_path.parent
+    assert (run_dir / "result.h5ad").read_bytes() == b"complete"
+    assert not (run_dir / "artifacts").exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["run"]["status"] == "succeeded"
+    assert any(
+        artifact["role"] == "output:result"
+        and artifact["path"] == str(run_dir / "result.h5ad")
+        for artifact in manifest["artifacts"]
+    )
+
+
+def test_application_engine_sink_cleans_all_h5ad_after_pair_write_failure(tmp_path):
     from revise.framework import REVISEPipeline
 
     output_root = tmp_path / "artifact-output"
@@ -720,7 +795,7 @@ def test_only_completed_artifacts_are_registered_before_finalize_failure(tmp_pat
 
     with pytest.raises(OSError, match="second artifact failed"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -730,14 +805,14 @@ def test_only_completed_artifacts_are_registered_before_finalize_failure(tmp_pat
 
     manifest = _framework_manifest(output_root, "artifact-case")
     assert manifest["run"]["status"] == "failed"
-    assert [artifact["role"] for artifact in manifest["artifacts"]] == [
-        "preflight",
-        "output:first",
-    ]
+    assert [artifact["role"] for artifact in manifest["artifacts"]] == ["preflight"]
     assert all(
         artifact["status"] == "completed" for artifact in manifest["artifacts"]
     )
     assert all(len(artifact["sha256"]) == 64 for artifact in manifest["artifacts"])
+    run_dir = next((output_root / "artifact-case").rglob("provenance.json")).parent
+    assert not list(run_dir.glob("*.h5ad"))
+    assert not (run_dir / "artifacts").exists()
 
 
 @pytest.mark.parametrize("selected", STAGE_NAMES)

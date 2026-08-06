@@ -67,10 +67,7 @@ class PipelineContext:
     _provenance_callback: Optional[Callable[["PipelineContext"], None]] = field(
         init=False, default=None, repr=False
     )
-    _publication_commit: Optional[Callable[[], None]] = field(
-        init=False, default=None, repr=False
-    )
-    _publication_rollback: Optional[Callable[[], None]] = field(
+    _output_failure_cleanup: Optional[Callable[[], None]] = field(
         init=False, default=None, repr=False
     )
     _run_started_monotonic: float = field(init=False, repr=False)
@@ -135,37 +132,31 @@ class PipelineContext:
         if self._provenance_callback is not None:
             self._provenance_callback(self)
 
-    def set_pending_publication(
-        self,
-        *,
-        commit: Callable[[], None],
-        rollback: Callable[[], None],
-    ) -> None:
-        if self._publication_commit is not None:
-            raise RuntimeError("A result publication is already pending")
-        self._publication_commit = commit
-        self._publication_rollback = rollback
+    def register_output_failure_cleanup(self, cleanup: Callable[[], None]) -> None:
+        """Register cleanup for direct outputs until the run is durable."""
+        if self._output_failure_cleanup is not None:
+            raise RuntimeError("Output failure cleanup is already registered")
+        self._output_failure_cleanup = cleanup
 
-    def commit_pending_publication(self) -> None:
-        commit = self._publication_commit
-        self._publication_commit = None
-        self._publication_rollback = None
-        if commit is None:
-            return
-        try:
-            commit()
-        except Exception:
-            self.logger.warning(
-                "[framework] could not remove the previous result backup",
-                exc_info=True,
-            )
+    def clear_output_failure_cleanup(self) -> None:
+        """Keep direct outputs after the run reaches durable success."""
+        self._output_failure_cleanup = None
 
-    def rollback_pending_publication(self) -> None:
-        rollback = self._publication_rollback
-        self._publication_commit = None
-        self._publication_rollback = None
-        if rollback is not None:
-            rollback()
+    def cleanup_failed_outputs(self) -> None:
+        """Remove direct outputs belonging to a failed run, if any."""
+        cleanup = self._output_failure_cleanup
+        self._output_failure_cleanup = None
+        if cleanup is not None:
+            try:
+                cleanup()
+            except Exception as exc:
+                self.provenance.setdefault("output_cleanup_errors", []).append(
+                    self._error_record(exc)
+                )
+                self.logger.error(
+                    "[framework] direct-output cleanup failed",
+                    exc_info=True,
+                )
 
     @contextmanager
     def _durable_transition(self):
@@ -181,6 +172,7 @@ class PipelineContext:
             "local_refinement_record": copy.deepcopy(
                 self.local_refinement_record
             ),
+            "output_failure_cleanup": self._output_failure_cleanup,
         }
         try:
             yield
@@ -197,6 +189,7 @@ class PipelineContext:
             self.artifact_records = snapshot["artifact_records"]
             self.sr_allocation_records = snapshot["sr_allocation_records"]
             self.local_refinement_record = snapshot["local_refinement_record"]
+            self._output_failure_cleanup = snapshot["output_failure_cleanup"]
             raise
 
     def _stage_record(self, name: str) -> Dict[str, Any]:
@@ -330,6 +323,10 @@ class PipelineContext:
             self.run_duration_seconds = max(
                 0.0, time.monotonic() - self._run_started_monotonic
             )
+            # Clearing the cleanup hook is part of the same durable transition
+            # as the succeeded manifest. If persistence fails or is interrupted,
+            # _durable_transition restores both the running state and the hook.
+            self.clear_output_failure_cleanup()
 
     def record_artifact(self, artifact: Dict[str, Any]) -> None:
         with self._durable_transition():

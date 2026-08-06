@@ -383,9 +383,14 @@ def test_source_and_installed_preflights_match(installed_cli):
         assert manifest["application_config"]["resolved_inputs"]["output_dir"] == str(
             (root / "output").resolve()
         )
+        run_dir = preflight_path.parent
         assert manifest["application_config"]["output_paths"]["svc"] == str(
-            (root / "output" / "sample_sp-SVC.h5ad").resolve()
+            (run_dir / "sample_sp-SVC.h5ad").resolve()
         )
+        assert payload["outputs"]["svc"] == str(
+            (run_dir / "sample_sp-SVC.h5ad").resolve()
+        )
+        assert not list((root / "output").rglob("*.h5ad"))
         runs.append((payload, manifest))
 
     assert runs[0][0]["status"] == runs[1][0]["status"] == "preflight_passed"

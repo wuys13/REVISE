@@ -1,7 +1,7 @@
 """Application YAML loading and compilation.
 
 This module deliberately stops at a validated, resolved application
-configuration.  Runtime mapping and result publication live in the source
+configuration. Runtime mapping and direct result persistence live in the source
 entrypoint so the complete user-facing flow remains visible there.
 """
 

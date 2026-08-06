@@ -207,13 +207,11 @@ class UnifiedReconstructionPipeline:
 
         benchmark_mode = str(ctx.runtime.get("mode")) == "benchmark"
         if not benchmark_mode:
-            # Canonical artifact sink for unified runs.
-            artifacts_dir = Path(ctx.run_dir) / "artifacts"
-            artifacts_dir.mkdir(parents=True, exist_ok=True)
-            for key, adata in outputs.items():
-                path = artifacts_dir / f"{key}.h5ad"
-                adata.write_h5ad(path)
-                ctx.record_artifact(completed_artifact(f"output:{key}", path))
+            if ctx.compatibility_mode:
+                raise RuntimeError(
+                    "Application runs do not support compatibility output aliases"
+                )
+            self._persist_direct_application_outputs(ctx, outputs)
         elif not ctx.compatibility_mode:
             for key, adata in outputs.items():
                 path = Path(ctx.run_dir) / f"{key}.h5ad"
@@ -222,6 +220,82 @@ class UnifiedReconstructionPipeline:
 
         if ctx.compatibility_mode:
             self._emit_compatibility_files(ctx, outputs)
+
+    @staticmethod
+    def _persist_direct_application_outputs(ctx, outputs: Dict[str, Any]) -> None:
+        """Keep engine-level Application artifacts in the one run directory."""
+        invalid_keys = [
+            key
+            for key in outputs
+            if not isinstance(key, str)
+            or not key
+            or key in {".", ".."}
+            or "/" in key
+            or "\\" in key
+        ]
+        if invalid_keys:
+            raise RuntimeError(
+                f"Application output keys must be safe filename stems: {invalid_keys}"
+            )
+
+        run_dir = Path(ctx.run_dir).resolve()
+        targets = {
+            key: (run_dir / f"{key}.h5ad").resolve() for key in outputs
+        }
+        outside = [str(path) for path in targets.values() if path.parent != run_dir]
+        if outside:
+            raise RuntimeError(
+                "Application engine outputs must be direct children of the run "
+                f"directory: run_dir={run_dir}; invalid={outside}"
+            )
+
+        created: list[Path] = []
+        artifact_identities = {
+            (f"output:{key}", str(path)) for key, path in targets.items()
+        }
+
+        def cleanup() -> None:
+            cleanup_errors = []
+            for path in created:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    cleanup_errors.append(
+                        {
+                            "path": str(path),
+                            "type": type(exc).__name__,
+                            "message": str(exc),
+                        }
+                    )
+            ctx.artifact_records[:] = [
+                record
+                for record in ctx.artifact_records
+                if (record.get("role"), record.get("path"))
+                not in artifact_identities
+            ]
+            if cleanup_errors:
+                ctx.provenance.setdefault("output_cleanup_errors", []).extend(
+                    cleanup_errors
+                )
+                ctx.logger.error(
+                    "[pipeline] failed to clean %d direct output(s)",
+                    len(cleanup_errors),
+                )
+
+        ctx.register_output_failure_cleanup(cleanup)
+        try:
+            for key, adata in outputs.items():
+                path = targets[key]
+                if path.exists():
+                    raise FileExistsError(
+                        f"Refusing to overwrite an existing run output: {path}"
+                    )
+                created.append(path)
+                adata.write_h5ad(path)
+                ctx.record_artifact(completed_artifact(f"output:{key}", path))
+        except BaseException:
+            ctx.cleanup_failed_outputs()
+            raise
 
     def _emit_compatibility_files(self, ctx, outputs: Dict[str, Any]) -> None:
         compatibility_map = {

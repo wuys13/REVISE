@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stdout
+import copy
 from dataclasses import dataclass
 import json
-import os
 from pathlib import Path
 import sys
-from tempfile import NamedTemporaryFile
 from typing import Any, Mapping
 
 from revise._version import __version__
@@ -27,6 +26,7 @@ from revise.application.config import (
     load_application_yaml,
 )
 from revise.framework import REVISEPipeline
+from revise.utils import build_run_dir, completed_artifact
 
 
 @dataclass(frozen=True)
@@ -183,16 +183,22 @@ def _apply_overrides(document: dict[str, Any], values: Mapping[str, Any]) -> dic
     return overrides
 
 
-def _output_paths(config: ApplicationConfig) -> dict[str, Path]:
+def _output_paths(
+    config: ApplicationConfig,
+    run_dir: str | Path,
+) -> dict[str, Path]:
+    output_dir = Path(run_dir)
     if config.svc_type == "sc-SVC":
         return {
-            "spatial": config.output_dir / f"{config.output_name}_spatial.h5ad",
-            "expression": config.output_dir / f"{config.output_name}_expr.h5ad",
+            "spatial": output_dir / f"{config.output_name}_spatial.h5ad",
+            "expression": output_dir / f"{config.output_name}_expr.h5ad",
         }
-    return {"svc": config.output_dir / f"{config.output_name}.h5ad"}
+    return {"svc": output_dir / f"{config.output_name}.h5ad"}
 
 
-def _engine_overrides(config: ApplicationConfig) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+def _engine_overrides(
+    config: ApplicationConfig,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     runtime = {"seed": config.seed} if config.seed is not None else {}
     io = {
         "st_path": str(config.st_path),
@@ -262,8 +268,35 @@ def _pipeline_evidence(svc) -> dict[str, Any]:
     return evidence
 
 
-def _write_outputs(config: ApplicationConfig, output_paths: Mapping[str, Path], ctx) -> dict[str, Any]:
-    """Write all artifacts before replacing any public target."""
+def _cleanup_output_files(paths: list[Path], ctx) -> None:
+    cleanup_errors = []
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            cleanup_errors.append(
+                {
+                    "path": str(path),
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                }
+            )
+    if cleanup_errors:
+        ctx.provenance.setdefault("output_cleanup_errors", []).extend(
+            cleanup_errors
+        )
+        ctx.logger.error(
+            "[framework] failed to clean %d direct output(s)",
+            len(cleanup_errors),
+        )
+
+
+def _write_outputs(
+    config: ApplicationConfig,
+    output_paths: Mapping[str, Path],
+    ctx,
+) -> dict[str, Any]:
+    """Write final artifacts directly into this run's only output directory."""
     outputs = dict(ctx.svc.artifacts.get("outputs", {})) if ctx.svc else {}
     required = {
         "sp-SVC": {"svc": "sp_svc"},
@@ -272,11 +305,24 @@ def _write_outputs(config: ApplicationConfig, output_paths: Mapping[str, Path], 
     }[config.svc_type]
     missing = [key for key in required.values() if key not in outputs]
     if missing:
-        raise RuntimeError(f"{config.svc_type} did not produce required output(s): {', '.join(missing)}")
+        raise RuntimeError(
+            f"{config.svc_type} did not produce required output(s): "
+            f"{', '.join(missing)}"
+        )
 
-    config.output_dir.mkdir(parents=True, exist_ok=True)
-    temporary: list[tuple[Path, Path]] = []
+    run_dir = Path(ctx.run_dir).resolve()
+    targets = {role: Path(path).resolve() for role, path in output_paths.items()}
+    outside = [str(path) for path in targets.values() if path.parent != run_dir]
+    if outside:
+        raise RuntimeError(
+            "Application outputs must be direct children of the run directory: "
+            f"run_dir={run_dir}; invalid={outside}"
+        )
+    if len(set(targets.values())) != len(targets):
+        raise RuntimeError("Application output roles must use distinct file paths")
+
     written: dict[str, Any] = {}
+    created: list[Path] = []
     metadata = {
         "svc_type": config.svc_type,
         "output_name": config.output_name,
@@ -287,25 +333,80 @@ def _write_outputs(config: ApplicationConfig, output_paths: Mapping[str, Path], 
     }
     try:
         for role, artifact_key in required.items():
-            target = output_paths[role]
+            target = targets[role]
+            if target.exists():
+                raise FileExistsError(
+                    f"Refusing to overwrite an existing run output: {target}"
+                )
+            created.append(target)
             adata = outputs[artifact_key].copy()
             adata.uns["revise_reconstruction"] = dict(metadata, output_role=role)
-            with NamedTemporaryFile(
-                dir=config.output_dir,
-                prefix=f".{target.name}.",
-                suffix=".tmp.h5ad",
-                delete=False,
-            ) as handle:
-                temporary_path = Path(handle.name)
-            temporary.append((temporary_path, target))
-            adata.write_h5ad(temporary_path)
+            adata.write_h5ad(target)
             written[role] = adata
-        for temporary_path, target in temporary:
-            os.replace(temporary_path, target)
-    finally:
-        for temporary_path, _ in temporary:
-            temporary_path.unlink(missing_ok=True)
+    except BaseException:
+        _cleanup_output_files(created, ctx)
+        raise
     return written
+
+
+def _persist_run_outputs(
+    config: ApplicationConfig,
+    output_paths: Mapping[str, Path],
+    ctx,
+    returned_outputs: dict[str, Any],
+) -> None:
+    """Attach direct-write outputs to the run lifecycle for failure cleanup."""
+    had_results = "results" in ctx.provenance
+    previous_results = copy.deepcopy(ctx.provenance.get("results"))
+    svc_had_results = bool(ctx.svc and "results" in ctx.svc.provenance)
+    previous_svc_results = (
+        copy.deepcopy(ctx.svc.provenance.get("results")) if ctx.svc else None
+    )
+    created: list[Path] = []
+    output_artifacts = {
+        (f"output:{role}", str(Path(path)))
+        for role, path in output_paths.items()
+    }
+
+    def cleanup() -> None:
+        _cleanup_output_files(created, ctx)
+        returned_outputs.clear()
+        ctx.artifact_records[:] = [
+            record
+            for record in ctx.artifact_records
+            if (record.get("role"), record.get("path")) not in output_artifacts
+        ]
+        if had_results:
+            ctx.provenance["results"] = previous_results
+        else:
+            ctx.provenance.pop("results", None)
+        if ctx.svc is not None:
+            if svc_had_results:
+                ctx.svc.provenance["results"] = previous_svc_results
+            else:
+                ctx.svc.provenance.pop("results", None)
+
+    ctx.register_output_failure_cleanup(cleanup)
+    try:
+        written = _write_outputs(config, output_paths, ctx)
+        created.extend(Path(path) for path in output_paths.values())
+        results = {
+            role: {
+                "path": str(path),
+                "filename": Path(path).name,
+                "svc_type": config.svc_type,
+            }
+            for role, path in output_paths.items()
+        }
+        ctx.provenance["results"] = results
+        if ctx.svc is not None:
+            ctx.svc.provenance["results"] = copy.deepcopy(results)
+        for role, path in output_paths.items():
+            ctx.record_artifact(completed_artifact(f"output:{role}", path))
+        returned_outputs.update(written)
+    except BaseException:
+        ctx.cleanup_failed_outputs()
+        raise
 
 
 def run_application(
@@ -352,19 +453,26 @@ def run_application(
         },
     )
     effective = compile_application_config(document, source=source)
-    output_paths = _output_paths(effective)
+    runtime, io, algorithm = _engine_overrides(effective)
+    run_dir = build_run_dir(
+        output_root=str(effective.output_dir),
+        sample_name=effective.output_name,
+        route_key=f"application:{effective.svc_type}",
+        io_cfg=io,
+        mode="application",
+    ).resolve()
+    output_paths = _output_paths(effective, run_dir)
     metadata = _application_metadata(
         effective,
         cli_overrides=cli_overrides,
         output_paths=output_paths,
         dry_run=dry_run,
     )
-    runtime, io, algorithm = _engine_overrides(effective)
-    published: dict[str, Any] = {}
+    returned_outputs: dict[str, Any] = {}
 
     def finalize(ctx):
         if not dry_run:
-            published.update(_write_outputs(effective, output_paths, ctx))
+            _persist_run_outputs(effective, output_paths, ctx, returned_outputs)
 
     svc = REVISEPipeline().run(
         svc_type=effective.svc_type,
@@ -375,6 +483,7 @@ def run_application(
         dry_run=dry_run,
         finalize_callback=finalize,
         application_config_metadata=metadata,
+        run_directory=run_dir,
     )
     pipeline = _pipeline_evidence(svc)
     if dry_run:
@@ -391,7 +500,7 @@ def run_application(
         svc_type=effective.svc_type,
         output_paths=output_paths,
         pipeline=pipeline,
-        results=published,
+        results=returned_outputs,
         application_config=metadata,
     )
 

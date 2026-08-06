@@ -29,6 +29,8 @@ def test_output_expansion_is_owned_by_reconstruct():
         output_dir=Path("output"),
         output_name="sample_sc-SVC",
     )
-    paths = reconstruct._output_paths(config)
+    run_dir = config.output_dir / config.output_name / "application__sc-SVC" / "run-1"
+    paths = reconstruct._output_paths(config, run_dir)
+    assert all(path.parent == run_dir for path in paths.values())
     assert paths["spatial"].name == "sample_sc-SVC_spatial.h5ad"
     assert paths["expression"].name == "sample_sc-SVC_expr.h5ad"

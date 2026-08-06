@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 from revise.backend.contracts import EvaluationPolicy
@@ -120,20 +119,8 @@ class ModeValidationPolicy(InputValidationPolicy):
         )
         run_dir = Path(ctx.run_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
-        publication_dir = (
-            Path(output_root)
-            if mode == "application"
-            else Path(output_root) / str(sample_name)
-        )
-        publication_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            dir=publication_dir,
-            prefix=".preflight-write-",
-        ):
-            pass
         report["output"] = {
             "run_dir": str(run_dir),
-            "publication_dir": str(publication_dir),
             "writable": True,
         }
         report_path = run_dir / "preflight.json"

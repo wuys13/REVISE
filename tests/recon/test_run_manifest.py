@@ -261,3 +261,35 @@ def test_application_manifest_and_log_share_each_unique_run_directory(tmp_path):
     assert {path for path in route_dir.iterdir()} == {
         manifest.parent for manifest in manifests
     }
+
+
+def test_application_explicit_run_directory_cannot_reuse_terminal_leaf(tmp_path):
+    output_root = tmp_path / "application-output"
+    _write_application_inputs(tmp_path, "sample")
+    run_dir = (
+        output_root
+        / "sample"
+        / "application__sp-SVC"
+        / "existing-terminal-run"
+    )
+    manifest_path = run_dir / "provenance.json"
+    old_manifest = {"run": {"status": "succeeded"}, "sentinel": "old-run"}
+    provenance.write_json(manifest_path, old_manifest)
+    old_output = run_dir / "sample.h5ad"
+    old_output.write_bytes(b"old-result")
+
+    with pytest.raises(RuntimeError, match="run directory must be new"):
+        REVISEPipeline().run(
+            svc_type="sp-SVC",
+            io_overrides={
+                "data_root": str(tmp_path),
+                "output_root": str(output_root),
+                "sample_name": "sample",
+            },
+            run_directory=run_dir,
+            dry_run=True,
+        )
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8")) == old_manifest
+    assert old_output.read_bytes() == b"old-result"
+    assert not (run_dir / ".revise-run.lock").exists()
