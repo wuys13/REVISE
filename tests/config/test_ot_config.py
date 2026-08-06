@@ -123,6 +123,93 @@ def _write_config(tmp_path, raw):
     return path
 
 
+@pytest.mark.parametrize(
+    ("namespace", "selector", "field", "actual"),
+    [
+        ("application", "sp-SVC", "task", "sc_svc"),
+        ("application", "sp-SVC", "svc_kind", "sc"),
+        (
+            "application",
+            "sp-SVC",
+            "strategy",
+            "ScSvcApplicationStrategy",
+        ),
+        ("application", "sp-SVC", "profile", "application_sc"),
+        ("benchmark", "segmentation", "profile", "benchmark_bin2cell"),
+    ],
+)
+def test_config_load_rejects_incompatible_builtin_route_combination(
+    tmp_path,
+    namespace,
+    selector,
+    field,
+    actual,
+):
+    raw = copy.deepcopy(_raw_config())
+    raw["router"][namespace][selector][field] = actual
+
+    with pytest.raises(
+        ConfigError,
+        match=(
+            rf"Incompatible route combination in router\.{namespace}\."
+            rf"{selector}.*{field}: expected=.*actual={actual!r}"
+        ),
+    ):
+        load_raw_config(_write_config(tmp_path, raw))
+
+
+def test_config_load_rejects_route_without_a_builtin_contract(tmp_path):
+    raw = copy.deepcopy(_raw_config())
+    raw["router"]["application"]["custom-SVC"] = copy.deepcopy(
+        raw["router"]["application"]["sp-SVC"]
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match=r"Unsupported route selector.*custom-SVC.*available=",
+    ):
+        load_raw_config(_write_config(tmp_path, raw))
+
+
+def test_resolved_runtime_rejects_incompatible_route_combination():
+    raw = _raw_config()
+    runtime = _runtime_for_profile(raw, "application_sp")
+    runtime["task"] = "sc_svc"
+
+    with pytest.raises(
+        ConfigError,
+        match=(
+            r"Incompatible route combination in resolved\.runtime.*"
+            r"task: expected='sp_svc', actual='sc_svc'"
+        ),
+    ):
+        merge_unified_config(
+            raw_config=raw,
+            profile="application_sp",
+            runtime_overrides=runtime,
+            io_overrides={},
+            algorithm_overrides={},
+        )
+
+
+def test_application_runtime_rejects_compatibility_output_aliases():
+    raw = _raw_config()
+    runtime = _runtime_for_profile(raw, "application_sp")
+    runtime["compatibility_mode"] = True
+
+    with pytest.raises(
+        ConfigError,
+        match="Application runtime does not support compatibility_mode",
+    ):
+        merge_unified_config(
+            raw_config=raw,
+            profile="application_sp",
+            runtime_overrides=runtime,
+            io_overrides={},
+            algorithm_overrides={},
+        )
+
+
 def test_application_sc_profile_uses_configured_notebook_tacco_defaults():
     merged = _merge(_raw_config(), "application_sc")
 
@@ -164,10 +251,11 @@ def test_application_sc_tacco_annotation_parameters_are_locked():
 
 
 def test_structured_algorithm_overrides_merge_only_algorithm_sections():
+    raw = _raw_config()
     merged = merge_unified_config(
-        raw_config=_raw_config(),
+        raw_config=raw,
         profile="application_sp",
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, "application_sp"),
         io_overrides={},
         algorithm_overrides={
             "graph": {"method": "pca", "n_neighbors": 7},
@@ -208,19 +296,22 @@ def test_runtime_none_is_an_explicit_override():
     assert merged["runtime"]["seed"] is None
 
 
-def test_non_seed_runtime_none_remains_omitted():
-    merged = merge_unified_config(
-        raw_config=_raw_config(),
-        profile="application_sp",
-        runtime_overrides={
-            **_runtime_for_profile(_raw_config(), "application_sp"),
-            "application_route": None,
-        },
-        io_overrides={},
-        algorithm_overrides={},
-    )
-
-    assert merged["runtime"]["application_route"] == "sp-SVC"
+def test_non_seed_runtime_none_fails_closed():
+    raw = _raw_config()
+    with pytest.raises(
+        ConfigError,
+        match="Application runtime requires application_route",
+    ):
+        merge_unified_config(
+            raw_config=raw,
+            profile="application_sp",
+            runtime_overrides={
+                **_runtime_for_profile(raw, "application_sp"),
+                "application_route": None,
+            },
+            io_overrides={},
+            algorithm_overrides={},
+        )
 
 
 def test_pipeline_public_api_accepts_structured_application_overrides():
@@ -409,7 +500,7 @@ def test_adapter_projects_only_local_refinement_strength(adapters):
     [
         ("defaults.annotate", "annotate.mode -> ot.ga.solver"),
         ("profiles.application_sp.local_ot", "local_ot.method -> ot.lr.solver"),
-        ("router.sp_svc.bin2cell.ot_solver", "ot_solver -> ot.ga.solver + ot.lr.solver"),
+        ("router.sp_svc.bin2cell.ot_solver", r"Unknown keys in router: \['sp_svc'\]"),
         ("defaults.runtime.ot_solver", "ot_solver -> ot.ga.solver + ot.lr.solver"),
         ("defaults.ot.global", "ot.global -> ot.ga.pot"),
         ("profiles.application_sp.ot.local", "ot.local -> ot.lr.pot"),
@@ -511,6 +602,19 @@ def test_noop_plugin_layer_is_removed():
     assert not hasattr(registry, "PluginRegistry")
     assert not hasattr(registry, "build_default_plugin_registry")
     assert not (CONFIG_PATH.parent / "backend" / "plugins.py").exists()
+
+
+def test_builtin_route_contract_strategies_match_default_registry():
+    from revise.backend.registry import build_default_registry
+    from revise.config.loader import BUILTIN_ROUTE_CONTRACTS
+
+    declared = {
+        route["strategy"]
+        for routes in BUILTIN_ROUTE_CONTRACTS.values()
+        for route in routes.values()
+    }
+
+    assert declared == set(build_default_registry().available())
 
 
 def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
@@ -638,9 +742,7 @@ def test_application_metadata_cannot_override_canonical_provenance(tmp_path):
     REVISEPipeline()._write_final_metadata(ctx)
 
     assert svc.provenance["run"] == {"status": "failed"}
-    assert svc.provenance["application_config"] == {
-        "run": {"status": "succeeded"}
-    }
+    assert svc.provenance["application_config"] == {}
 
 
 def test_application_sc_sr_config_fields_accept_production_mapping(adapters):
@@ -864,6 +966,7 @@ def test_six_strategies_put_ot_mapping_on_actual_runner_config(
         merged_config=merged,
         io=merged["io"],
         columns=merged["columns"],
+        runtime=merged["runtime"],
         route_key=(
             f"{merged['runtime']['mode']}:"
             f"{merged['runtime'].get('application_route') or merged['runtime'].get('confounding')}"

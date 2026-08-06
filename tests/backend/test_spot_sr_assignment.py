@@ -20,6 +20,26 @@ from revise.config import load_raw_config, merge_unified_config
 CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
 
 
+def _runtime_for_profile(raw, profile, **overrides):
+    for namespace, routes in raw["router"].items():
+        for selector, route in routes.items():
+            if route["profile"] != profile:
+                continue
+            selector_key = (
+                "application_route" if namespace == "application" else "confounding"
+            )
+            runtime = {
+                "mode": namespace,
+                selector_key: selector,
+                "task": route["task"],
+                "svc_kind": route["svc_kind"],
+                "strategy": route["strategy"],
+            }
+            runtime.update(overrides)
+            return runtime
+    raise AssertionError(f"No test route uses profile {profile!r}")
+
+
 def _kernel(*, pm=None, seed=42, cell_type_col="Level1"):
     config = SimpleNamespace(
         pm_on_cell=pm,
@@ -399,14 +419,13 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     merged = merge_unified_config(
         raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, profile, seed=731),
         io_overrides={},
         algorithm_overrides={},
     )
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path)
     runtime = dict(merged["runtime"])
-    runtime["seed"] = 731
 
     runner_stub = types.ModuleType(f"revise.backend.runners.{runner_module}")
     setattr(runner_stub, runner_class, object)
@@ -430,7 +449,11 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         io=merged["io"],
         columns=merged["columns"],
         runtime=runtime,
-        route_key=f"{runtime['platform']}:{runtime['confounding']}",
+        route_key=(
+            f"{runtime['mode']}:{runtime['application_route']}"
+            if runtime["mode"] == "application"
+            else f"{runtime['mode']}:{runtime['confounding']}"
+        ),
         run_dir=tmp_path,
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=False,
@@ -453,7 +476,7 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
     merged = merge_unified_config(
         raw_config=raw,
         profile="benchmark_sr_batch",
-        runtime_overrides={"seed": 17},
+        runtime_overrides=_runtime_for_profile(raw, "benchmark_sr_batch", seed=17),
         io_overrides={"sample_size": 1},
         algorithm_overrides={},
     )
@@ -518,7 +541,7 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sim2real:spot_size",
+        route_key="benchmark:batch_effect",
         run_dir=tmp_path,
         logger=logging.getLogger("test-sr-subsampled-pm"),
         compatibility_mode=False,
@@ -542,7 +565,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
     merged = merge_unified_config(
         raw_config=raw,
         profile="benchmark_sr_batch",
-        runtime_overrides={"seed": None},
+        runtime_overrides=_runtime_for_profile(raw, "benchmark_sr_batch", seed=None),
         io_overrides={},
         algorithm_overrides={},
     )
@@ -575,7 +598,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sim2real:batch_effect",
+        route_key="benchmark:batch_effect",
         run_dir=tmp_path,
         logger=logging.getLogger("test-process-scope-sr-seed"),
         compatibility_mode=True,

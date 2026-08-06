@@ -34,6 +34,26 @@ ISOLATED_MODULE_NAMES = (
 _MISSING = object()
 
 
+def _runtime_for_profile(raw, profile, **overrides):
+    for namespace, routes in raw["router"].items():
+        for selector, route in routes.items():
+            if route["profile"] != profile:
+                continue
+            selector_key = (
+                "application_route" if namespace == "application" else "confounding"
+            )
+            runtime = {
+                "mode": namespace,
+                selector_key: selector,
+                "task": route["task"],
+                "svc_kind": route["svc_kind"],
+                "strategy": route["strategy"],
+            }
+            runtime.update(overrides)
+            return runtime
+    raise AssertionError(f"No test route uses profile {profile!r}")
+
+
 def _snapshot_modules(module_names):
     modules = {
         module_name: sys.modules.get(module_name, _MISSING)
@@ -160,10 +180,11 @@ def sst_adatas():
 def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
     adapters, monkeypatch, tmp_path, sst_adatas
 ):
+    raw = load_raw_config(CONFIG_PATH)
     merged = merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
+        raw_config=raw,
         profile="application_sc_sr",
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, "application_sc_sr"),
         io_overrides={},
         algorithm_overrides={},
     )
@@ -195,7 +216,7 @@ def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sc_svc_sr:spot_size",
+        route_key="application:sc-SVC-sr",
         run_dir=tmp_path,
         logger=logging.getLogger("test-spot-sr-min-cells"),
         compatibility_mode=False,
@@ -211,10 +232,11 @@ def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
 def test_application_spot_sr_prepare_context_honors_configured_annotation_columns(
     adapters, monkeypatch, tmp_path
 ):
+    raw = load_raw_config(CONFIG_PATH)
     merged = merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
+        raw_config=raw,
         profile="application_sc_sr",
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, "application_sc_sr"),
         io_overrides={},
         algorithm_overrides={
             "columns": {
@@ -272,7 +294,7 @@ def test_application_spot_sr_prepare_context_honors_configured_annotation_column
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sc_svc_sr:spot_size",
+        route_key="application:sc-SVC-sr",
         run_dir=tmp_path,
         logger=logging.getLogger("test-spot-sr-custom-columns"),
         compatibility_mode=False,
@@ -287,10 +309,11 @@ def test_application_spot_sr_prepare_context_honors_configured_annotation_column
 def test_application_spot_sr_validates_overlap_after_gene_filtering(
     adapters, monkeypatch, tmp_path
 ):
+    raw = load_raw_config(CONFIG_PATH)
     merged = merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
+        raw_config=raw,
         profile="application_sc_sr",
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, "application_sc_sr"),
         io_overrides={},
         algorithm_overrides={},
     )
@@ -341,7 +364,7 @@ def test_application_spot_sr_validates_overlap_after_gene_filtering(
         io=merged["io"],
         columns=merged["columns"],
         runtime=merged["runtime"],
-        route_key="sc_svc_sr:spot_size",
+        route_key="application:sc-SVC-sr",
         run_dir=tmp_path,
         logger=logging.getLogger("test-spot-sr-post-filter-overlap"),
         compatibility_mode=False,
