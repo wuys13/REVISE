@@ -57,7 +57,7 @@ environment variables documented in their modules and CI jobs.
 | `recon/test_run_manifest.py` | Framework/provenance run envelope | Unique run directories, locks, and terminal manifests | Run-lifecycle edits | Local filesystem only |
 | `recon/test_runtime_validation_errors.py` | Framework validation policies | Error typing and command failure semantics | Validation edits | Synthetic invalid requests |
 | `repository/test_documentation_contract.py` | README/docs/package metadata | Public claims match code and tests | Documentation/interface edits | Claim consistency only |
-| `repository/test_entrypoint_boundaries.py` | `reconstruct.py`, `revise.application.cli`, `reproduce/benchmark_main.*`, and `revise.benchmark` | The root is a thin reconstruction wrapper while the package owns the canonical CLI | Entrypoint or package-boundary changes | Entrypoint/path behavior only |
+| `repository/test_entrypoint_boundaries.py` | `reconstruct.py`, `reproduce/benchmark_main.*`, and `revise.benchmark` | The root owns the Application CLI and both frontends meet at the shared engine | Entrypoint or package-boundary changes | Entrypoint/path behavior only |
 | `repository/test_import_side_effects.py` | Package imports and optional analysis imports | Host environment stays unchanged; lazy optional imports | Import/dependency edits | Subprocess import behavior |
 | `repository/test_optional_dependencies.py` | `pyproject.toml` extras and optional imports | Missing extras fail with install guidance | Dependency edits | Dependency boundary only |
 | `repository/test_repository_layout.py` | Repository root/package ownership | Removed maintenance surfaces and package-owned utilities | Repository cleanup | File/layout assertions |

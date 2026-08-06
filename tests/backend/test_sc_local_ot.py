@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -443,18 +444,9 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
     "select_ct",
     [None, "", " ", "all", "*", "__all__", "all_cell_types"],
 )
-@pytest.mark.parametrize(
-    ("strategy_name", "hyper_enabled"),
-    [
-        ("ScSvcApplicationStrategy", False),
-        ("ScSvcHyperApplicationStrategy", True),
-    ],
-)
 def test_ist_adapter_requires_one_concrete_cell_type(
     monkeypatch,
     select_ct,
-    strategy_name,
-    hyper_enabled,
 ):
     _import_sc_svc(monkeypatch)
     from revise.backend import adapters
@@ -464,10 +456,6 @@ def test_ist_adapter_requires_one_concrete_cell_type(
             "sc": {
                 "select_ct": select_ct,
                 "resolutions": [0.5],
-                "hyperresolution": {
-                    "enabled": hyper_enabled,
-                    "resolutions": [0.5],
-                },
             }
         },
         columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
@@ -480,7 +468,7 @@ def test_ist_adapter_requires_one_concrete_cell_type(
         logger=logging.getLogger("test-concrete-sc-selection"),
     )
 
-    strategy = getattr(adapters, strategy_name)()
+    strategy = adapters.ScSvcApplicationStrategy()
     with pytest.raises(
         ValueError,
         match="route.select_cell_type must name one concrete broad cell type",
@@ -488,17 +476,8 @@ def test_ist_adapter_requires_one_concrete_cell_type(
         strategy.solve_ot(ctx)
 
 
-@pytest.mark.parametrize(
-    ("strategy_name", "hyper_enabled"),
-    [
-        ("ScSvcApplicationStrategy", False),
-        ("ScSvcHyperApplicationStrategy", True),
-    ],
-)
 def test_ist_adapter_refines_only_the_selected_cell_type(
     monkeypatch,
-    strategy_name,
-    hyper_enabled,
 ):
     _import_sc_svc(monkeypatch)
     from revise.backend import adapters
@@ -518,11 +497,6 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
                 "select_ct": "T",
                 "resolutions": [0.5],
                 "select_resolution": 0.5,
-                "hyperresolution": {
-                    "enabled": hyper_enabled,
-                    "resolutions": [0.5],
-                    "select_resolution": 0.5,
-                },
             }
         },
         columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
@@ -532,7 +506,7 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
         record_local_refinement=applied.append,
     )
 
-    getattr(adapters, strategy_name)().solve_ot(ctx)
+    adapters.ScSvcApplicationStrategy().solve_ot(ctx)
 
     assert calls == [("T", "Level2", [0.5], 0.5)]
     assert applied == [True]
@@ -545,7 +519,7 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
 def test_application_ot_method_switches_global_and_local_together(method):
-    from revise.application import service
+    from reconstruct import _engine_overrides
 
     request = SimpleNamespace(
         svc_type="sc-SVC",
@@ -556,7 +530,24 @@ def test_application_ot_method_switches_global_and_local_together(method):
         subtype_column="Level2",
     )
 
-    overrides = service._build_algorithm_overrides(request)
+    overrides = _engine_overrides(
+        SimpleNamespace(
+            ot_method=request.ot_method,
+            broad_column=request.broad_column,
+            subtype_column=request.subtype_column,
+            select_cell_type=request.select_cell_type,
+            local_refinement_strength=request.local_refinement_strength,
+            seed=None,
+            st_path=Path("st"),
+            reference_path=Path("ref"),
+            pm_on_cell_path=None,
+            output_dir=Path("out"),
+            output_name="sample",
+            st_format="h5ad",
+            spatialdata_table=None,
+            spatialdata_element=None,
+        )
+    )[2]
 
     assert overrides["ot"]["ga"]["solver"] == method
     assert overrides["ot"]["lr"]["solver"] == method

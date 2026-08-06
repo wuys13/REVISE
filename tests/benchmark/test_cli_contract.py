@@ -82,7 +82,7 @@ def test_run_case_uses_only_the_benchmark_selector():
     captured = {}
 
     class Pipeline:
-        def _execute_run(self, **kwargs):
+        def run(self, **kwargs):
             captured.update(kwargs)
             return type(
                 "SVC",

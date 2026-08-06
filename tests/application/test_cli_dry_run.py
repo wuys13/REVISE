@@ -41,22 +41,20 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
         yaml.safe_dump(
             {
                 "schema_version": 1,
-                "application": {"svc_type": "sp-SVC", "sample_name": "sample"},
+                "application": {"svc_type": "sp-SVC"},
                 "paths": {"root_dir": str(tmp_path)},
                 "algorithm": {},
                 "inputs": {
-                    "mode": "direct",
                     "st": {"path": "sample_st.h5ad", "format": "h5ad"},
                     "reference": {
                         "path": "sc.h5ad",
                         "format": "h5ad",
-                        "patient_key": "Patient",
                     },
                 },
                 "global_anchoring": {"broad_column": "Level1"},
                 "local_refinement": {"strength": 0.2},
-                "output": {"path": "output"},
-                "execution": {"action": "run", "seed": 42},
+                "output": {"dir": "output", "name": "sample_sp-SVC"},
+                "execution": {"seed": 42},
             },
             sort_keys=False,
         ),
@@ -79,11 +77,14 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["status"] == "ready"
+    assert payload["status"] == "preflight_passed"
     assert payload["svc_type"] == "sp-SVC"
     assert payload["pipeline"]["route"]["application_route"] == "sp-SVC"
     assert "confounding" not in payload["pipeline"]["route"]
     assert "platform" not in payload
+    assert payload["application_config"]["resolved_inputs"]["st"] == str(
+        (tmp_path / "sample_st.h5ad").resolve()
+    )
     assert Path(payload["preflight"]).is_file()
     assert not list(output_root.rglob("*.h5ad"))
     provenance = json.loads(
@@ -95,12 +96,15 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
         "declared_root": str(tmp_path),
         "resolved_root": str(tmp_path.resolve()),
         "cwd": str(ROOT.resolve()),
-        "resolved_paths": {
+        "resolved_inputs": {
             "st": str((tmp_path / "sample_st.h5ad").resolve()),
             "reference": str((tmp_path / "sc.h5ad").resolve()),
-            "output": str(output_root.resolve()),
+            "output_dir": str(output_root.resolve()),
         },
-        "declared_action": "run",
+        "output_name": "sample_sp-SVC",
+        "output_paths": {
+            "svc": str((output_root / "sample_sp-SVC.h5ad").resolve()),
+        },
         "effective_action": "preflight",
-        "dry_run_override": True,
+        "cli_overrides": {},
     }

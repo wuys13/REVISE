@@ -110,8 +110,8 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         )
     }
     assert packaged_templates <= set(wheel_names)
-    assert "reconstruct.py" not in wheel_names
-    assert "revise-reconstruct = revise.application.cli:main" in entry_points
+    assert "reconstruct.py" in wheel_names
+    assert "revise-reconstruct = reconstruct:main" in entry_points
     assert (
         "revise-build-histology-priors = revise.preprocess.cli:main"
         in entry_points

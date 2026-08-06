@@ -104,15 +104,6 @@ def _runtime_for_profile(raw, profile):
                 "svc_kind": route["svc_kind"],
                 "strategy": route["strategy"],
             }
-    if selected_profile == "application_sc_hyper":
-        route = raw["router"]["application"]["sc-SVC"]
-        return {
-            "mode": "application",
-            "application_route": "sc-SVC",
-            "task": route["task"],
-            "svc_kind": route["svc_kind"],
-            "strategy": "ScSvcHyperApplicationStrategy",
-        }
     raise AssertionError(f"No test route uses profile {selected_profile!r}")
 
 
@@ -232,18 +223,16 @@ def test_non_seed_runtime_none_remains_omitted():
     assert merged["runtime"]["application_route"] == "sp-SVC"
 
 
-def test_pipeline_public_api_does_not_expose_algorithm_overrides():
+def test_pipeline_public_api_accepts_structured_application_overrides():
     from revise.framework import REVISEPipeline
-    from revise.recon.facade import sc_svc, sp_svc
+    from reconstruct import run_application
 
     public_parameters = inspect.signature(REVISEPipeline.run).parameters
-    internal_parameters = inspect.signature(REVISEPipeline._execute_run).parameters
 
-    assert "algorithm_overrides" not in public_parameters
+    assert "algorithm_overrides" in public_parameters
     assert "set_overrides" not in public_parameters
-    assert "algorithm_overrides" in internal_parameters
-    assert "algorithm_overrides" not in inspect.signature(sp_svc).parameters
-    assert "algorithm_overrides" not in inspect.signature(sc_svc).parameters
+    assert "config" in inspect.signature(run_application).parameters
+    assert "ot_method" in inspect.signature(run_application).parameters
 
 
 @pytest.mark.parametrize("phase", ["ga", "lr"])
@@ -283,35 +272,22 @@ def test_legacy_expose_in_cli_is_rejected_and_cannot_unlock_algorithm_parameters
         )
 
 
-def test_algorithm_overrides_cannot_change_strategy_through_hyperresolution():
-    with pytest.raises(ConfigError, match="run identity.*sc.hyperresolution"):
-        _merge(
-            _raw_config(),
-            "application_sc",
-            {
-                "sc": {
-                    "hyperresolution": {
-                        "enabled": True,
-                        "strategy": "InjectedStrategy",
-                    }
-                }
-            },
-        )
-
-
 def test_explicit_ot_method_overrides_conflicting_profile_solvers():
-    from revise.application import service
+    from reconstruct import _engine_overrides
 
     raw = _raw_config()
     raw["profiles"]["application_sp"]["ot"] = {
         "ga": {"solver": "tacco"},
         "lr": {"solver": "tacco"},
     }
-    merged = _merge(
-        raw,
-        "application_sp",
-        service._build_algorithm_overrides(_application_request(ot_method="pot")),
+    config = SimpleNamespace(
+        ot_method="pot", broad_column="Level1", subtype_column=None,
+        select_cell_type=None, local_refinement_strength=None,
+        seed=None, st_path=Path("st"), reference_path=Path("ref"),
+        pm_on_cell_path=None, output_dir=Path("out"), output_name="sample",
+        st_format="h5ad", spatialdata_table=None, spatialdata_element=None,
     )
+    merged = _merge(raw, "application_sp", _engine_overrides(config)[2])
 
     assert merged["ot"]["ga"]["solver"] == "pot"
     assert merged["ot"]["lr"]["solver"] == "pot"
@@ -351,7 +327,6 @@ def test_default_ot_schema_is_single_public_surface():
 @pytest.mark.parametrize("profile", [
     "application_sp",
     "application_sc",
-    "application_sc_hyper",
     "application_sc_sr",
     "benchmark_seg",
     "benchmark_bin2cell",
@@ -527,13 +502,10 @@ def test_false_completeness_fails_before_input_or_output_path_processing(tmp_pat
     assert not (tmp_path / "must-not-exist").exists()
 
 
-def test_noop_plugin_layer_is_removed_and_hyper_profile_selects_strategy_directly():
+def test_noop_plugin_layer_is_removed():
     import revise.backend as backend
     from revise.backend import registry
 
-    merged = _merge(_raw_config(), "application_sc_hyper")
-
-    assert merged["runtime"]["strategy"] == "ScSvcHyperApplicationStrategy"
     assert not hasattr(backend, "PluginRegistry")
     assert not hasattr(backend, "build_default_plugin_registry")
     assert not hasattr(registry, "PluginRegistry")
@@ -571,14 +543,15 @@ def _application_request(**overrides):
     return SimpleNamespace(**values)
 
 
-def test_application_yaml_omitted_ot_method_parses_as_none():
-    from revise.application.request import load_application_request
+def test_application_yaml_keeps_declared_ot_method():
+    from revise.application.config import compile_application_config, load_application_yaml
 
-    request = load_application_request(
+    source, document = load_application_yaml(
         CONFIG_PATH.parents[1] / "configs/application/VisiumHD.yaml"
     )
+    config = compile_application_config(document, source=source)
 
-    assert request.ot_method is None
+    assert config.ot_method == "pot"
 
 
 def test_structured_config_supports_mixed_ot_solvers():
@@ -594,11 +567,16 @@ def test_structured_config_supports_mixed_ot_solvers():
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
 def test_explicit_application_ot_method_overrides_both_phases(method):
-    from revise.application import service
+    from reconstruct import _engine_overrides
 
-    overrides = service._build_algorithm_overrides(
-        _application_request(ot_method=method)
+    config = SimpleNamespace(
+        ot_method=method, broad_column="Level1", subtype_column=None,
+        select_cell_type=None, local_refinement_strength=None,
+        seed=None, st_path=Path("st"), reference_path=Path("ref"),
+        pm_on_cell_path=None, output_dir=Path("out"), output_name="sample",
+        st_format="h5ad", spatialdata_table=None, spatialdata_element=None,
     )
+    overrides = _engine_overrides(config)[2]
 
     assert overrides["ot"]["ga"]["solver"] == method
     assert overrides["ot"]["lr"]["solver"] == method
@@ -761,7 +739,6 @@ def test_ot_reg_type_must_be_supported_string(section, bad_value):
 @pytest.mark.parametrize("profile", [
     "application_sp",
     "application_sc",
-    "application_sc_hyper",
     "application_sc_sr",
     "benchmark_seg",
     "benchmark_bin2cell",

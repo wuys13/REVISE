@@ -51,7 +51,7 @@ def test_public_docs_distinguish_installed_source_and_paper_entry_paths():
     metadata = _read(ROOT / "pyproject.toml")
 
     assert "revise-reconstruct" in text
-    assert 'revise-reconstruct = "revise.application.cli:main"' in metadata
+    assert 'revise-reconstruct = "reconstruct:main"' in metadata
     assert "python reconstruct.py" in text
     assert (ROOT / "reconstruct.py").is_file()
     assert "python reproduce/benchmark_main.py" in text
@@ -109,7 +109,6 @@ def test_quickstart_matches_application_yaml_entry_and_route_fields():
         assert f"configs/application/{filename}" in quickstart
     assert "python reconstruct.py --config" in quickstart
     assert "revise-reconstruct --config" in quickstart
-    assert "inputs.mode" in quickstart
     assert "inputs.st.path" in quickstart
     assert "inputs.reference.path" in quickstart
     assert "unique ``obs_names`` and unique ``var_names``" in normalized
@@ -119,7 +118,7 @@ def test_quickstart_matches_application_yaml_entry_and_route_fields():
         "sc-SVC-sr composition and expression allocation use the broad "
         "assignment and do not require a subtype column"
     ) in normalized
-    assert "default ``Patient`` column" in normalized
+    assert "does not filter the reference by patient" in normalized
     assert "--spot-size" not in quickstart
     for removed in ("--svc-type", "--st-file", "--select-ct", "--ot-method"):
         assert removed not in quickstart
@@ -155,18 +154,14 @@ def test_application_docs_match_strict_schema_and_root_resolution():
     assert "cannot escape it with ``..``" in normalized
 
 
-def test_application_docs_cover_templates_modes_actions_and_provenance():
+def test_application_docs_cover_templates_inputs_actions_and_provenance():
     text = _joined(APPLICATION_DOCS)
     normalized = " ".join(text.split())
 
     assert "importlib.resources" in text
     assert "revise.application/templates" in text
-    assert "``inputs.mode: direct``" in text
-    assert "``inputs.mode: legacy_layout``" in text
-    assert "<root-dir>/<data-root>/<sample-name>_<st-file>" in text
-    assert "<root-dir>/<data-root>/<reference-file>" in text
-    assert "<data-root>/PM_on_cell.csv" in text
-    assert "does not probe ``PM_on_cell.csv``" in normalized
+    assert "exact direct paths" in normalized
+    assert "inputs.pm_on_cell.path" in text
     assert "``algorithm.ot_method`` controls both GA and LR" in normalized
     assert "omitting it keeps the selected engine profile authoritative" in normalized
     assert "may write run evidence" in normalized
@@ -175,8 +170,8 @@ def test_application_docs_cover_templates_modes_actions_and_provenance():
         "source_path",
         "source_sha256",
         "resolved_root",
-        "resolved_paths",
-        "declared_action",
+        "resolved_inputs",
+        "output_paths",
         "effective_action",
     ):
         assert f"``{field}``" in text
@@ -214,8 +209,7 @@ def test_installation_describes_base_and_optional_capability_layers():
 
 def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     text = _joined()
-    service = _read(ROOT / "revise/application/service.py")
-    publication = _read(ROOT / "revise/application/publication.py")
+    entrypoint = _read(ROOT / "reconstruct.py")
     case = _read(ROOT / "docs/source/case.rst")
     configuration = _read(ROOT / "docs/source/configuration.rst")
     api_diagram = _read(ROOT / "docs/source/api/classes_revise.svg")
@@ -224,19 +218,10 @@ def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
         "Paper notebook compatibility", maxsplit=1
     )
 
-    for filename in ("hST-SVC.h5ad", "iST-SVC.h5ad", "sST-SVC.h5ad"):
-        assert filename not in text
-    assert "sp_SVC.h5ad" not in canonical_case
-    assert "sp_SVC.h5ad" in compatibility_case
-    for sc_filename in ("sc_SVC_expr.h5ad", "sc_SVC_spatial.h5ad"):
-        assert sc_filename in canonical_case
-        assert sc_filename in publication
-        assert sc_filename in compatibility_case
-    assert "<output-root>/<sample-name>/SVC.h5ad" in text
-    assert 'output_dir / "SVC.h5ad"' in publication
-    assert 'output_dir / "sc_SVC_expr.h5ad"' in publication
-    assert 'output_dir / "sc_SVC_spatial.h5ad"' in publication
-    assert "result.type" in text
+    assert "<output-dir>/<output-name>.h5ad" in text
+    assert 'f"{config.output_name}.h5ad"' in entrypoint
+    assert 'f"{config.output_name}_expr.h5ad"' in entrypoint
+    assert 'f"{config.output_name}_spatial.h5ad"' in entrypoint
     assert "sp-SVC" in text
     assert "sc-SVC" in text
     assert "sc-SVC-sr" in text
@@ -264,7 +249,7 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
         " ".join(document.split())
         for document in (readme, installation, quickstart, configuration)
     )
-    service = _read(ROOT / "revise/application/service.py")
+    service = _read(ROOT / "reconstruct.py")
     runtime = _read(ROOT / "revise/backend/ops/tacco_runtime.py")
 
     assert "algorithm.ot_method" in text
@@ -274,8 +259,8 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert "does not fall back" in text.lower()
     assert "annotate.mode" not in text
     assert "local_ot.method" not in text
-    assert '"ga": {"solver": request.ot_method}' in service
-    assert '"lr": {"solver": request.ot_method}' in service
+    assert '"ga": {"solver": config.ot_method}' in service
+    assert '"lr": {"solver": config.ot_method}' in service
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
     for document in normalized_docs:
         assert "algorithm.ot_method" in document
@@ -353,7 +338,7 @@ def test_assignment_docs_match_route_specific_runtime_contract():
     assert "does not reweight GraphCluster with ``Q``" in architecture
     assert "``route``, ``applied``, and ``strength``" in architecture
     assert "authoritative failure explanation" in architecture
-    assert "publication rollback" in architecture
+    assert "same-directory temporary H5AD" in architecture
     assert "not that posterior compatibility improves" in limitations
 
 

@@ -31,7 +31,6 @@ COLUMNS = {
 DECLARED_PROFILES = {
     "application_sp",
     "application_sc",
-    "application_sc_hyper",
     "application_sc_sr",
     "benchmark_seg",
     "benchmark_bin2cell",
@@ -94,10 +93,6 @@ def _write_application_inputs(tmp_path: Path):
         ),
         (
             "application_sc",
-            [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
-        ),
-        (
-            "application_sc_hyper",
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (

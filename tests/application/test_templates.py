@@ -25,7 +25,7 @@ TOP_LEVEL_KEYS = [
 EXPECTED = {
     "Xenium_T.yaml": {
         "svc_type": "sc-SVC",
-        "sample_name": "P1CRC",
+        "output_name": "P1CRC_Xenium_T_sc-SVC",
         "ot_method": "tacco",
         "st_path": "raw_data/Real_application/P1CRC_Xenium.h5ad",
         "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
@@ -33,7 +33,7 @@ EXPECTED = {
     },
     "Xenium_Fib.yaml": {
         "svc_type": "sc-SVC",
-        "sample_name": "P1CRC",
+        "output_name": "P1CRC_Xenium_Fib_sc-SVC",
         "ot_method": "tacco",
         "st_path": "raw_data/Real_application/P1CRC_Xenium.h5ad",
         "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
@@ -44,7 +44,7 @@ EXPECTED = {
     },
     "Xenium_Mono.yaml": {
         "svc_type": "sc-SVC",
-        "sample_name": "P1CRC",
+        "output_name": "P1CRC_Xenium_Mono_sc-SVC",
         "ot_method": "tacco",
         "st_path": "raw_data/Real_application/P1CRC_Xenium.h5ad",
         "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
@@ -55,7 +55,7 @@ EXPECTED = {
     },
     "VisiumHD.yaml": {
         "svc_type": "sp-SVC",
-        "sample_name": "P1CRC",
+        "output_name": "P1CRC_HD_sp-SVC",
         "ot_method": "pot",
         "st_path": "raw_data/Real_application/P1CRC_HD.h5ad",
         "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
@@ -63,7 +63,7 @@ EXPECTED = {
     },
     "Visium.yaml": {
         "svc_type": "sc-SVC-sr",
-        "sample_name": "REVISEVisiumMouseBrain",
+        "output_name": "REVISEVisiumMouseBrain_sc-SVC-sr",
         "ot_method": "pot",
         "st_path": "raw_data/visium_mouse_brain/ST_mouse_brain_prepared.h5ad",
         "reference_path": "raw_data/visium_mouse_brain/scRNA_mouse_brain_prepared.h5ad",
@@ -86,23 +86,20 @@ def test_packaged_template_is_canonical_and_source_mirror_is_byte_exact(filename
     assert document["schema_version"] == 1
     assert document["application"] == {
         "svc_type": expected["svc_type"],
-        "sample_name": expected["sample_name"],
     }
     assert document["paths"] == {"root_dir": "."}
     assert document["algorithm"] == {"ot_method": expected["ot_method"]}
     assert document["inputs"] == {
-        "mode": "direct",
         "st": {"path": expected["st_path"], "format": "h5ad"},
         "reference": {
             "path": expected["reference_path"],
             "format": "h5ad",
-            "patient_key": "Patient",
         },
     }
     assert document["global_anchoring"] == {"broad_column": "Level1"}
     assert document["local_refinement"] == expected["local_refinement"]
-    assert document["output"] == {"path": "output"}
-    assert document["execution"] == {"action": "run", "seed": 42}
+    assert document["output"] == {"dir": "output", "name": expected["output_name"]}
+    assert document["execution"] == {"seed": 42}
     assert "base_config" not in package_bytes.decode("utf-8")
 
 

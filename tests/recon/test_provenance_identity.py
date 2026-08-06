@@ -228,7 +228,7 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
         manifests.append(json.loads((run_dir / "provenance.json").read_text()))
         configs.append(json.loads((run_dir / "merged_config.json").read_text()))
 
-    assert manifests[0]["schema_version"] == manifests[1]["schema_version"] == 2
+    assert manifests[0]["schema_version"] == manifests[1]["schema_version"] == 3
     assert manifests[0]["run_dir"] != manifests[1]["run_dir"]
     assert manifests[0]["run"]["started_at"] != manifests[1]["run"]["started_at"]
     assert configs[0]["io"]["data_root"] != configs[1]["io"]["data_root"]
@@ -391,7 +391,7 @@ def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path
 def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
     output_root = tmp_path / "output"
     with pytest.raises(ValueError, match="Out of range float values"):
-        REVISEPipeline()._execute_run(
+        REVISEPipeline().run(
             svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path / "data"),
@@ -434,7 +434,7 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
     manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
     assert manifest["result"] == {
         "filename": "SVC.h5ad",
         "type": "sp-SVC",
@@ -464,14 +464,17 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
         "declared_root": ".",
         "resolved_root": str(tmp_path),
         "cwd": str(tmp_path),
-        "resolved_paths": {
+        "resolved_inputs": {
             "st": str(tmp_path / "st.h5ad"),
             "reference": str(tmp_path / "sc.h5ad"),
-            "output": str(tmp_path / "output"),
+            "output_dir": str(tmp_path / "output"),
         },
-        "declared_action": "run",
+        "output_paths": {
+            "svc": str(tmp_path / "output" / "sample.h5ad"),
+        },
+        "cli_overrides": {},
+        "output_name": "sample",
         "effective_action": "preflight",
-        "dry_run_override": True,
         "config_path": "must-not-shadow-canonical-engine-truth",
     }
     ctx = PipelineContext(
@@ -501,8 +504,9 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
         "declared_root",
         "resolved_root",
         "cwd",
-        "resolved_paths",
-        "declared_action",
+        "resolved_inputs",
+        "output_paths",
+        "cli_overrides",
+        "output_name",
         "effective_action",
-        "dry_run_override",
     }

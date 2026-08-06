@@ -1,70 +1,34 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 
-def test_run_pipeline_uses_the_application_selector(monkeypatch, tmp_path):
-    from revise.application import service
+def test_cli_overrides_are_recorded_and_applied_after_yaml():
+    import reconstruct
 
-    captured = {}
-
-    class Pipeline:
-        def __init__(self, config_path=None):
-            captured["config_path"] = config_path
-
-        def _execute_run(self, **kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(provenance={})
-
-    monkeypatch.setattr(service, "REVISEPipeline", Pipeline)
-    monkeypatch.setattr(service, "_build_io_overrides", lambda _request: {})
-    monkeypatch.setattr(service, "_build_algorithm_overrides", lambda _request: {})
-    request = SimpleNamespace(
-        svc_type="sp-SVC",
-        seed=17,
-        effective_action="preflight",
-        source_path="application.yaml",
-        config_sha256="a" * 64,
-        declared_root=".",
-        resolved_root=tmp_path,
-        cwd=tmp_path,
-        resolved_paths={},
-        action="preflight",
-        dry_run_override=False,
+    document = {
+        "application": {"svc_type": "sp-SVC"},
+        "algorithm": {"ot_method": "pot"},
+        "output": {"dir": "output", "name": "old"},
+    }
+    overrides = reconstruct._apply_overrides(
+        document,
+        {"svc_type": "sc-SVC", "ot_method": "tacco", "output_name": "new"},
     )
 
-    service._run_pipeline(request)
-
-    assert captured["config_path"] is None
-    assert captured["svc_type"] == "sp-SVC"
-    assert captured["cf"] is None
-    assert captured["runtime_overrides"] == {"seed": 17}
+    assert document["application"]["svc_type"] == "sc-SVC"
+    assert document["algorithm"]["ot_method"] == "tacco"
+    assert document["output"]["name"] == "new"
+    assert overrides == {"svc_type": "sc-SVC", "ot_method": "tacco", "output_name": "new"}
 
 
-def test_execute_application_returns_engine_preflight_evidence(monkeypatch, tmp_path):
-    from revise.application import service
+def test_output_expansion_is_owned_by_reconstruct():
+    import reconstruct
+    from types import SimpleNamespace
 
-    svc = SimpleNamespace(
-        provenance={
-            "run_dir": str(tmp_path / "run"),
-            "profile": "application_sp",
-            "route": {
-                "mode": "application",
-                "application_route": "sp-SVC",
-                "task": "sp_svc",
-                "strategy": "SpSvcApplicationStrategy",
-            },
-        },
-        summary=lambda: {"status": "ready"},
+    config = SimpleNamespace(
+        svc_type="sc-SVC",
+        output_dir=Path("output"),
+        output_name="sample_sc-SVC",
     )
-    monkeypatch.setattr(service, "_run_pipeline", lambda request: svc)
-
-    execution = service.execute_application(
-        SimpleNamespace(svc_type="sp-SVC", effective_action="preflight")
-    )
-
-    assert execution.status == "ready"
-    assert execution.preflight == Path(tmp_path / "run" / "preflight.json")
-    assert execution.pipeline["profile"] == "application_sp"
-    assert execution.pipeline["task"] == "sp_svc"
-    assert execution.pipeline["strategy"] == "SpSvcApplicationStrategy"
-    assert "confounding" not in execution.pipeline["route"]
+    paths = reconstruct._output_paths(config)
+    assert paths["spatial"].name == "sample_sc-SVC_spatial.h5ad"
+    assert paths["expression"].name == "sample_sc-SVC_expr.h5ad"

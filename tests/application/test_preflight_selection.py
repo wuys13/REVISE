@@ -23,26 +23,21 @@ def _write(path: Path, labels, *, patient=None):
     adata.write_h5ad(path)
 
 
-def test_preflight_rejects_selected_cell_type_missing_after_patient_filter(tmp_path):
+def test_preflight_rejects_selected_cell_type_missing_from_full_reference(tmp_path):
     st_path = tmp_path / "st.h5ad"
     reference_path = tmp_path / "reference.h5ad"
     _write(st_path, ["T", "T"], patient=["P1", "P1"])
     _write(reference_path, ["T", "Fibroblast"], patient=["P1", "P2"])
 
-    service = REVISEInputService(
-        {
-            "sample_name": "P1",
-            "patient_key": "Patient",
-        }
-    )
-    with pytest.raises(ValueError, match="select_cell_type.*Fibroblast.*P1"):
+    service = REVISEInputService({"sample_name": "output"})
+    with pytest.raises(ValueError, match="select_cell_type.*Mono_Macro"):
         service.preflight(
             (InputSpec("st", st_path), InputSpec("sc_ref", reference_path)),
             runtime={"mode": "application", "task": "sc_svc"},
             columns={
                 "cell_type_col": "Level1",
                 "sub_cell_type_col": "Level2",
-                "select_cell_type": "Fibroblast",
+                "select_cell_type": "Mono_Macro",
             },
         )
 

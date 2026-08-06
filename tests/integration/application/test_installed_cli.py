@@ -63,28 +63,25 @@ def _write_application_config(
     st_path: str,
     reference_path: str,
     output_path: str,
-    action: str = "run",
 ) -> None:
     path.write_text(
         yaml.safe_dump(
             {
                 "schema_version": 1,
-                "application": {"svc_type": "sp-SVC", "sample_name": "sample"},
+                "application": {"svc_type": "sp-SVC"},
                 "paths": {"root_dir": "."},
                 "algorithm": {"ot_method": "pot"},
                 "inputs": {
-                    "mode": "direct",
                     "st": {"path": st_path, "format": "h5ad"},
                     "reference": {
                         "path": reference_path,
                         "format": "h5ad",
-                        "patient_key": "Patient",
                     },
                 },
                 "global_anchoring": {"broad_column": "Level1"},
                 "local_refinement": {"strength": 0.2},
-                "output": {"path": output_path},
-                "execution": {"action": action, "seed": 42},
+                "output": {"dir": output_path, "name": "sample_sp-SVC"},
+                "execution": {"seed": 42},
             },
             sort_keys=False,
         ),
@@ -195,8 +192,8 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
     assert f"Version: {__version__}" in metadata
     assert "Name: revise-svc" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
-    assert "reconstruct.py" not in names
-    assert "revise/application/cli.py" in names
+    assert "reconstruct.py" in names
+    assert "revise/application/config.py" in names
     assert "revise/benchmark/cli.py" in names
     assert "revise/benchmark/launcher.py" in names
     assert "revise/revise.yaml" in names
@@ -209,7 +206,7 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
     } <= set(names)
     assert any(".dist-info/" in name and name.endswith("/LICENSE") for name in names)
     assert not any(name.startswith("tests/") for name in names)
-    assert "revise-reconstruct = revise.application.cli:main" in entry_points
+    assert "revise-reconstruct = reconstruct:main" in entry_points
 
     requirements = [
         Requirement(line.removeprefix("Requires-Dist: "))
@@ -334,7 +331,7 @@ def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["status"] == "ready"
+    assert payload["status"] == "preflight_passed"
     assert payload["pipeline"]["profile"] == "application_sp"
     assert payload["pipeline"]["route"]["application_route"] == "sp-SVC"
     assert "confounding" not in payload["pipeline"]["route"]
@@ -383,12 +380,15 @@ def test_source_and_installed_preflights_match(installed_cli):
             config_path.resolve()
         )
         assert manifest["application_config"]["resolved_root"] == str(root.resolve())
-        assert manifest["application_config"]["resolved_paths"]["output"] == str(
+        assert manifest["application_config"]["resolved_inputs"]["output_dir"] == str(
             (root / "output").resolve()
+        )
+        assert manifest["application_config"]["output_paths"]["svc"] == str(
+            (root / "output" / "sample_sp-SVC.h5ad").resolve()
         )
         runs.append((payload, manifest))
 
-    assert runs[0][0]["status"] == runs[1][0]["status"] == "ready"
+    assert runs[0][0]["status"] == runs[1][0]["status"] == "preflight_passed"
     assert runs[0][0]["pipeline"]["profile"] == runs[1][0]["pipeline"]["profile"]
     assert runs[0][0]["pipeline"]["route"] == runs[1][0]["pipeline"]["route"]
 
