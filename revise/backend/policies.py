@@ -76,13 +76,25 @@ class ModeValidationPolicy(InputValidationPolicy):
         try:
             identities = input_identities(specs)
             ctx.pm_on_cell = None
-            if str(task) == "sc_svc_sr" and data_root:
-                pm_path = pm_on_cell_path_from_data_root(str(data_root))
-                ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
-                    pm_path
-                )
-                if pm_identity is not None:
-                    identities.append(pm_identity)
+            if str(task) == "sc_svc_sr":
+                if mode == "application":
+                    pm_path = io_cfg.get("pm_on_cell_path") or None
+                else:
+                    pm_path = (
+                        pm_on_cell_path_from_data_root(str(data_root))
+                        if data_root
+                        else None
+                    )
+                if pm_path is not None and not Path(pm_path).exists():
+                    raise FileNotFoundError(
+                        f"io.pm_on_cell_path does not exist: {pm_path}"
+                    )
+                if pm_path is not None:
+                    ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
+                        pm_path
+                    )
+                    if pm_identity is not None:
+                        identities.append(pm_identity)
             identities.sort(key=lambda identity: identity["role"])
             ctx.input_identities = identities
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
@@ -108,7 +120,11 @@ class ModeValidationPolicy(InputValidationPolicy):
         )
         run_dir = Path(ctx.run_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
-        publication_dir = Path(output_root) / str(sample_name)
+        publication_dir = (
+            Path(output_root)
+            if mode == "application"
+            else Path(output_root) / str(sample_name)
+        )
         publication_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             dir=publication_dir,

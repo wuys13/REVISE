@@ -13,6 +13,7 @@ except ImportError as exc:  # pragma: no cover
 
 
 TOP_LEVEL_KEYS = {"version", "defaults", "router", "profiles", "locked_params", "schemas"}
+ENGINE_CONFIG_VERSION = 2
 DEFAULT_SECTION_KEYS = {
     "runtime",
     "io",
@@ -45,6 +46,7 @@ IO_KEYS = {
     "sample_name",
     "st_path",
     "sc_ref_path",
+    "pm_on_cell_path",
     "st_file",
     "sc_ref_file",
     "gt_svc_file",
@@ -75,7 +77,6 @@ SC_KEYS = {
     "select_ct",
     "resolutions",
     "select_resolution",
-    "hyperresolution",
     "match_spot_sum",
     "svc_completeness",
     "sr_graph_agg_enabled",
@@ -96,7 +97,6 @@ SC_KEYS = {
     "sr_noise_seed",
     "tacco_annotate",
 }
-SC_HYPER_KEYS = {"enabled", "strategy", "resolutions", "select_resolution"}
 SC_TACCO_ANNOTATE_KEYS = {"multi_center", "lamb"}
 IMPUTE_KEYS = {
     "merge_subcluster_method",
@@ -113,7 +113,6 @@ ASSIGNMENT_GUIDANCE_MIGRATION_ERROR = (
 ROUTE_NAMESPACES = {"application", "benchmark"}
 ROUTE_LEAF_KEYS = {"profile", "task", "svc_kind", "strategy"}
 LOCKED_PARAMS_KEYS = {"keys"}
-ALGORITHM_IDENTITY_PATHS = {"sc.hyperresolution"}
 
 
 class ConfigError(ValueError):
@@ -209,11 +208,6 @@ def _validate_ot_section(ot_cfg: Dict[str, Any], ctx: str, *, resolved: bool = F
 
 def _validate_sc_section(sc_cfg: Dict[str, Any], ctx: str) -> None:
     _reject_unknown_keys(sc_cfg, SC_KEYS, ctx)
-    hyper = sc_cfg.get("hyperresolution")
-    if hyper is not None:
-        hyper_map = _ensure_mapping(hyper, f"{ctx}.hyperresolution")
-        _reject_unknown_keys(hyper_map, SC_HYPER_KEYS, f"{ctx}.hyperresolution")
-
     tacco_annotate = sc_cfg.get("tacco_annotate")
     if tacco_annotate is not None:
         tacco_map = _ensure_mapping(tacco_annotate, f"{ctx}.tacco_annotate")
@@ -321,7 +315,10 @@ def _validate_sections(section_map: Dict[str, Any], ctx: str) -> None:
             raise ConfigError(ASSIGNMENT_GUIDANCE_MIGRATION_ERROR)
 
 
-def _validate_router(router: Dict[str, Any]) -> None:
+def _validate_router(
+    router: Dict[str, Any],
+    profiles: Dict[str, Any] | None = None,
+) -> None:
     _reject_unknown_keys(router, ROUTE_NAMESPACES, "router")
     for namespace in ROUTE_NAMESPACES:
         routes = _ensure_mapping(router.get(namespace, {}), f"router.{namespace}")
@@ -342,6 +339,11 @@ def _validate_router(router: Dict[str, Any]) -> None:
             if missing:
                 raise ConfigError(
                     f"Missing required route keys in router.{namespace}.{selector}: {missing}"
+                )
+            if profiles is not None and route_map["profile"] not in profiles:
+                raise ConfigError(
+                    f"Unknown profile {route_map['profile']!r} in "
+                    f"router.{namespace}.{selector}"
                 )
 
 
@@ -396,6 +398,11 @@ def _validate_locked_params(locked: Dict[str, Any]) -> None:
 
 def _validate_raw_config(raw: Dict[str, Any]) -> None:
     _reject_unknown_keys(raw, TOP_LEVEL_KEYS, "config root")
+    if raw.get("version") != ENGINE_CONFIG_VERSION:
+        raise ConfigError(
+            f"config version must be {ENGINE_CONFIG_VERSION}; "
+            f"actual={raw.get('version')!r}"
+        )
 
     defaults = _ensure_mapping(raw.get("defaults", {}), "defaults")
     _validate_sections(defaults, "defaults")
@@ -405,7 +412,7 @@ def _validate_raw_config(raw: Dict[str, Any]) -> None:
         _validate_sections(_ensure_mapping(profile_cfg, f"profiles.{name}"), f"profiles.{name}")
 
     router = _ensure_mapping(raw.get("router", {}), "router")
-    _validate_router(router)
+    _validate_router(router, profiles)
 
     locked = _ensure_mapping(raw.get("locked_params", {}), "locked_params")
     _validate_locked_params(locked)
@@ -590,16 +597,6 @@ def merge_unified_config(
             + ", ".join(forbidden_sections)
         )
     override_paths = _leaf_paths(algorithm_overrides)
-    identity_paths = sorted(
-        guarded
-        for guarded in ALGORITHM_IDENTITY_PATHS
-        if any(_paths_overlap(key, guarded) for key in override_paths)
-    )
-    if identity_paths:
-        raise ConfigError(
-            "algorithm_overrides cannot modify run identity through: "
-            + ", ".join(identity_paths)
-        )
     for key in override_paths:
         if any(_paths_overlap(key, locked) for locked in locked_keys):
             raise ConfigError(

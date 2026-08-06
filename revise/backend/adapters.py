@@ -35,13 +35,6 @@ def _cfg_get(config: Dict[str, Any], *path: str, default: Any = None) -> Any:
     return cur
 
 
-def _filter_reference_by_patient(adata, patient_key, sample_name):
-    if not patient_key or patient_key not in adata.obs:
-        return adata
-    matches = adata.obs[patient_key].astype(str).eq(str(sample_name))
-    return adata[matches.to_numpy(), :].copy()
-
-
 def _ot_runner_kwargs(cfg: Dict[str, Any], *, impute: bool = False) -> Dict[str, Any]:
     """Translate the public GA/LR OT config into legacy runner field names."""
     ga = cfg["ot"]["ga"]
@@ -280,17 +273,6 @@ def _extract_probs(adata, key: str) -> pd.DataFrame | None:
     return None
 
 
-def _as_float_list(values: Any, default: List[float]) -> List[float]:
-    if values is None:
-        return list(default)
-    if isinstance(values, (list, tuple)):
-        out = [float(v) for v in values]
-    else:
-        out = [float(values)]
-    uniq = sorted(set(out))
-    return uniq if uniq else list(default)
-
-
 def _require_concrete_cell_type(value: Any) -> str:
     select_ct = value.strip() if isinstance(value, str) else ""
     if select_ct.lower() in {"", "all", "*", "__all__", "all_cell_types"}:
@@ -311,8 +293,12 @@ def _build_svc(
     primary_key = None
     if default_key and default_key in outputs:
         primary_key = default_key
-    elif outputs:
-        primary_key = next(iter(outputs.keys()))
+    elif default_key:
+        raise RuntimeError(
+            f"{ctx.runtime.get('application_route') or ctx.runtime.get('confounding')} "
+            f"strategy did not return required output {default_key!r}; "
+            f"available={sorted(outputs)}"
+        )
     primary = outputs.get(primary_key) if primary_key is not None else None
     expr = primary if expr is None else expr
     spatial = primary if spatial is None else spatial
@@ -511,12 +497,6 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
         adata_sc = input_service.read_sc_ref_adata(
             _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
         )
-        adata_sc = _filter_reference_by_patient(
-            adata_sc,
-            io_cfg.get("patient_key"),
-            io_cfg["sample_name"],
-        )
-
         # The original script uses min_genes for sc cells and min_cells for genes.
         sc.pp.filter_cells(adata_sc, min_genes=conf.prep_sc_min_counts)
         sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
@@ -582,12 +562,6 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         adata_sc = input_service.read_sc_ref_adata(
             _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
         )
-        adata_sc = _filter_reference_by_patient(
-            adata_sc,
-            io_cfg.get("patient_key", "Patient"),
-            io_cfg["sample_name"],
-        )
-
         cell_type_col = columns.get("cell_type_col", "Level1")
         sub_cell_type_col = columns.get("sub_cell_type_col", "Level2")
         required_cols = list(dict.fromkeys([cell_type_col, sub_cell_type_col]))
@@ -643,65 +617,6 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         )
 
 
-class ScSvcHyperApplicationStrategy(ScSvcApplicationStrategy):
-    """Hyperresolution variant for application sc-SVC.
-
-    This strategy keeps the same high-level lifecycle while using a dedicated
-    local-refinement configuration path controlled by `sc.hyperresolution`.
-    """
-
-    strategy_id = "ScSvcHyperApplicationStrategy"
-
-    def solve_ot(self, ctx) -> None:
-        sc_cfg = ctx.merged_config.get("sc", {})
-        hyper_cfg = sc_cfg.get("hyperresolution", {}) or {}
-        if not bool(hyper_cfg.get("enabled", False)):
-            ctx.logger.warning("[adapter] hyperresolution disabled; fallback to ScSvcApplicationStrategy")
-            return super().solve_ot(ctx)
-
-        sub_cell_type_col = ctx.columns.get("sub_cell_type_col", "Level2")
-        select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
-
-        base_res = _as_float_list(sc_cfg.get("resolutions"), default=[0.6, 0.7, 0.8])
-        hyper_res_cfg = hyper_cfg.get("resolutions")
-        if hyper_res_cfg is None:
-            # Densify around base search space for hyperresolution mode.
-            densified = set(base_res)
-            for val in base_res:
-                plus = round(min(2.0, float(val) + 0.05), 2)
-                minus = round(max(0.05, float(val) - 0.05), 2)
-                densified.add(plus)
-                densified.add(minus)
-            resolutions = sorted(densified)
-        else:
-            resolutions = _as_float_list(hyper_res_cfg, default=base_res)
-
-        select_res = hyper_cfg.get("select_resolution", sc_cfg.get("select_resolution"))
-        sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
-            select_ct,
-            sub_cell_type_col,
-            resolutions,
-            select_res=select_res,
-        )
-        ctx.record_local_refinement(True)
-        ctx.artifacts["outputs"] = {
-            "sc_svc_spatial": sc_svc_spatial,
-            "sc_svc_expr": sc_svc_expr,
-        }
-        ctx.artifacts["selected_cell_type"] = select_ct
-        ctx.artifacts["hyperresolution"] = {
-            "enabled": True,
-            "resolutions": resolutions,
-            "select_resolution": select_res,
-        }
-
-    def finalize_svc(self, ctx) -> SVC:
-        svc = super().finalize_svc(ctx)
-        hyper = dict(ctx.artifacts.get("hyperresolution", {}))
-        svc.provenance["hyperresolution"] = hyper
-        return svc
-
-
 class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
     strategy_id = "ScSvcSrApplicationStrategy"
 
@@ -744,11 +659,6 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
         ensure_all_cells_in_spot(adata_st, logger=ctx.logger)
         adata_sc = input_service.read_sc_ref_adata(
             _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
-        )
-        adata_sc = _filter_reference_by_patient(
-            adata_sc,
-            io_cfg.get("patient_key", "Patient"),
-            io_cfg["sample_name"],
         )
         ctx.runner_config = conf
         ctx.st_adata = adata_st

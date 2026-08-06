@@ -48,7 +48,7 @@ dependencies = [
 ]
 
 [project.scripts]
-revise-reconstruct = "revise.application.cli:main"
+revise-reconstruct = "reconstruct:main"
 revise-build-histology-priors = "revise.preprocess.cli:main"
 revise-compute-biological-metrics = "revise.analysis.cli:main"
 
@@ -82,6 +82,7 @@ Repository = "https://github.com/wuys13/REVISE"
 Issues = "https://github.com/wuys13/REVISE/issues"
 
 [tool.setuptools]
+py-modules = ["reconstruct"]
 packages = { find = { include = ["revise*"] } }
 include-package-data = true
 

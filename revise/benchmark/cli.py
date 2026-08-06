@@ -212,7 +212,7 @@ def _run_case(
     algorithm_overrides: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
     try:
-        svc = pipeline._execute_run(
+        svc = pipeline.run(
             svc_type=None,
             cf=confounding,
             runtime_overrides={"seed": runtime_seed},

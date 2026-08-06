@@ -302,9 +302,8 @@ class REVISEInputService:
             patient_key = self.io_config.get("patient_key")
             sample_name = self.io_config.get("sample_name")
             patient_sample = str(sample_name) if sample_name is not None else None
-            requires_patient_match = not (
-                mode == "benchmark"
-                and str(runtime.get("confounding")) == "batch_effect"
+            requires_patient_match = mode == "benchmark" and not (
+                str(runtime.get("confounding")) == "batch_effect"
             )
             if (
                 requires_patient_match
@@ -337,10 +336,14 @@ class REVISEInputService:
                     available = sorted(
                         {str(value) for value in normalized_labels.dropna().unique()}
                     )[:8]
+                    scope = (
+                        "full reference"
+                        if mode == "application"
+                        else f"patient {patient_sample!r}"
+                    )
                     raise ValueError(
                         f"Invalid input: {context}; field=select_cell_type; "
-                        f"actual={selected!r}; patient={patient_sample!r}; "
-                        f"expected=label present after patient filtering; "
+                        f"actual={selected!r}; expected=label present in {scope}; "
                         f"available={available}"
                     )
         elif role == "gt" and task == "sc_svc_sr":

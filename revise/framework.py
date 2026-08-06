@@ -36,13 +36,14 @@ from revise.utils.logging import log_exception_to_run_file
 _APPLICATION_CONFIG_PROVENANCE_KEYS = (
     "source_path",
     "source_sha256",
+    "cli_overrides",
     "declared_root",
     "resolved_root",
     "cwd",
-    "resolved_paths",
-    "declared_action",
+    "resolved_inputs",
+    "output_name",
+    "output_paths",
     "effective_action",
-    "dry_run_override",
 )
 
 
@@ -123,26 +124,6 @@ class REVISEPipeline:
         return path
 
     def run(
-        self,
-        *,
-        svc_type: Optional[str] = None,
-        cf: Optional[str] = None,
-        runtime_overrides: Optional[Dict[str, Any]] = None,
-        io_overrides: Optional[Dict[str, Any]] = None,
-        dry_run: bool = False,
-        finalize_callback=None,
-    ):
-        return self._execute_run(
-            svc_type=svc_type,
-            cf=cf,
-            runtime_overrides=runtime_overrides,
-            io_overrides=io_overrides,
-            algorithm_overrides=None,
-            dry_run=dry_run,
-            finalize_callback=finalize_callback,
-        )
-
-    def _execute_run(
         self,
         *,
         svc_type: Optional[str] = None,
@@ -311,9 +292,13 @@ class REVISEPipeline:
                 self._write_final_metadata(ctx)
                 self._write_initial_metadata(ctx)
 
+                if self.registry is None:
+                    self.registry = build_default_registry()
+                strategy = self.registry.get(runtime["strategy"])
+
                 if ctx.dry_run:
-                    # Dry-run validates structural inputs without importing the
-                    # heavy strategy registry. U8 extends this shared preflight.
+                    # Preflight resolves the same strategy as a formal run but
+                    # stops before scientific stages and publication.
                     self._run_dry_validation(ctx)
                     ctx.svc = SVC(
                         expr=None,
@@ -326,9 +311,6 @@ class REVISEPipeline:
                     logger.info("[framework] dry-run validated route=%s", route_key)
                     return ctx.svc
 
-                if self.registry is None:
-                    self.registry = build_default_registry()
-                strategy = self.registry.get(runtime["strategy"])
                 pipeline = UnifiedReconstructionPipeline(
                     strategy=strategy,
                     validation_policy=ModeValidationPolicy(),
@@ -395,7 +377,7 @@ class REVISEPipeline:
 
     def _write_final_metadata(self, ctx: PipelineContext) -> None:
         provenance = {
-            "schema_version": 2,
+            "schema_version": 3,
             "run": copy.deepcopy(
                 getattr(
                     ctx,

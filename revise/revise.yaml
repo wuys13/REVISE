@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 defaults:
   runtime:
@@ -12,6 +12,7 @@ defaults:
     sample_name: P2CRC
     st_path: null
     sc_ref_path: null
+    pm_on_cell_path: null
     st_file: Xenium.h5ad
     sc_ref_file: adata_sc_all_reanno.h5ad
     gt_svc_file: selected_xenium.h5ad
@@ -73,11 +74,6 @@ defaults:
     select_ct: null
     resolutions: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     select_resolution: null
-    hyperresolution:
-      enabled: false
-      strategy: ScSvcHyperApplicationStrategy
-      resolutions: null
-      select_resolution: null
     match_spot_sum: false
     svc_completeness: true
     sr_graph_agg_enabled: false
@@ -180,17 +176,6 @@ profiles:
       tacco_annotate:
         multi_center: 1
         lamb: 0.001
-
-  application_sc_hyper:
-    graph:
-      alpha: 0.2
-    sc:
-      tacco_annotate:
-        multi_center: 1
-        lamb: 0.001
-      hyperresolution:
-        enabled: true
-        strategy: ScSvcHyperApplicationStrategy
 
   application_sc_sr:
     graph:
