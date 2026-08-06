@@ -308,6 +308,7 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / name),
                 "sample_name": "sample",
+                "pm_on_cell_path": str(pm_path),
             },
             dry_run=True,
         )
@@ -346,6 +347,7 @@ def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
                 "data_root": str(data_root),
                 "output_root": str(output_root),
                 "sample_name": "sample",
+                "pm_on_cell_path": str(pm_path),
             },
             dry_run=True,
         )

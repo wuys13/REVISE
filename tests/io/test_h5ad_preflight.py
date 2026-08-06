@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from anndata import AnnData, read_h5ad
+from scipy.sparse import csr_array, csr_matrix
 
 from revise.backend.policies import ModeValidationPolicy
 from revise.config import load_raw_config, merge_unified_config
@@ -84,6 +85,24 @@ def _write_application_inputs(tmp_path: Path):
     _write(tmp_path / "sc.h5ad", "sc_ref")
 
 
+def _runtime_for_profile(raw, profile):
+    for namespace, routes in raw["router"].items():
+        for selector, route in routes.items():
+            if route["profile"] != profile:
+                continue
+            selector_key = (
+                "application_route" if namespace == "application" else "confounding"
+            )
+            return {
+                "mode": namespace,
+                selector_key: selector,
+                "task": route["task"],
+                "svc_kind": route["svc_kind"],
+                "strategy": route["strategy"],
+            }
+    raise AssertionError(f"No test route uses profile {profile!r}")
+
+
 @pytest.mark.parametrize(
     ("profile", "expected"),
     [
@@ -158,7 +177,7 @@ def test_all_declared_profiles_resolve_one_explicit_input_matrix(
     merged = merge_unified_config(
         raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=_runtime_for_profile(raw, profile),
         io_overrides={"data_root": str(tmp_path), "sample_name": "sample"},
         algorithm_overrides={},
     )
@@ -255,9 +274,132 @@ def test_valid_preflight_reports_resolved_roles_and_proof_boundary(tmp_path):
     assert all(item["backed"] is True for item in report["inputs"])
     assert all(item["format"] == "h5ad" for item in report["inputs"])
     assert all(item["shape"] == [2, 2] for item in report["inputs"])
+    assert all(item["warnings"] == [] for item in report["inputs"])
+    assert all(item["expression"]["finite"] is True for item in report["inputs"])
+    assert all(
+        item["expression"]["non_negative"] is True for item in report["inputs"]
+    )
+    assert all(
+        item["expression"]["semantics_comparison"] == "not_performed"
+        for item in report["inputs"]
+    )
     assert report["gene_overlap"] == 2
+    assert report["warnings"] == []
     assert report["proof_boundary"] == (
-        "metadata_and_required_arrays_only; expression_values_not_fully_scanned"
+        "metadata_required_arrays_and_expression_values_scanned; "
+        "expression_semantics_not_compared"
+    )
+
+
+@pytest.mark.parametrize("storage", ["dense", "sparse"])
+@pytest.mark.parametrize(
+    ("bad_value", "expected"),
+    [
+        (np.nan, "finite.*actual_nonfinite=1"),
+        (np.inf, "finite.*actual_nonfinite=1"),
+        (-1.0, "non-negative.*actual_negative=1"),
+    ],
+)
+def test_preflight_rejects_invalid_expression_without_modifying_h5ad(
+    tmp_path,
+    storage,
+    bad_value,
+    expected,
+):
+    _write_application_inputs(tmp_path)
+    st_path = tmp_path / "sample_st.h5ad"
+    st = read_h5ad(st_path)
+    values = np.array([[bad_value, 1.0], [2.0, 3.0]])
+    st.X = csr_matrix(values) if storage == "sparse" else values
+    st.write_h5ad(st_path)
+    before = __import__("hashlib").sha256(st_path.read_bytes()).hexdigest()
+
+    with pytest.raises(ValueError, match=expected):
+        _preflight(tmp_path)
+
+    after = __import__("hashlib").sha256(st_path.read_bytes()).hexdigest()
+    assert after == before
+
+
+@pytest.mark.parametrize("storage", ["dense", "sparse"])
+def test_preflight_warns_about_zero_axes_without_modifying_h5ad(
+    tmp_path,
+    storage,
+    caplog,
+):
+    _write_application_inputs(tmp_path)
+    st_path = tmp_path / "sample_st.h5ad"
+    st = read_h5ad(st_path)
+    values = np.array([[1.0, 0.0], [0.0, 0.0]])
+    st.X = csr_matrix(values) if storage == "sparse" else values
+    st.write_h5ad(st_path)
+    before = __import__("hashlib").sha256(st_path.read_bytes()).hexdigest()
+    runtime, io, specs = _application_specs(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        report = REVISEInputService(
+            io,
+            logger=logging.getLogger("test-expression-preflight"),
+        ).preflight(specs, runtime=runtime, columns=COLUMNS)
+
+    st_report = next(item for item in report["inputs"] if item["role"] == "st")
+    assert st_report["expression"]["all_zero_observations"] == 1
+    assert st_report["expression"]["all_zero_variables"] == 1
+    assert len(st_report["warnings"]) == 2
+    assert "all_zero_observations=1" in caplog.text
+    assert "all_zero_variables=1" in caplog.text
+    assert all("values were not changed" in warning for warning in report["warnings"])
+    after = __import__("hashlib").sha256(st_path.read_bytes()).hexdigest()
+    assert after == before
+
+
+@pytest.mark.parametrize("storage", ["dense", "sparse"])
+def test_preflight_rejects_all_zero_expression(tmp_path, storage):
+    _write_application_inputs(tmp_path)
+    st_path = tmp_path / "sample_st.h5ad"
+    st = read_h5ad(st_path)
+    values = np.zeros(st.shape, dtype=np.float64)
+    st.X = csr_matrix(values) if storage == "sparse" else values
+    st.write_h5ad(st_path)
+
+    with pytest.raises(ValueError, match="expected=at least one non-zero value"):
+        _preflight(tmp_path)
+
+
+def test_expression_scan_supports_sparse_array_without_mutation(tmp_path):
+    adata = _adata("st")
+    adata.X = csr_array([[1.0, 0.0], [0.0, 2.0]])
+    before = adata.X.copy()
+
+    report, warnings = REVISEInputService._validate_expression_matrix(
+        adata,
+        role="st",
+        path=tmp_path / "in-memory.h5ad",
+    )
+
+    assert report["finite"] is True
+    assert report["non_negative"] is True
+    assert warnings == []
+    np.testing.assert_array_equal(adata.X.toarray(), before.toarray())
+
+
+def test_preflight_does_not_compare_st_and_reference_expression_semantics(tmp_path):
+    _write_application_inputs(tmp_path)
+    st_path = tmp_path / "sample_st.h5ad"
+    st = read_h5ad(st_path)
+    st.X = np.array([[0.1, 0.2], [0.3, 0.4]])
+    st.write_h5ad(st_path)
+    sc_path = tmp_path / "sc.h5ad"
+    sc = read_h5ad(sc_path)
+    sc.X = np.array([[100.0, 200.0], [300.0, 400.0]])
+    sc.write_h5ad(sc_path)
+
+    _, report = _preflight(tmp_path)
+
+    assert report["status"] == "ready"
+    assert all(
+        item["expression"]["semantics_comparison"] == "not_performed"
+        for item in report["inputs"]
     )
 
 
@@ -314,7 +456,7 @@ def test_benchmark_preflight_rejects_wrong_patient_for_sample_path(tmp_path):
         )
 
 
-def test_application_preflight_keeps_exact_patient_match(tmp_path):
+def test_application_preflight_does_not_filter_reference_by_patient(tmp_path):
     runtime, io, _ = _application_specs(tmp_path)
     io["sample_name"] = "P2CRC/cut_part1"
     io["patient_key"] = "Patient"
@@ -322,15 +464,18 @@ def test_application_preflight_keeps_exact_patient_match(tmp_path):
     _write(Path(specs[0].path), "st")
     sc_ref_path = tmp_path / "sc.h5ad"
     sc_ref = _adata("sc_ref")
-    sc_ref.obs["Patient"] = ["P2CRC"] * sc_ref.n_obs
+    sc_ref.obs["Patient"] = ["P3CRC"] * sc_ref.n_obs
     sc_ref.write_h5ad(sc_ref_path)
 
-    with pytest.raises(ValueError, match=r"sample 'P2CRC/cut_part1'"):
-        REVISEInputService(io).preflight(
-            specs,
-            runtime=runtime,
-            columns=COLUMNS,
-        )
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    assert report["status"] == "ready"
+    sc_report = next(item for item in report["inputs"] if item["role"] == "sc_ref")
+    assert sc_report["shape"] == [2, 2]
 
 
 def test_batch_effect_preflight_allows_reference_without_target_patient(tmp_path):
@@ -949,7 +1094,7 @@ def test_preflight_report_is_persisted_without_scientific_outputs(tmp_path):
     output_root = tmp_path / "output"
 
     svc = REVISEPipeline().run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(output_root),
@@ -977,7 +1122,7 @@ def test_pipeline_preflight_failure_persists_terminal_run_truth(tmp_path):
 
     with pytest.raises(FileNotFoundError, match=r"role=st.*missing-case"):
         REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
