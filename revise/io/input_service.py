@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional, Union
 import numpy as np
 import pandas as pd
 from anndata import AnnData, read_h5ad
-from scipy.sparse import issparse
 
 from revise.io.input_bundle import REVISEDataBundle
 from revise.io.spatialdata_service import SpatialDataService
@@ -165,10 +164,9 @@ class REVISEInputService:
         )
 
     def preflight(self, specs, *, runtime, columns) -> Dict[str, Any]:
-        """Validate route-required inputs without changing their contents."""
+        """Validate route-required input metadata without loading expression data."""
         opened: Dict[str, AnnData] = {}
         reports = []
-        preflight_warnings = []
         with ExitStack() as stack:
             for spec in specs:
                 role = str(spec.role)
@@ -198,13 +196,6 @@ class REVISEInputService:
                     runtime=runtime,
                     columns=columns,
                 )
-                expression_report, expression_warnings = (
-                    self._validate_expression_matrix(
-                        adata,
-                        role=role,
-                        path=path,
-                    )
-                )
                 opened[role] = adata
                 input_report = {
                     "role": role,
@@ -212,10 +203,7 @@ class REVISEInputService:
                     "format": input_format,
                     "backed": backed,
                     "shape": [int(adata.n_obs), int(adata.n_vars)],
-                    "expression": expression_report,
-                    "warnings": expression_warnings,
                 }
-                preflight_warnings.extend(expression_warnings)
                 if role == "st" and str(runtime.get("task")) == "sc_svc_sr":
                     raw_mapping = adata.uns.get("all_cells_in_spot")
                     if raw_mapping is not None:
@@ -254,137 +242,15 @@ class REVISEInputService:
                 runtime=runtime,
                 paths=paths,
             )
-            if self.logger is not None:
-                for warning in preflight_warnings:
-                    self.logger.warning("[preflight] %s", warning)
             return {
                 "status": "ready",
                 "inputs": reports,
                 "gene_overlap": int(len(overlap)),
-                "warnings": preflight_warnings,
                 "proof_boundary": (
-                    "metadata_required_arrays_and_expression_values_scanned; "
-                    "expression_semantics_not_compared"
+                    "metadata_and_required_arrays_only; "
+                    "expression_values_not_fully_scanned"
                 ),
             }
-
-    @staticmethod
-    def _validate_expression_matrix(
-        adata: AnnData,
-        *,
-        role: str,
-        path: Path,
-    ) -> tuple[Dict[str, Any], list[str]]:
-        """Scan ``X`` in chunks and report problems without mutating the matrix."""
-        context = f"role={role}; path={path}; field=X"
-        if adata.X is None:
-            raise ValueError(
-                f"Invalid input: {context}; expected=present real numeric matrix; "
-                "actual=None"
-            )
-
-        raw_matrix_shape = getattr(adata.X, "shape", None)
-        matrix_shape = tuple(raw_matrix_shape) if raw_matrix_shape is not None else None
-        if matrix_shape is None or len(matrix_shape) != 2 or matrix_shape != adata.shape:
-            raise ValueError(
-                f"Invalid input: {context}; expected=2-D shape {adata.shape}; "
-                f"actual_shape={matrix_shape}"
-            )
-
-        dtype = getattr(adata.X, "dtype", None)
-        if dtype is None or not np.issubdtype(dtype, np.number) or np.issubdtype(
-            dtype,
-            np.complexfloating,
-        ):
-            raise TypeError(
-                f"Invalid input: {context}; expected=real numeric values; "
-                f"actual_dtype={dtype}"
-            )
-
-        nonzero_by_var = np.zeros(adata.n_vars, dtype=bool)
-        all_zero_obs = 0
-        stored_values_scanned = 0
-        total_nonzero = 0
-
-        for chunk, start, end in adata.chunked_X(2048):
-            if issparse(chunk):
-                values = np.asarray(chunk.data)
-                stored_values_scanned += int(values.size)
-                if not np.isfinite(values).all():
-                    invalid_count = int(np.count_nonzero(~np.isfinite(values)))
-                    raise ValueError(
-                        f"Invalid input: {context}; rows={start}:{end}; "
-                        "expected=finite values; "
-                        f"actual_nonfinite={invalid_count}"
-                    )
-                if np.any(values < 0):
-                    negative_count = int(np.count_nonzero(values < 0))
-                    raise ValueError(
-                        f"Invalid input: {context}; rows={start}:{end}; "
-                        "expected=non-negative values; "
-                        f"actual_negative={negative_count}"
-                    )
-                nonzero = chunk != 0
-                row_nonzero = np.asarray(nonzero.count_nonzero(axis=1)).ravel()
-                column_nonzero = np.asarray(nonzero.count_nonzero(axis=0)).ravel()
-            else:
-                values = np.asarray(chunk)
-                stored_values_scanned += int(values.size)
-                if not np.isfinite(values).all():
-                    invalid_count = int(np.count_nonzero(~np.isfinite(values)))
-                    raise ValueError(
-                        f"Invalid input: {context}; rows={start}:{end}; "
-                        "expected=finite values; "
-                        f"actual_nonfinite={invalid_count}"
-                    )
-                if np.any(values < 0):
-                    negative_count = int(np.count_nonzero(values < 0))
-                    raise ValueError(
-                        f"Invalid input: {context}; rows={start}:{end}; "
-                        "expected=non-negative values; "
-                        f"actual_negative={negative_count}"
-                    )
-                nonzero = values != 0
-                row_nonzero = np.count_nonzero(nonzero, axis=1)
-                column_nonzero = np.count_nonzero(nonzero, axis=0)
-
-            all_zero_obs += int(np.count_nonzero(row_nonzero == 0))
-            nonzero_by_var |= column_nonzero > 0
-            total_nonzero += int(np.sum(row_nonzero))
-
-        if total_nonzero == 0:
-            raise ValueError(
-                f"Invalid input: {context}; expected=at least one non-zero value; "
-                "actual=all_zero"
-            )
-
-        all_zero_vars = int(np.count_nonzero(~nonzero_by_var))
-        warnings = []
-        if all_zero_obs:
-            warnings.append(
-                f"Input warning: {context}; all_zero_observations={all_zero_obs}; "
-                "values were not changed"
-            )
-        if all_zero_vars:
-            warnings.append(
-                f"Input warning: {context}; all_zero_variables={all_zero_vars}; "
-                "values were not changed"
-            )
-
-        return (
-            {
-                "matrix": "X",
-                "dtype": str(dtype),
-                "logical_values_scanned": int(adata.n_obs) * int(adata.n_vars),
-                "stored_values_scanned": stored_values_scanned,
-                "finite": True,
-                "non_negative": True,
-                "all_zero_observations": all_zero_obs,
-                "all_zero_variables": all_zero_vars,
-                "semantics_comparison": "not_performed",
-            },
-            warnings,
-        )
 
     def _validate_metadata(
         self,
