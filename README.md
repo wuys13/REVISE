@@ -91,22 +91,28 @@ equivalent entry name:
 revise-reconstruct --config configs/application/VisiumHD.yaml
 ```
 
-Every Application invocation allocates
-exactly one run directory, including a dry run, at:
+`--dry-run` is the only preflight switch. It may write run evidence but does
+not publish a result H5AD. A successful preflight reports the exact output
+paths that the formal run will use. The three routes publish:
 
 ```text
-<output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/
+output/P1CRC_HD_sp-SVC.h5ad
+output/REVISEVisiumMouseBrain_sc-SVC-sr.h5ad
 ```
 
-The run envelope contains `provenance.json`, `merged_config.json`, and `run.log`;
-a completed input validation also adds `preflight.json`. A formal run writes its
-final H5AD file(s) directly into that same directory: `sp-SVC` and `sc-SVC-sr` write
-`<output.name>.h5ad`, while `sc-SVC` writes
-`<output.name>_spatial.h5ad` and `<output.name>_expr.h5ad` as sibling files.
-The two `sc-SVC` files therefore share one run directory and one provenance
-record. A dry run has its own independent run directory and writes no H5AD.
-Repeating a formal run creates a new `<timestamp_uuid>` directory and leaves
-earlier runs untouched.
+Standard `sc-SVC` publishes its two reconstruction carriers separately:
+
+```text
+output/P1CRC_Xenium_T_sc-SVC_spatial.h5ad
+output/P1CRC_Xenium_T_sc-SVC_expr.h5ad
+```
+
+The associated `provenance.json` keeps the application YAML identity under
+`application_config` (`source_path`, `source_sha256`, root and resolved paths,
+and effective action). Top-level `config_path` and `config_hash`
+remain the engine configuration identity. [`reconstruct.py`](reconstruct.py)
+is the canonical Application implementation, and the installed
+`revise-reconstruct` command points to its same `main()` implementation.
 
 <details>
 <summary><strong>What does each template reconstruct?</strong></summary>
@@ -132,12 +138,8 @@ existing absolute directory. Input and output values are relative children of
 that root and cannot escape it with `..`. The package-internal
 `revise/revise.yaml` remains authoritative.
 
-- Both inputs must have a real numeric `X` containing only finite,
-  non-negative values and at least one non-zero value, plus unique
-  `obs_names`, unique `var_names`, and at least one shared gene. Preflight
-  scans `X` without changing it; all-zero observations or variables are
-  reported as warnings. It does not infer or compare ST/reference expression
-  semantics such as counts versus normalized values.
+- Both inputs must have non-empty `X`, unique `obs_names`, unique `var_names`,
+  and at least one shared gene.
 - The ST input must contain finite two-dimensional coordinates in
   `obsm["spatial"]`.
 - Every route requires `global_anchoring.broad_column` in reference `obs`. Only
@@ -238,19 +240,16 @@ REVISE reconstructs three complementary SVC types:
 
 <p align="center">Overview of the REVISE framework</p>
 
-Application output names are declared in YAML. Every invocation uses the
-single run-directory contract
+Application output names are declared in YAML. `sp-SVC` and `sc-SVC-sr` publish:
 
 ```text
-<output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/
+<output-dir>/<output-name>.h5ad
 ```
 
-The directory contains `provenance.json`, `merged_config.json`, and `run.log`;
-successful input validation adds `preflight.json`, and a successful formal run
-adds the final H5AD artifact(s). `sp-SVC` and `sc-SVC-sr` write `<output.name>.h5ad`; `sc-SVC` writes
-`<output.name>_spatial.h5ad` and `<output.name>_expr.h5ad` in the same run
-directory. Dry runs receive a separate run directory with no H5AD, and each
-formal rerun receives a new timestamped/unique leaf.
+`sc-SVC` publishes `<output-name>_spatial.h5ad` and
+`<output-name>_expr.h5ad` in `<output-dir>`. The run's
+`provenance.json` records each result role together with the resolved route,
+configuration, inputs, stages, and artifacts.
 
 ## Reproduce
 

@@ -81,28 +81,30 @@ remain mandatory algorithm steps independent of local OT conditioning.
 Run evidence
 ------------
 
-Every Application invocation, including ``--dry-run``, allocates exactly one
-run directory at
+A full run allocates a unique canonical directory beneath the route-specific
+output tree. It contains at least the merged configuration, logs, and
+``provenance.json``; successful stages may add hashed artifacts and benchmark
+metric tables. The exact directory leaf is unique and should be discovered
+through the public result link or manifest rather than reconstructed from a
+hard-coded timestamp pattern.
+
+The canonical CLI publishes stable-facing application results. sp-SVC and
+sc-SVC-sr use:
 
 .. code-block:: text
 
-   <output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/
+   <output-dir>/<output-name>.h5ad
 
-The run envelope contains ``provenance.json``, ``merged_config.json``, and
-``run.log``; completed input validation adds ``preflight.json``. A successful
-formal run writes its final H5AD artifact(s) directly into that same directory:
-sp-SVC and sc-SVC-sr write
-``<output.name>.h5ad``; standard sc-SVC writes
-``<output.name>_spatial.h5ad`` and ``<output.name>_expr.h5ad`` as sibling
-files. The sc-SVC pair therefore shares one run directory and provenance
-record. A dry run receives an independent run directory with no H5AD. Every
-repeated formal run receives a new ``<timestamp_uuid>`` leaf, leaving previous
-runs untouched. Application creates no temporary H5AD files or shared
-fixed-name copies and does not use ``os.replace`` for H5AD output.
+Standard sc-SVC publishes ``<output-name>_spatial.h5ad`` and
+``<output-name>_expr.h5ad`` in the configured output directory. The manifest records each public result role
+and the internal route separately. Strategy artifacts remain in the canonical
+run but are not additional public output contracts.
 
-The manifest records each result role and the internal route separately.
-Strategy artifacts, when present, remain in the same canonical run directory
-but are not additional public output contracts.
+For both the single-file and paired 1.x outputs, the entrypoint writes all
+same-directory temporary H5AD files before replacing public targets. The pair
+is not reader-atomic or crash-atomic, and replacement does not provide rollback
+after a process failure. The caller must guarantee one writer per stable public
+target.
 
 ``provenance.json.local_refinement`` is the minimal route-level evidence:
 ``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,
@@ -117,9 +119,8 @@ Run status is limited to ``running``, ``succeeded``, and ``failed``. Captured
 SIGTERM and KeyboardInterrupt become failed with their error evidence, as do
 captured stage exceptions; later stages are skipped because of upstream
 failure. Dry-run marks non-validation stages skipped. An uncatchable
-termination leaves the last manifest running; a failure while persisting
-terminal provenance can do the same. That is evidence that the run did not
-complete—not permission to infer success.
+termination leaves the last manifest running, which is evidence that the run
+did not complete—not permission to infer success.
 
 ``input_identities`` records one content identity per external role; there is
 no aggregate data fingerprint. Software identity is collected once per run.
@@ -136,9 +137,7 @@ explanation.
 Extension boundary
 ------------------
 
-Add a new route by extending the existing profile, router, built-in route
-contract, and strategy registry together with their focused tests. The loader
-rejects route fields that disagree with that contract before execution. Do not
-create another orchestration entrypoint or output alias layer. Candidate
-evidence is intentionally limited to tested routes and scales; see
-:doc:`limitations`.
+Add a new route by extending the existing profile, router, and strategy registry and
+their focused tests. Do not create another orchestration entrypoint or output
+alias layer. Candidate evidence is intentionally limited to tested routes and
+scales; see :doc:`limitations`.

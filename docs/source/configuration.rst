@@ -103,8 +103,7 @@ The request runs by default. ``--dry-run`` (or ``dry_run=True`` in
 ``run_application``) changes only the effective action to ``preflight``.
 
 Preflight may write run evidence, including ``preflight.json`` and
-``provenance.json``, in the invocation's dedicated run directory. A dry run
-does not write an H5AD.
+``provenance.json``, but does not publish a result H5AD.
 
 Application identity is namespaced under ``application_config`` with
 ``source_path``, ``source_sha256``, ``declared_root``, ``resolved_root``,
@@ -121,14 +120,6 @@ paths are not guessed.
 Output
 ------
 
-Every Application invocation allocates exactly one run directory at
-``<output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/``.
-Its run envelope contains ``provenance.json``, ``merged_config.json``, and
-``run.log``; completed input validation adds ``preflight.json``. A successful
-formal sp-SVC or sc-SVC-sr run writes
-``<output.name>.h5ad`` directly into that directory. A formal standard sc-SVC
-run writes ``<output.name>_spatial.h5ad`` and
-``<output.name>_expr.h5ad`` as sibling files in the same directory. ``--dry-run``
-gets an independent run directory with no H5AD, and each repeated formal run
-gets a new ``<timestamp_uuid>`` leaf. Application does not create temporary
-H5AD files, shared fixed-name copies, or use ``os.replace`` for H5AD output.
+sp-SVC and sc-SVC-sr publish ``<output-dir>/<output-name>.h5ad``. Standard
+sc-SVC publishes ``<output-dir>/<output-name>_spatial.h5ad`` and
+``<output-dir>/<output-name>_expr.h5ad``.

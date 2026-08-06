@@ -23,22 +23,25 @@ Start here
 - :doc:`source/limitations` states the current data, scale, and scientific
   evidence boundaries.
 
-Application output contract
----------------------------
+Public result contract
+----------------------
 
-Every Application invocation uses exactly one run directory:
+sp-SVC and sc-SVC-sr publish:
 
 .. code-block:: text
 
-   <output.dir>/<output.name>/application__<svc-type>/<timestamp_uuid>/
+   <output-dir>/<output-name>.h5ad
 
-The run envelope contains ``provenance.json``, ``merged_config.json``, and
-``run.log``; completed input validation adds ``preflight.json``. Successful
-formal sp-SVC and sc-SVC-sr runs add
-``<output.name>.h5ad``; standard sc-SVC adds
-``<output.name>_spatial.h5ad`` and ``<output.name>_expr.h5ad`` as siblings in
-the same directory. Dry runs add no H5AD. Repeating a run creates a new
-timestamp/UUID leaf and never overwrites an earlier run.
+Standard sc-SVC publishes its paired carriers:
+
+.. code-block:: text
+
+   <output-dir>/<output-name>_spatial.h5ad
+   <output-dir>/<output-name>_expr.h5ad
+
+Each result links to the run's ``provenance.json``. The manifest records the
+logical output name and role together with the application request, internal
+route, engine configuration, stages, inputs, and artifacts.
 
 .. toctree::
    :caption: Start Here
