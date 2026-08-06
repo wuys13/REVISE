@@ -91,7 +91,7 @@ equivalent entry name:
 revise-reconstruct --config configs/application/VisiumHD.yaml
 ```
 
-`--dry-run` is the only preflight switch. Every Application invocation allocates
+Every Application invocation allocates
 exactly one run directory, including a dry run, at:
 
 ```text
@@ -106,15 +106,7 @@ final H5AD file(s) directly into that same directory: `sp-SVC` and `sc-SVC-sr` w
 The two `sc-SVC` files therefore share one run directory and one provenance
 record. A dry run has its own independent run directory and writes no H5AD.
 Repeating a formal run creates a new `<timestamp_uuid>` directory and leaves
-earlier runs untouched. Application does not create temporary H5AD files,
-shared fixed-name copies, or use `os.replace` for H5AD output.
-
-The associated `provenance.json` keeps the application YAML identity under
-`application_config` (`source_path`, `source_sha256`, root and resolved paths,
-and effective action). Top-level `config_path` and `config_hash`
-remain the engine configuration identity. [`reconstruct.py`](reconstruct.py)
-is the canonical Application implementation, and the installed
-`revise-reconstruct` command points to its same `main()` implementation.
+earlier runs untouched.
 
 <details>
 <summary><strong>What does each template reconstruct?</strong></summary>
