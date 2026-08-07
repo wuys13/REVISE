@@ -183,6 +183,15 @@ class GlobalAnchoringKernel(BaseKernel):
 
             st_adata_raw = st_adata.copy()
             tacco_reference_input = sc_ref_adata.copy()
+            reference_labels = tacco_reference_input.obs[self.cell_type_col]
+            expected_categories = list(
+                self._reference_categories(reference_labels)
+            )
+            tacco_reference_input.obs[self.cell_type_col] = pd.Categorical(
+                reference_labels,
+                categories=expected_categories,
+                ordered=getattr(reference_labels.dtype, "ordered", False),
+            )
             result_key = f"__revise_tacco_{uuid.uuid4().hex}"
             tacco_output = tc.tl.annotate(
                 st_adata_raw,
