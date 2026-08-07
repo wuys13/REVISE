@@ -575,6 +575,12 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         overlap_genes = adata_sp.var_names.intersection(adata_sc.var_names)
         if overlap_genes.empty:
             raise ValueError("No overlapping genes between spatial and sc reference data")
+        reference_overlap_mass = np.asarray(
+            adata_sc[:, overlap_genes].X.sum(axis=1)
+        ).ravel()
+        zero_reference_cells = reference_overlap_mass == 0
+        if np.any(zero_reference_cells):
+            adata_sc = adata_sc[~zero_reference_cells, :].copy()
         adata_sp = adata_sp[:, overlap_genes].copy()
 
         ctx.runner_config = conf
