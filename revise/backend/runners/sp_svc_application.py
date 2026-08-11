@@ -9,12 +9,12 @@ from tqdm import tqdm
 
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
+from revise.backend.kernels.ot import OTKernel, stabilize_local_ot_support
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.runners.sp_svc_assignment import (
     condition_sp_local_ot_cost,
     global_assignment_from_adata,
 )
-from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.shaver import trim_sp_adata
 from revise.backend.ops.topology import get_adjacency_graph
 
@@ -209,11 +209,7 @@ class SpSVC(ApplicationSVC):
             key=self.config.cell_type_col,
             expected_categories=assignment_categories,
         )
-        conditioning_strength = getattr(
-            self.config,
-            "local_refinement_strength",
-            0.2,
-        )
+        conditioning_strength = self.config.local_refinement_strength
         refinement_applied = False
         cell_type_adata_list = []
         for cell_type in tqdm(svc_recon_adata.obs[self.config.cell_type_col].unique().tolist(), desc="Reconstructing"):
@@ -287,7 +283,7 @@ class SpSVC(ApplicationSVC):
                     strength=conditioning_strength,
                 )
                 distance_matrix[~valid_neighbor_mask] = np.inf
-                T_transform = solve_local_ot(
+                T_transform = OTKernel.couple(
                     nu,
                     mu,
                     distance_matrix.T,

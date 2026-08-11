@@ -41,6 +41,8 @@ def _validate_global_assignment_axis(
     actual: Iterable[Any],
     expected: Iterable[Any],
     axis: str,
+    *,
+    require_order: bool = True,
 ) -> None:
     """Validate one GA axis by exact raw value and order."""
     actual_index = _strict_global_axis(actual, axis)
@@ -53,6 +55,8 @@ def _validate_global_assignment_axis(
         raise GlobalAssignmentContractError(
             f"{axis} axis mismatch: missing={missing}, extra={extra}"
         )
+    if not require_order:
+        return
     raise GlobalAssignmentContractError(
         f"{axis} axis order does not match expected order"
     )
@@ -63,6 +67,8 @@ def validate_global_assignment(
     *,
     expected_observations: Iterable[Any],
     expected_categories: Iterable[Any],
+    require_category_order: bool = True,
+    require_row_normalization: bool = True,
 ) -> GlobalAssignment:
     """Validate a GA posterior without reordering, normalizing, or repairing it."""
     if not isinstance(assignment, GlobalAssignment):
@@ -90,6 +96,7 @@ def validate_global_assignment(
         assignment.posterior.columns,
         expected_categories,
         "category",
+        require_order=require_category_order,
     )
 
     try:
@@ -105,7 +112,13 @@ def validate_global_assignment(
             "posterior values must be non-negative"
         )
     row_mass = values.sum(axis=1)
-    if not np.allclose(row_mass, 1.0, rtol=0.0, atol=1e-6):
+    if np.any(row_mass <= 0):
+        raise GlobalAssignmentContractError(
+            "posterior rows must have positive mass"
+        )
+    if require_row_normalization and not np.allclose(
+        row_mass, 1.0, rtol=0.0, atol=1e-6
+    ):
         raise GlobalAssignmentContractError(
             "posterior rows must be row-normalized within atol=1e-6"
         )

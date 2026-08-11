@@ -3,13 +3,7 @@ from __future__ import annotations
 import copy
 import math
 from numbers import Real
-from pathlib import Path
 from typing import Any, Dict, List
-
-try:
-    import yaml
-except ImportError as exc:  # pragma: no cover
-    raise ImportError("PyYAML is required for revise config loading") from exc
 
 
 TOP_LEVEL_KEYS = {"version", "defaults", "router", "profiles", "locked_params", "schemas"}
@@ -64,7 +58,14 @@ IO_KEYS = {
 }
 COLUMNS_KEYS = {"cell_type_col", "sub_cell_type_col", "confidence_col", "unknown_key"}
 PREPROCESS_KEYS = {"st_min_counts", "st_min_cells", "sc_min_counts", "sc_min_cells", "st_min_transcripts"}
-GRAPH_KEYS = {"method", "alpha", "n_neighbors", "exp_neighbors", "spatial_neighbors"}
+GRAPH_KEYS = {
+    "method",
+    "alpha",
+    "n_neighbors",
+    "exp_neighbors",
+    "spatial_neighbors",
+    "random_state",
+}
 OT_KEYS = {"ga", "lr", "impute"}
 OT_PHASE_KEYS = {"solver", "pot"}
 OT_LEAF_KEYS = {"reg", "reg_m", "reg_type"}
@@ -72,7 +73,13 @@ OT_SOLVERS = {"pot", "tacco"}
 OT_REG_TYPES = {"entropy", "kl"}
 PLOT_KEYS = {"enabled", "cluster_resolutions", "min_genes", "min_cells", "sample_size"}
 RECONSTRUCT_KEYS = {"alpha"}
-BENCHMARK_KEYS = {"evaluate"}
+BENCHMARK_KEYS = {
+    "evaluate",
+    "dropout_total_counts",
+    "swapping_total_counts",
+    "lower_ts",
+    "upper_ts",
+}
 SC_KEYS = {
     "select_ct",
     "resolutions",
@@ -89,12 +96,6 @@ SC_KEYS = {
     "sr_graph_agg_conf_alpha_min",
     "sr_graph_agg_conf_alpha_max",
     "sr_graph_agg_conf_alpha_power",
-    "sr_noise_enabled",
-    "sr_noise_lambda",
-    "sr_noise_k",
-    "sr_noise_weight",
-    "sr_noise_preserve_total_counts",
-    "sr_noise_seed",
     "tacco_annotate",
 }
 SC_TACCO_ANNOTATE_KEYS = {"multi_center", "lamb"}
@@ -105,6 +106,8 @@ IMPUTE_KEYS = {
     "prune",
     "n_neighbors",
     "method",
+    "graph_preprocess",
+    "graph_n_pcs",
 }
 LOCAL_REFINEMENT_KEYS = {"strength"}
 ASSIGNMENT_GUIDANCE_MIGRATION_ERROR = (
@@ -418,18 +421,6 @@ def _validate_raw_config(raw: Dict[str, Any]) -> None:
     _validate_locked_params(locked)
 
 
-def load_raw_config(path: str | Path) -> Dict[str, Any]:
-    config_path = Path(path)
-    if not config_path.exists():
-        raise ConfigError(f"Config file not found: {config_path}")
-    with config_path.open("r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    if not isinstance(raw, dict):
-        raise ConfigError("Config root must be a mapping")
-    _validate_raw_config(raw)
-    return raw
-
-
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(base)
     for key, value in override.items():
@@ -511,18 +502,17 @@ def _resolve_local_refinement(merged: Dict[str, Any]) -> None:
         _validate_local_refinement(configured, "resolved.local_refinement")
 
     task = str(merged["runtime"]["task"])
-    defaults = {"sp_svc": 0.2, "sc_svc_sr": 0.0}
-    if task not in defaults:
+    if task not in {"sp_svc", "sc_svc_sr"}:
         if configured is not None and "strength" in configured:
             raise ConfigError(
                 f"runtime.task={task} does not accept local_refinement.strength"
             )
         return
-
-    strength = defaults[task]
-    if configured is not None and "strength" in configured:
-        strength = float(configured["strength"])
-    merged["local_refinement"] = {"strength": strength}
+    if configured is None or "strength" not in configured:
+        raise ConfigError(
+            f"runtime.task={task} requires local_refinement.strength in authority"
+        )
+    merged["local_refinement"] = {"strength": float(configured["strength"])}
 
 
 def _paths_overlap(left: str, right: str) -> bool:
@@ -579,7 +569,7 @@ def merge_unified_config(
     if unknown_runtime:
         raise ConfigError(f"Unknown runtime override keys: {unknown_runtime}")
     for key, value in runtime_overrides.items():
-        if value is None and key != "seed":
+        if value is None:
             continue
         merged.setdefault("runtime", {})[key] = copy.deepcopy(value)
 

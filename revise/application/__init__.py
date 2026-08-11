@@ -1,7 +1,4 @@
-"""Internal Application configuration package.
-
-The executable Application entrypoint is :mod:`reconstruct`.
-"""
+"""Application configuration support for :func:`reconstruct.run_application`."""
 
 from .config import ApplicationConfig, ApplicationConfigError
 

@@ -16,9 +16,19 @@ inputs:
   reference:
     path: raw_data/visium_mouse_brain/scRNA_mouse_brain_prepared.h5ad # EDIT
     format: h5ad
-  # Optional exact prior; omit to use seeded random quota-slot assignment.
-  # pm_on_cell:
-  #   path: raw_data/visium_mouse_brain/PM_on_cell.csv
+  # Providing this exact prior selects PM-guided virtual-cell assignment.
+  pm_on_cell:
+    path: raw_data/visium_mouse_brain/PM_on_cell.csv
+
+preprocessing:
+  spatial:
+    min_transcript_counts: null
+    min_counts: 20
+    min_cell_counts: 20
+  reference:
+    min_transcript_counts: null
+    min_genes: 20
+    min_cell_counts: 20
 
 global_anchoring:
   broad_column: Level1 # EDIT to a column in reference.obs.
@@ -26,9 +36,16 @@ global_anchoring:
 local_refinement:
   # A strength of 0.0 does not skip local refinement; it disables only blending.
   strength: 0.0 # KEEP; LR still runs, but posterior blending is disabled.
+  graph:
+    method: pca
+    alpha: 0.2
+    n_neighbors: 10
+    exp_neighbors: 10
+    spatial_neighbors: 10
+  match_spot_sum: true
 
 output:
-  dir: output # EDIT: relative to paths.root_dir.
+  dir: output/visium_mouse_brain_revise # EDIT: relative to paths.root_dir.
   name: REVISEVisiumMouseBrain_sc-SVC-sr # EDIT: one logical result name; do not add .h5ad.
 
 execution:

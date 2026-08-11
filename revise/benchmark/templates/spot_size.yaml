@@ -1,0 +1,10 @@
+schema_version: 1
+route: spot_size
+cases:
+  spot_sizes: [20, 50, 100, 200]
+  batch_number: 3
+io:
+  st_file: xenium_spot.h5ad
+  gt_svc_file: selected_xenium.h5ad
+  sc_ref_file: real_sc_ref_all.h5ad
+algorithm: {}

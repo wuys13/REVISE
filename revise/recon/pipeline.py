@@ -31,7 +31,7 @@ class UnifiedReconstructionPipeline:
             ctx.svc = SVC(
                 expr=None,
                 spatial=None,
-                svc_kind=str(ctx.runtime.get("svc_kind", "sc")),
+                svc_kind=str(ctx.runtime["svc_kind"]),
                 provenance={"dry_run": True},
                 artifacts={},
             )
@@ -198,7 +198,7 @@ class UnifiedReconstructionPipeline:
     def _persist_outputs(self, ctx) -> None:
         if ctx.svc is None:
             return
-        if not bool(ctx.merged_config.get("io", {}).get("save_outputs", True)):
+        if not bool(ctx.merged_config["io"]["save_outputs"]):
             return
 
         outputs = dict(ctx.svc.artifacts.get("outputs", {}))

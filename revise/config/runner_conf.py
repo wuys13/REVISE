@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 """Runner-side configuration contracts.
 
-This module is intentionally separate from `revise/revise.yaml`:
-- `revise/revise.yaml` is the external source-of-truth config and routing surface.
+This module is intentionally separate from `revise.config.authority`:
+- `revise.config.authority` owns engine defaults and semantic routes.
 - Dataclasses in this module are internal runner contracts consumed by compatibility
-  kernels/runners, created in `revise.backend.adapters` from merged YAML config.
+  kernels/runners, created in `revise.backend.adapters` from validated merged config.
 
 Keeping this layer explicit makes route resolution and runner compatibility concerns
 independent and easier to evolve.
@@ -71,17 +71,21 @@ def benchmark_st_path(
     spot_size: Optional[int] = None,
 ) -> str:
     if task == "sp_svc":
+        if seg_method is None:
+            raise ValueError("seg_method is required for benchmark sp_svc")
         return os.path.join(
             data_root,
             sample_name,
-            str(seg_method or "seg_1"),
+            str(seg_method),
             filename,
         )
     if task == "sc_svc_sr":
+        if spot_size is None:
+            raise ValueError("spot_size is required for benchmark sc_svc_sr")
         return os.path.join(
             data_root,
             sample_name,
-            f"spot_{int(spot_size if spot_size is not None else 50)}",
+            f"spot_{int(spot_size)}",
             filename,
         )
     if task == "sc_svc_impute":
@@ -94,7 +98,7 @@ def pm_on_cell_path_from_data_root(data_root: str) -> str:
 
 
 def configured_st_source_path(io_config, h5ad_path: str) -> str:
-    input_format = str(io_config.get("input_format", "h5ad")).lower()
+    input_format = str(io_config["input_format"]).lower()
     spatialdata_path = io_config.get("spatialdata_path")
     if input_format in {"spatialdata", "auto"} and spatialdata_path:
         return str(spatialdata_path)
@@ -152,8 +156,8 @@ def resolve_input_specs(runtime, io_config) -> tuple[InputSpec, ...]:
                     sample_name,
                     st_file,
                     task=task,
-                    seg_method=io_config.get("seg_method"),
-                    spot_size=io_config.get("spot_size"),
+                    seg_method=io_config["seg_method"],
+                    spot_size=io_config["spot_size"],
                 ),
             ),
         ),
@@ -168,12 +172,12 @@ def resolve_input_specs(runtime, io_config) -> tuple[InputSpec, ...]:
     )
 
 
-def resolved_input_path(specs, role: str, fallback: str) -> str:
-    """Return one preflight-resolved role path, with a test-helper fallback."""
-    for spec in specs or ():
+def resolved_input_path(specs, role: str) -> str:
+    """Return one preflight-resolved role path."""
+    for spec in specs:
         if spec.role == role:
             return spec.path
-    return fallback
+    raise KeyError(f"Missing resolved input role: {role}")
 
 
 @dataclass
@@ -189,43 +193,38 @@ class BaseConf:
     unknown_key: str
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ApplicationSpConf(BaseConf):
     st_file: str
     sc_ref_file: str
     annotate_mode: str
 
     # annotate parameters
-    annotate_pot_reg: float = 0.1
-    annotate_pot_reg_m: float = 0.0
-    annotate_pot_reg_type: str = "entropy"
-
-    # preprocess parameters
-    prep_st_min_counts: int = 20
-    prep_st_min_cells: int = 30
-    prep_sc_min_counts: int = 20
-    prep_sc_min_cells: int = 50
+    annotate_pot_reg: float
+    annotate_pot_reg_m: float
+    annotate_pot_reg_type: str
 
     # plot parameters
-    plot_flag: bool = True
-    plot_cluster_resolution: list = field(default_factory=lambda: [0.1, 0.3, 0.5])
-    plot_min_genes: int = 20
-    plot_min_cells: int = 3
-    plot_sample_size: int = 10000
+    plot_flag: bool
+    plot_cluster_resolution: list
+    plot_min_genes: int
+    plot_min_cells: int
+    plot_sample_size: int
 
     # reconstruct parameters
-    rec_graph_n_neighbors: int = 10
-    rec_graph_exp_neighbor_num: int = 10
-    rec_graph_spatial_neighbor_num: int = 10
-    rec_graph_method: str = "joint"
-    rec_graph_alpha: float = 0.4
+    rec_graph_n_neighbors: int
+    rec_graph_exp_neighbor_num: int
+    rec_graph_spatial_neighbor_num: int
+    rec_graph_method: str
+    rec_graph_alpha: float
 
     # reconstruct ot
-    rec_pot_reg: float = 0.05
-    rec_pot_reg_m: float = 1.0
-    rec_pot_reg_type: str = "kl"
-    rec_ot_method: str = "pot"
-    rec_alpha = 0.5
+    rec_pot_reg: float
+    rec_pot_reg_m: float
+    rec_pot_reg_type: str
+    rec_ot_method: str
+    rec_alpha: float
+    local_refinement_strength: float
 
     @property
     def result_dir(self):
@@ -244,39 +243,34 @@ class ApplicationSpConf(BaseConf):
         return application_sc_ref_path(self.raw_data_path, self.sc_ref_file)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ApplicationScConf(BaseConf):
     st_file: str
     sc_ref_file: str
-    annotate_mode: Optional[str] = None
+    annotate_mode: Optional[str]
 
     # annotate parameters
-    annotate_pot_reg: float = 0.06
-    annotate_pot_reg_m: float = 0.015
-    annotate_pot_reg_type: str = "entropy"
-    tacco_annotate_multi_center: Optional[int] = None
-    tacco_annotate_lamb: Optional[float] = None
-
-    # preprocess parameters
-    prep_st_min_counts: int = 60
-    prep_st_min_cells: int = 100
-    prep_sc_min_counts: int = 0
-    prep_sc_min_cells: int = 100
+    annotate_pot_reg: float
+    annotate_pot_reg_m: float
+    annotate_pot_reg_type: str
+    tacco_annotate_multi_center: Optional[int]
+    tacco_annotate_lamb: Optional[float]
 
     # reconstruct parameters
-    rec_graph_n_neighbors: int = 10
-    rec_graph_exp_neighbor_num: int = 15
-    rec_graph_spatial_neighbor_num: int = 6
-    rec_graph_method: str = "joint"
-    rec_graph_alpha: float = 0.2
+    rec_graph_n_neighbors: int
+    rec_graph_exp_neighbor_num: int
+    rec_graph_spatial_neighbor_num: int
+    rec_graph_method: str
+    rec_graph_alpha: float
+    rec_random_state: int
 
     # reconstruct ot
-    rec_pot_reg: float = 0.06
-    rec_pot_reg_m: float = 0.015
-    rec_pot_reg_type: str = "entropy"
-    rec_ot_method: str = "pot"
-    rec_alpha = 0.5
-    rec_match_spot_sum: bool = False
+    rec_pot_reg: float
+    rec_pot_reg_m: float
+    rec_pot_reg_type: str
+    rec_ot_method: str
+    rec_alpha: float
+    rec_match_spot_sum: bool
 
     @property
     def result_dir(self):
@@ -295,41 +289,37 @@ class ApplicationScConf(BaseConf):
         return application_sc_ref_path(self.raw_data_path, self.sc_ref_file)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ApplicationScSrConf(BaseConf):
     st_file: str
     sc_ref_file: str
-    annotate_mode: Optional[str] = None
+    annotate_mode: Optional[str]
 
     # annotate parameters
-    annotate_pot_reg: float = 0.01
-    annotate_pot_reg_m: float = 0.0001
-    annotate_pot_reg_type: str = "kl"
-
-    # preprocess parameters
-    prep_st_min_counts: int = 60
-    prep_st_min_cells: int = 100
-    prep_sc_min_counts: int = 0
-    prep_sc_min_cells: int = 100
+    annotate_pot_reg: float
+    annotate_pot_reg_m: float
+    annotate_pot_reg_type: str
 
     # graph parameters
-    rec_graph_n_neighbors: int = 20
-    rec_graph_method: str = "joint"
-    rec_graph_alpha: float = 0.2
-    rec_graph_exp_neighbor_num: int = 10
-    rec_graph_spatial_neighbor_num: int = 20
+    rec_graph_n_neighbors: int
+    rec_graph_method: str
+    rec_graph_alpha: float
+    rec_graph_exp_neighbor_num: int
+    rec_graph_spatial_neighbor_num: int
 
     # pot parameters
-    rec_pot_reg: float = 0.05
-    rec_pot_reg_m: float = 1.0
-    rec_pot_reg_type: str = "kl"
-    rec_ot_method: str = "pot"
-    rec_alpha: float = 1.0
-    rec_match_spot_sum: bool = False
+    rec_pot_reg: float
+    rec_pot_reg_m: float
+    rec_pot_reg_type: str
+    rec_ot_method: str
+    rec_alpha: float
+    rec_match_spot_sum: bool
+    rec_graph_agg_enabled: bool
 
     # svc parameters
-    svc_completeness: bool = True
-    sr_assignment_seed: int = 42
+    svc_completeness: bool
+    sr_assignment_seed: int
+    local_refinement_strength: float
 
     @property
     def result_dir(self):
@@ -347,7 +337,7 @@ class ApplicationScSrConf(BaseConf):
     def sc_ref_file_path(self):
         return application_sc_ref_path(self.raw_data_path, self.sc_ref_file)
 
-@dataclass
+@dataclass(kw_only=True)
 class BenchmarkSegConf(BaseConf):
     st_file: str
     gt_svc_file: str
@@ -357,29 +347,30 @@ class BenchmarkSegConf(BaseConf):
     case_subdir: Optional[str] = None
 
     # annotate parameters
-    annotate_pot_reg: float = 0.1
-    annotate_pot_reg_m: float = 0.0
-    annotate_pot_reg_type: str = "entropy"
+    annotate_pot_reg: float
+    annotate_pot_reg_m: float
+    annotate_pot_reg_type: str
 
-    # segmentation effect parameters
-    dropout_total_counts: int = 60
-    swapping_total_counts: int = 300
-    lower_ts: float = 0.2
-    upper_ts: float = 0.8
+    # segmentation evaluation policy
+    dropout_total_counts: int
+    swapping_total_counts: int
+    lower_ts: float
+    upper_ts: float
 
     # reconstruct graph
-    rec_graph_n_neighbors: int = 50
-    rec_graph_exp_neighbor_num: int = 30
-    rec_graph_spatial_neighbor_num: int = 30
-    rec_graph_method: str = "joint"
-    rec_graph_alpha: float = 0.8
+    rec_graph_n_neighbors: int
+    rec_graph_exp_neighbor_num: int
+    rec_graph_spatial_neighbor_num: int
+    rec_graph_method: str
+    rec_graph_alpha: float
 
     # reconstruct ot
-    rec_pot_reg: float = 1.0
-    rec_pot_reg_m: float = 0.0
-    rec_pot_reg_type: str = "kl"
-    rec_ot_method: str = "pot"
-    rec_alpha: float = 1.0
+    rec_pot_reg: float
+    rec_pot_reg_m: float
+    rec_pot_reg_type: str
+    rec_ot_method: str
+    rec_alpha: float
+    local_refinement_strength: float
 
     @property
     def result_dir(self):
@@ -413,7 +404,7 @@ class BenchmarkSegConf(BaseConf):
         )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class BenchmarkSrConf(BaseConf):
     st_file: str
     gt_svc_file: str
@@ -423,43 +414,37 @@ class BenchmarkSrConf(BaseConf):
     case_subdir: Optional[str] = None
 
     # annotate parameters
-    annotate_pot_reg: float = 0.01
-    annotate_pot_reg_m: float = 0.0001
-    annotate_pot_reg_type: str = "kl"
+    annotate_pot_reg: float
+    annotate_pot_reg_m: float
+    annotate_pot_reg_type: str
 
     # svc parameters
-    svc_completeness: bool = True
-    sr_assignment_seed: int = 42
+    svc_completeness: bool
+    sr_assignment_seed: int
 
     # optional graph aggregation (SR robustness benchmark)
-    rec_graph_n_neighbors: int = 20
-    rec_graph_exp_neighbor_num: int = 10
-    rec_graph_spatial_neighbor_num: int = 20
-    rec_graph_method: str = "joint"
-    rec_graph_alpha: float = 0.2
-    rec_pot_reg: float = 0.05
-    rec_pot_reg_m: float = 1.0
-    rec_pot_reg_type: str = "kl"
-    rec_ot_method: str = "pot"
-    rec_alpha: float = 1.0
-    rec_graph_agg_enabled: bool = False
-    rec_graph_agg_low_conf_only: bool = False
-    rec_graph_agg_low_conf_quantile: float = 0.2
-    rec_graph_agg_anchor_only: bool = False
-    rec_graph_agg_anchor_high_conf_quantile: float = 0.8
-    rec_graph_agg_confidence_mode: str = "auto"
-    rec_graph_agg_conf_weighted_alpha: bool = False
-    rec_graph_agg_conf_alpha_min: float = 0.0
-    rec_graph_agg_conf_alpha_max: float = -1.0
-    rec_graph_agg_conf_alpha_power: float = 1.0
+    rec_graph_n_neighbors: int
+    rec_graph_exp_neighbor_num: int
+    rec_graph_spatial_neighbor_num: int
+    rec_graph_method: str
+    rec_graph_alpha: float
+    rec_pot_reg: float
+    rec_pot_reg_m: float
+    rec_pot_reg_type: str
+    rec_ot_method: str
+    rec_alpha: float
+    rec_graph_agg_enabled: bool
+    rec_graph_agg_low_conf_only: bool
+    rec_graph_agg_low_conf_quantile: float
+    rec_graph_agg_anchor_only: bool
+    rec_graph_agg_anchor_high_conf_quantile: float
+    rec_graph_agg_confidence_mode: str
+    rec_graph_agg_conf_weighted_alpha: bool
+    rec_graph_agg_conf_alpha_min: float
+    rec_graph_agg_conf_alpha_max: float
+    rec_graph_agg_conf_alpha_power: float
 
-    # spot-level spatial leakage noise (benchmark stress test)
-    sr_noise_enabled: bool = False
-    sr_noise_lambda: float = 0.0
-    sr_noise_k: int = 4
-    sr_noise_weight: str = "distance"
-    sr_noise_preserve_total_counts: bool = True
-    sr_noise_seed: int = 42
+    local_refinement_strength: float
 
     @property
     def result_dir(self):
@@ -492,7 +477,7 @@ class BenchmarkSrConf(BaseConf):
             self.sc_ref_file,
         )
 
-@dataclass
+@dataclass(kw_only=True)
 class BenchmarkImputeConf(BaseConf):
     st_file: str
     gt_svc_file: str
@@ -501,32 +486,32 @@ class BenchmarkImputeConf(BaseConf):
     case_subdir: Optional[str] = None
 
     # preprocess parameters
-    prep_min_cells: int = 30
-    prep_min_counts: int = 60
+    prep_min_cells: int
+    prep_min_counts: int
 
     # annotate parameters
-    annotate_pot_reg: float = 0.01
-    annotate_pot_reg_m: float = 0.0001
-    annotate_pot_reg_type: str = "kl"
+    annotate_pot_reg: float
+    annotate_pot_reg_m: float
+    annotate_pot_reg_type: str
 
     # reconstruct graph
-    rec_graph_preprocess: bool = True
-    rec_graph_n_pcs: int = 50
-    rec_graph_n_neighbors: int = 15
+    rec_graph_preprocess: bool
+    rec_graph_n_pcs: int
+    rec_graph_n_neighbors: int
 
     # reconstruct ot
-    rec_impute_pot_reg: float = 5.0
-    rec_impute_pot_reg_m: float = 0.0
-    rec_impute_pot_reg_type: str = "kl"
-    rec_ot_method: str = "pot"
+    rec_impute_pot_reg: float
+    rec_impute_pot_reg_m: float
+    rec_impute_pot_reg_type: str
+    rec_ot_method: str
 
     # reconstruct impute
-    rec_merge_subcluster_method: str = "mean"
-    rec_subcluster_resolution: int = 3
-    rec_in_panel_subcluster_resolution: Optional[int] = None
-    rec_impute_prune_flag: bool = True
-    rec_impute_n_neighbors: int = 1
-    rec_impute_method: str = "mean"
+    rec_merge_subcluster_method: str
+    rec_subcluster_resolution: int
+    rec_in_panel_subcluster_resolution: Optional[int]
+    rec_impute_prune_flag: bool
+    rec_impute_n_neighbors: int
+    rec_impute_method: str
 
     @property
     def result_dir(self):

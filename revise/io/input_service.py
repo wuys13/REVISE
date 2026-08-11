@@ -163,7 +163,15 @@ class REVISEInputService:
             source_report=source_report,
         )
 
-    def preflight(self, specs, *, runtime, columns) -> Dict[str, Any]:
+    def preflight(
+        self,
+        specs,
+        *,
+        runtime,
+        columns,
+        reference_filter_column: str | None = None,
+        reference_filter_value: str | None = None,
+    ) -> Dict[str, Any]:
         """Validate route-required input metadata without loading expression data."""
         opened: Dict[str, AnnData] = {}
         reports = []
@@ -196,6 +204,22 @@ class REVISEInputService:
                     runtime=runtime,
                     columns=columns,
                 )
+                if (
+                    role == "sc_ref"
+                    and reference_filter_column is not None
+                    and reference_filter_value is not None
+                ):
+                    if reference_filter_column not in adata.obs.columns:
+                        raise ValueError(
+                            "Invalid reference filter: "
+                            f"filter_column={reference_filter_column!r}; actual=missing"
+                        )
+                    matched = adata.obs[reference_filter_column] == reference_filter_value
+                    if not bool(matched.any()):
+                        raise ValueError(
+                            "Invalid reference filter: "
+                            f"filter_value={reference_filter_value!r}; matched no rows"
+                        )
                 opened[role] = adata
                 input_report = {
                     "role": role,
@@ -220,7 +244,7 @@ class REVISEInputService:
                     input_report["ground_truth_label_source"] = (
                         self._resolve_sr_ground_truth_label_key(
                             adata,
-                            str(columns.get("cell_type_col", "Level1")),
+                            str(columns["cell_type_col"]),
                         )
                     )
                 reports.append(input_report)
@@ -288,11 +312,11 @@ class REVISEInputService:
                 required_obs.append("transcript_counts")
             self._require_obs(adata, required_obs, context=context)
         elif role == "sc_ref":
-            cell_type_col = str(columns.get("cell_type_col", "Level1"))
+            cell_type_col = str(columns["cell_type_col"])
             required_obs = [cell_type_col]
             if mode == "application" and task == "sc_svc":
                 required_obs.append(
-                    str(columns.get("sub_cell_type_col", "Level2"))
+                    str(columns["sub_cell_type_col"])
                 )
             self._require_reference_labels(
                 adata,
@@ -349,7 +373,7 @@ class REVISEInputService:
         elif role == "gt" and task == "sc_svc_sr":
             label_key = self._resolve_sr_ground_truth_label_key(
                 adata,
-                str(columns.get("cell_type_col", "Level1")),
+                str(columns["cell_type_col"]),
             )
             self._require_obs(
                 adata,

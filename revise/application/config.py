@@ -16,6 +16,8 @@ from typing import Any, Mapping
 
 import yaml
 
+from revise.config.authority import ENGINE_DEFAULTS
+
 
 class ApplicationConfigError(ValueError):
     """Raised when an application YAML cannot be used."""
@@ -42,14 +44,30 @@ class ApplicationConfig:
     st_format: str
     spatialdata_table: str | None
     spatialdata_element: str | None
+    reference_filter_column: str | None
+    reference_filter_value: str | None
+    spatial_min_transcript_counts: int | None
+    spatial_min_counts: int | None
+    spatial_min_cell_counts: int
+    reference_min_transcript_counts: int | None
+    reference_min_genes: int | None
+    reference_min_cell_counts: int
     broad_column: str
     subtype_column: str | None
     select_cell_type: str | None
     local_refinement_strength: float | None
+    local_refinement_alpha: float | None
+    local_refinement_resolutions: tuple[float, ...] | None
+    local_refinement_graph_method: str | None
+    local_refinement_graph_alpha: float | None
+    local_refinement_graph_n_neighbors: int | None
+    local_refinement_graph_exp_neighbors: int | None
+    local_refinement_graph_spatial_neighbors: int | None
+    local_refinement_match_spot_sum: bool | None
     ot_method: str | None
     pm_on_cell_path: Path | None
     output_dir: Path
-    output_name: str
+    output_name: str | None
     seed: int | None
 
     @property
@@ -83,6 +101,7 @@ _TOP_LEVEL_KEYS = {
     "paths",
     "algorithm",
     "inputs",
+    "preprocessing",
     "global_anchoring",
     "local_refinement",
     "output",
@@ -147,6 +166,14 @@ def _number(value: Any, field: str) -> float:
     return result
 
 
+def _count(value: Any, field: str, *, optional: bool = False) -> int | None:
+    if value is None and optional:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ApplicationConfigError(f"{field} must be a non-negative integer")
+    return value
+
+
 def _root_dir(value: Any, *, cwd: Path) -> tuple[str, Path]:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ApplicationConfigError(
@@ -193,13 +220,33 @@ def _parse_st(inputs: Mapping[str, Any], *, root: Path):
     return path, st_format, table, element
 
 
-def _parse_reference(inputs: Mapping[str, Any], *, root: Path) -> Path:
+def _parse_reference(
+    inputs: Mapping[str, Any],
+    *,
+    root: Path,
+) -> tuple[Path, str | None, str | None]:
     reference = _mapping(_required(inputs, "reference", "inputs"), "inputs.reference")
-    _reject_unknown(reference, {"path", "format"}, "inputs.reference")
+    _reject_unknown(
+        reference,
+        {"path", "format", "filter_column", "filter_value"},
+        "inputs.reference",
+    )
     path = _relative_child(root, _required(reference, "path", "inputs.reference"), "inputs.reference.path")
     if _string(_required(reference, "format", "inputs.reference"), "inputs.reference.format").lower() != "h5ad":
         raise ApplicationConfigError("inputs.reference.format must be h5ad")
-    return path
+    filter_column = _optional_string(
+        reference.get("filter_column"),
+        "inputs.reference.filter_column",
+    )
+    filter_value = _optional_string(
+        reference.get("filter_value"),
+        "inputs.reference.filter_value",
+    )
+    if (filter_column is None) != (filter_value is None):
+        raise ApplicationConfigError(
+            "inputs.reference.filter_column and filter_value must be supplied together"
+        )
+    return path, filter_column, filter_value
 
 
 def _canonical_template_name(value: str) -> str | None:
@@ -266,6 +313,75 @@ def load_application_yaml(config: str | Path) -> tuple[ApplicationConfigSource, 
     return source, document
 
 
+def apply_application_overrides(
+    document: dict[str, Any],
+    values: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Apply only explicitly supplied high-level values to one YAML document."""
+    overrides: dict[str, Any] = {}
+
+    def set_if(name: str, section: str, key: str) -> None:
+        value = values.get(name)
+        if value is not None:
+            document.setdefault(section, {})[key] = value
+            overrides[name] = value
+
+    for name, section, key in (
+        ("svc_type", "application", "svc_type"),
+        ("root_dir", "paths", "root_dir"),
+        ("ot_method", "algorithm", "ot_method"),
+        ("cell_type_col", "global_anchoring", "broad_column"),
+        ("sub_cell_type_col", "local_refinement", "subtype_column"),
+        ("select_cell_type", "local_refinement", "select_cell_type"),
+        ("local_refinement_strength", "local_refinement", "strength"),
+        ("output_dir", "output", "dir"),
+        ("output_name", "output", "name"),
+        ("seed", "execution", "seed"),
+    ):
+        set_if(name, section, key)
+
+    for name, target, key in (
+        ("st_path", "st", "path"),
+        ("st_format", "st", "format"),
+        ("sc_ref_path", "reference", "path"),
+    ):
+        value = values.get(name)
+        if value is not None:
+            document.setdefault("inputs", {}).setdefault(target, {})[key] = value
+            overrides[name] = value
+
+    for name, key in (
+        ("spatialdata_table", "table"),
+        ("spatialdata_element", "element"),
+    ):
+        value = values.get(name)
+        if value is not None:
+            document.setdefault("inputs", {}).setdefault("st", {}).setdefault(
+                "spatialdata", {}
+            )[key] = value
+            overrides[name] = value
+
+    if values.get("pm_on_cell_path") is not None:
+        document.setdefault("inputs", {})["pm_on_cell"] = {
+            "path": values["pm_on_cell_path"]
+        }
+        overrides["pm_on_cell_path"] = values["pm_on_cell_path"]
+
+    for name, target, key in (
+        ("spatial_min_transcript_counts", "spatial", "min_transcript_counts"),
+        ("spatial_min_counts", "spatial", "min_counts"),
+        ("spatial_min_cell_counts", "spatial", "min_cell_counts"),
+        ("reference_min_transcript_counts", "reference", "min_transcript_counts"),
+        ("reference_min_genes", "reference", "min_genes"),
+        ("reference_min_cell_counts", "reference", "min_cell_counts"),
+    ):
+        value = values.get(name)
+        if value is not None:
+            document.setdefault("preprocessing", {}).setdefault(target, {})[key] = value
+            overrides[name] = value
+    return overrides
+
+
 def compile_application_config(
     document: Mapping[str, Any],
     *,
@@ -305,7 +421,10 @@ def compile_application_config(
     inputs = _mapping(document["inputs"], "inputs")
     _reject_unknown(inputs, {"st", "reference", "pm_on_cell"}, "inputs")
     st_path, st_format, table, element = _parse_st(inputs, root=resolved_root)
-    reference_path = _parse_reference(inputs, root=resolved_root)
+    reference_path, reference_filter_column, reference_filter_value = _parse_reference(
+        inputs,
+        root=resolved_root,
+    )
     pm_path = None
     if "pm_on_cell" in inputs:
         if svc_type != "sc-SVC-sr":
@@ -314,19 +433,138 @@ def compile_application_config(
         _reject_unknown(pm, {"path"}, "inputs.pm_on_cell")
         pm_path = _relative_child(resolved_root, _required(pm, "path", "inputs.pm_on_cell"), "inputs.pm_on_cell.path")
 
+    preprocessing = _mapping(document["preprocessing"], "preprocessing")
+    _reject_unknown(preprocessing, {"spatial", "reference"}, "preprocessing")
+    spatial_preprocessing = _mapping(
+        _required(preprocessing, "spatial", "preprocessing"),
+        "preprocessing.spatial",
+    )
+    _reject_unknown(
+        spatial_preprocessing,
+        {"min_transcript_counts", "min_counts", "min_cell_counts"},
+        "preprocessing.spatial",
+    )
+    spatial_min_transcript_counts = _count(
+        _required(
+            spatial_preprocessing,
+            "min_transcript_counts",
+            "preprocessing.spatial",
+        ),
+        "preprocessing.spatial.min_transcript_counts",
+        optional=True,
+    )
+    spatial_min_cell_counts = _count(
+        _required(spatial_preprocessing, "min_cell_counts", "preprocessing.spatial"),
+        "preprocessing.spatial.min_cell_counts",
+    )
+    spatial_min_counts = _count(
+        spatial_preprocessing.get("min_counts"),
+        "preprocessing.spatial.min_counts",
+        optional=True,
+    )
+    reference_preprocessing = _mapping(
+        _required(preprocessing, "reference", "preprocessing"),
+        "preprocessing.reference",
+    )
+    _reject_unknown(
+        reference_preprocessing,
+        {"min_transcript_counts", "min_genes", "min_cell_counts"},
+        "preprocessing.reference",
+    )
+    reference_min_transcript_counts = _count(
+        _required(
+            reference_preprocessing,
+            "min_transcript_counts",
+            "preprocessing.reference",
+        ),
+        "preprocessing.reference.min_transcript_counts",
+        optional=True,
+    )
+    reference_min_cell_counts = _count(
+        _required(
+            reference_preprocessing,
+            "min_cell_counts",
+            "preprocessing.reference",
+        ),
+        "preprocessing.reference.min_cell_counts",
+    )
+    reference_min_genes = _count(
+        reference_preprocessing.get("min_genes"),
+        "preprocessing.reference.min_genes",
+        optional=True,
+    )
+
     anchoring = _mapping(document["global_anchoring"], "global_anchoring")
     _reject_unknown(anchoring, {"broad_column"}, "global_anchoring")
     broad_column = _string(_required(anchoring, "broad_column", "global_anchoring"), "global_anchoring.broad_column")
 
     refinement = _mapping(document["local_refinement"], "local_refinement")
-    subtype = select = strength = None
+    subtype = select = strength = alpha = resolutions = None
+    graph_method = graph_alpha = graph_n_neighbors = None
+    graph_exp_neighbors = graph_spatial_neighbors = match_spot_sum = None
     if svc_type == "sc-SVC":
-        _reject_unknown(refinement, {"subtype_column", "select_cell_type"}, "local_refinement")
+        _reject_unknown(
+            refinement,
+            {"subtype_column", "select_cell_type", "alpha", "resolutions"},
+            "local_refinement",
+        )
         subtype = _string(_required(refinement, "subtype_column", "local_refinement"), "local_refinement.subtype_column")
         raw_select = _required(refinement, "select_cell_type", "local_refinement")
         if not isinstance(raw_select, str) or raw_select.strip().lower() in _ALL_CELL_TYPES:
             raise ApplicationConfigError("local_refinement.select_cell_type must name one concrete broad cell type")
         select = raw_select.strip()
+        alpha = _number(
+            _required(refinement, "alpha", "local_refinement"),
+            "local_refinement.alpha",
+        )
+        raw_resolutions = _required(refinement, "resolutions", "local_refinement")
+        if not isinstance(raw_resolutions, list) or not raw_resolutions:
+            raise ApplicationConfigError("local_refinement.resolutions must be a non-empty list")
+        resolutions = tuple(
+            _number(value, "local_refinement.resolutions")
+            for value in raw_resolutions
+        )
+    elif svc_type == "sc-SVC-sr":
+        _reject_unknown(
+            refinement,
+            {"strength", "graph", "match_spot_sum"},
+            "local_refinement",
+        )
+        if "strength" in refinement:
+            strength = _number(refinement["strength"], "local_refinement.strength")
+        if "graph" in refinement:
+            graph = _mapping(refinement["graph"], "local_refinement.graph")
+            _reject_unknown(
+                graph,
+                {"method", "alpha", "n_neighbors", "exp_neighbors", "spatial_neighbors"},
+                "local_refinement.graph",
+            )
+            graph_method = _string(
+                _required(graph, "method", "local_refinement.graph"),
+                "local_refinement.graph.method",
+            )
+            graph_alpha = _number(
+                _required(graph, "alpha", "local_refinement.graph"),
+                "local_refinement.graph.alpha",
+            )
+            graph_n_neighbors = _count(
+                _required(graph, "n_neighbors", "local_refinement.graph"),
+                "local_refinement.graph.n_neighbors",
+            )
+            graph_exp_neighbors = _count(
+                _required(graph, "exp_neighbors", "local_refinement.graph"),
+                "local_refinement.graph.exp_neighbors",
+            )
+            graph_spatial_neighbors = _count(
+                _required(graph, "spatial_neighbors", "local_refinement.graph"),
+                "local_refinement.graph.spatial_neighbors",
+            )
+        if "match_spot_sum" in refinement:
+            match_spot_sum = refinement["match_spot_sum"]
+            if not isinstance(match_spot_sum, bool):
+                raise ApplicationConfigError(
+                    "local_refinement.match_spot_sum must be a boolean"
+                )
     else:
         _reject_unknown(refinement, {"strength"}, "local_refinement")
         if "strength" in refinement:
@@ -335,20 +573,23 @@ def compile_application_config(
     output = _mapping(document["output"], "output")
     _reject_unknown(output, {"dir", "name"}, "output")
     output_dir = _relative_child(resolved_root, _required(output, "dir", "output"), "output.dir")
-    output_name = _string(_required(output, "name", "output"), "output.name")
-    if output_name in {".", ".."} or "/" in output_name or "\\" in output_name:
-        raise ApplicationConfigError("output.name must be a filename stem without separators")
-    if output_name.endswith(".h5ad"):
-        raise ApplicationConfigError("output.name must not include .h5ad")
+    output_name = _optional_string(output.get("name"), "output.name")
+    if output_name is not None:
+        if output_name in {".", ".."} or "/" in output_name or "\\" in output_name:
+            raise ApplicationConfigError("output.name must be a filename stem without separators")
+        if output_name.endswith(".h5ad"):
+            raise ApplicationConfigError("output.name must not include .h5ad")
 
     execution = _mapping(document["execution"], "execution")
     if "action" in execution:
         raise ApplicationConfigError("execution.action was removed; use --dry-run or dry_run=True")
     _reject_unknown(execution, {"seed"}, "execution")
-    seed = execution.get("seed")
-    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+    seed = execution.get("seed", ENGINE_DEFAULTS["runtime"]["seed"])
+    if seed is None:
+        seed = ENGINE_DEFAULTS["runtime"]["seed"]
+    if isinstance(seed, bool) or not isinstance(seed, int):
         raise ApplicationConfigError("execution.seed must be an integer")
-    if seed is not None and not 0 <= seed <= 2**32 - 1:
+    if not 0 <= seed <= 2**32 - 1:
         raise ApplicationConfigError("execution.seed must be between 0 and 4294967295")
 
     return ApplicationConfig(
@@ -364,10 +605,26 @@ def compile_application_config(
         st_format=st_format,
         spatialdata_table=table,
         spatialdata_element=element,
+        reference_filter_column=reference_filter_column,
+        reference_filter_value=reference_filter_value,
+        spatial_min_transcript_counts=spatial_min_transcript_counts,
+        spatial_min_counts=spatial_min_counts,
+        spatial_min_cell_counts=spatial_min_cell_counts,
+        reference_min_transcript_counts=reference_min_transcript_counts,
+        reference_min_genes=reference_min_genes,
+        reference_min_cell_counts=reference_min_cell_counts,
         broad_column=broad_column,
         subtype_column=subtype,
         select_cell_type=select,
         local_refinement_strength=strength,
+        local_refinement_alpha=alpha,
+        local_refinement_resolutions=resolutions,
+        local_refinement_graph_method=graph_method,
+        local_refinement_graph_alpha=graph_alpha,
+        local_refinement_graph_n_neighbors=graph_n_neighbors,
+        local_refinement_graph_exp_neighbors=graph_exp_neighbors,
+        local_refinement_graph_spatial_neighbors=graph_spatial_neighbors,
+        local_refinement_match_spot_sum=match_spot_sum,
         ot_method=ot_method,
         pm_on_cell_path=pm_path,
         output_dir=output_dir,
@@ -380,6 +637,7 @@ __all__ = [
     "ApplicationConfig",
     "ApplicationConfigError",
     "ApplicationConfigSource",
+    "apply_application_overrides",
     "compile_application_config",
     "load_application_yaml",
     "resolve_application_source",

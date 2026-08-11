@@ -1,15 +1,27 @@
 from revise.config.loader import (
     ConfigError,
     ResolvedConfig,
-    load_raw_config,
     merge_unified_config,
     resolve_semantic_route,
+)
+from revise.config.authority import (
+    AUTHORITY_HASH,
+    ENGINE_DEFAULTS,
+    ENGINE_DEFAULTS_HASH,
+    LOCKED_KEYS,
+    ROUTES,
+    RouteSpec,
 )
 
 __all__ = [
     "ConfigError",
     "ResolvedConfig",
-    "load_raw_config",
+    "AUTHORITY_HASH",
+    "ENGINE_DEFAULTS",
+    "ENGINE_DEFAULTS_HASH",
+    "LOCKED_KEYS",
+    "ROUTES",
+    "RouteSpec",
     "merge_unified_config",
     "resolve_semantic_route",
 ]

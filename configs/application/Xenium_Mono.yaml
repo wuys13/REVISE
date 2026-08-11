@@ -11,11 +11,21 @@ algorithm:
 
 inputs:
   st:
-    path: raw_data/Real_application/P1CRC_Xenium.h5ad # EDIT
+    path: raw_data/Real_application/P2CRC_Xenium.h5ad # EDIT
     format: h5ad
   reference:
     path: raw_data/Real_application/adata_sc_all_reanno.h5ad # EDIT
     format: h5ad
+    filter_column: Patient
+    filter_value: P2CRC
+
+preprocessing:
+  spatial:
+    min_transcript_counts: 60
+    min_cell_counts: 100
+  reference:
+    min_transcript_counts: null
+    min_cell_counts: 100
 
 global_anchoring:
   broad_column: Level1 # EDIT to a column in reference.obs.
@@ -23,10 +33,11 @@ global_anchoring:
 local_refinement:
   subtype_column: Level2 # EDIT to a refined column in reference.obs.
   select_cell_type: Mono_Macro # KEEP only when this broad label exists in reference.obs.
+  alpha: 0.2
+  resolutions: [0.6, 0.7, 0.8]
 
 output:
-  dir: output # EDIT: relative to paths.root_dir.
-  name: P1CRC_Xenium_Mono_sc-SVC # EDIT: one logical result name; do not add .h5ad.
+  dir: output/P2CRC_Xenium/Mono # EDIT: relative to paths.root_dir.
 
 execution:
   seed: 42 # KEEP for reproducible runs.

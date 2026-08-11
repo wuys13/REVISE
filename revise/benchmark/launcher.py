@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 
-CONFOUNDINGS = (
+ROUTES = (
     "segmentation",
     "bin2cell",
     "batch_effect",
@@ -69,7 +69,7 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "id",
             "sample_name",
-            "confounding",
+            "route",
             "status",
             "pid",
             "exit_code",
@@ -137,19 +137,18 @@ def _build_tasks() -> tuple[list[dict[str, Any]], Path]:
     sample_parts = (os.environ.get("SAMPLE_PARTS") or "part1").split()
     if not sample_parts:
         sample_parts = ["part1"]
-    config_path = os.environ.get("CONFIG_PATH") or "revise/revise.yaml"
     child_python = os.environ.get("BENCHMARK_CHILD_PYTHON") or sys.executable
     tasks = []
     for sample_part in sample_parts:
         sample_name = f"{sample_patient}/cut_{sample_part}"
         record_dir = Path("0_records") / f"{sample_patient}_{sample_part}"
-        for confounding in CONFOUNDINGS:
-            log_path = record_dir / f"{confounding}.log"
+        for route in ROUTES:
+            log_path = record_dir / f"{route}.log"
             tasks.append(
                 {
-                    "id": f"{sample_name}|{confounding}",
+                    "id": f"{sample_name}|{route}",
                     "sample_name": sample_name,
-                    "confounding": confounding,
+                    "route": route,
                     "status": "pending",
                     "pid": None,
                     "exit_code": None,
@@ -161,13 +160,11 @@ def _build_tasks() -> tuple[list[dict[str, Any]], Path]:
                         "-m",
                         "revise.benchmark.cli",
                         "--config",
-                        config_path,
-                        "--confounding",
-                        confounding,
+                        f"{route}.yaml",
                         "--data-root",
                         raw_data_path,
                         "--dataset-task",
-                        confounding,
+                        route,
                         "--sample-name",
                         sample_name,
                         "--output-root",
@@ -333,7 +330,7 @@ def run_tasks(
                     )
                     print(
                         f"Start sample={task['sample_name']}; "
-                        f"cf={task['confounding']}; pid={process.pid}"
+                        f"route={task['route']}; pid={process.pid}"
                     )
                 current_task = None
                 changed = True

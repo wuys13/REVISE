@@ -5,8 +5,8 @@ import scanpy as sc
 from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.kernels import SpotSrKernel as SpotSr
+from revise.backend.kernels.ot import OTKernel, stabilize_local_ot_support
 from revise.backend.ops.distance import similarity_to_distance
-from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.meta import construct_sc_ref
 from revise.backend.ops.meta import get_sc_obs
 from revise.backend.ops.meta import get_true_cell_type
@@ -83,9 +83,7 @@ class ScSVCSr(BenchmarkSVC):
         
         The reconstructed data is stored in self.svc["sc_svc_dec"].
         """
-        graph_enabled = bool(
-            getattr(self.config, "rec_graph_agg_enabled", False)
-        )
+        graph_enabled = bool(self.config.rec_graph_agg_enabled)
         overlap_genes = list(self.st_adata.var_names.intersection(self.sc_ref_adata.var_names))
         key_type = self.config.cell_type_col
         assignment = spot_global_assignment(
@@ -182,11 +180,7 @@ class ScSVCSr(BenchmarkSVC):
                 self.svc_obs,
             )
         )
-        self._conditioning_strength = getattr(
-            self.config,
-            "local_refinement_strength",
-            0.0,
-        )
+        self._conditioning_strength = self.config.local_refinement_strength
         self._refinement_applied = False
         self._graphagg_posterior_source = f"project(obsm[{key_type}])"
 
@@ -196,9 +190,9 @@ class ScSVCSr(BenchmarkSVC):
             self.logger.info("SR graph aggregation enabled: building additional graph-smoothed output")
             graphagg_target_mask = None
             graphagg_anchor_mask = None
-            if bool(getattr(self.config, "rec_graph_agg_low_conf_only", False)):
+            if self.config.rec_graph_agg_low_conf_only:
                 graphagg_target_mask = self._build_graphagg_low_conf_mask()
-            if bool(getattr(self.config, "rec_graph_agg_anchor_only", False)):
+            if self.config.rec_graph_agg_anchor_only:
                 graphagg_anchor_mask = self._build_graphagg_high_conf_anchor_mask()
             SVC_X_graphagg = self._apply_graph_aggregation(
                 SVC_X_raw,
@@ -252,21 +246,21 @@ class ScSVCSr(BenchmarkSVC):
 
     def _build_graphagg_meta(self):
         return {
-            "enabled": bool(getattr(self.config, "rec_graph_agg_enabled", False)),
-            "low_conf_only": bool(getattr(self.config, "rec_graph_agg_low_conf_only", False)),
-            "low_conf_quantile": float(getattr(self.config, "rec_graph_agg_low_conf_quantile", 0.2)),
-            "anchor_only": bool(getattr(self.config, "rec_graph_agg_anchor_only", False)),
+            "enabled": bool(self.config.rec_graph_agg_enabled),
+            "low_conf_only": bool(self.config.rec_graph_agg_low_conf_only),
+            "low_conf_quantile": float(self.config.rec_graph_agg_low_conf_quantile),
+            "anchor_only": bool(self.config.rec_graph_agg_anchor_only),
             "anchor_high_conf_quantile": float(
-                getattr(self.config, "rec_graph_agg_anchor_high_conf_quantile", 0.8)
+                self.config.rec_graph_agg_anchor_high_conf_quantile
             ),
-            "confidence_mode": str(getattr(self.config, "rec_graph_agg_confidence_mode", "auto")),
+            "confidence_mode": str(self.config.rec_graph_agg_confidence_mode),
             "confidence_source": self._graphagg_confidence_source,
             "confidence_weighted_alpha": bool(
-                getattr(self.config, "rec_graph_agg_conf_weighted_alpha", False)
+                self.config.rec_graph_agg_conf_weighted_alpha
             ),
-            "confidence_alpha_min": float(getattr(self.config, "rec_graph_agg_conf_alpha_min", 0.0)),
-            "confidence_alpha_max": float(getattr(self.config, "rec_graph_agg_conf_alpha_max", -1.0)),
-            "confidence_alpha_power": float(getattr(self.config, "rec_graph_agg_conf_alpha_power", 1.0)),
+            "confidence_alpha_min": float(self.config.rec_graph_agg_conf_alpha_min),
+            "confidence_alpha_max": float(self.config.rec_graph_agg_conf_alpha_max),
+            "confidence_alpha_power": float(self.config.rec_graph_agg_conf_alpha_power),
             "posterior_source": self._graphagg_posterior_source,
         }
 
@@ -278,7 +272,7 @@ class ScSVCSr(BenchmarkSVC):
         2) configured spot-level broad contribution for the assigned type
         3) spot-level global anchoring confidence (last fallback)
         """
-        mode = str(getattr(self.config, "rec_graph_agg_confidence_mode", "auto") or "auto").lower()
+        mode = str(self.config.rec_graph_agg_confidence_mode).lower()
         n_cells = len(self.svc_obs)
         assigned_types = self.svc_obs["cell_type"].astype(str).str.replace("/", "_", regex=False).to_numpy()
         cell_ids = self.svc_obs["cell_id"].astype(str).to_numpy()
@@ -397,7 +391,7 @@ class ScSVCSr(BenchmarkSVC):
         """Low-confidence cells receive larger smoothing weights."""
         if self._graphagg_alpha_weight_cache is not None:
             return self._graphagg_alpha_weight_cache
-        if not bool(getattr(self.config, "rec_graph_agg_conf_weighted_alpha", False)):
+        if not self.config.rec_graph_agg_conf_weighted_alpha:
             return None
 
         conf, source = self._get_graphagg_confidence()
@@ -417,14 +411,14 @@ class ScSVCSr(BenchmarkSVC):
             )
             return None
 
-        alpha_min = float(getattr(self.config, "rec_graph_agg_conf_alpha_min", 0.0))
-        alpha_max_cfg = float(getattr(self.config, "rec_graph_agg_conf_alpha_max", -1.0))
+        alpha_min = float(self.config.rec_graph_agg_conf_alpha_min)
+        alpha_max_cfg = float(self.config.rec_graph_agg_conf_alpha_max)
         alpha_max = float(self.config.rec_alpha) if alpha_max_cfg < 0 else alpha_max_cfg
         if alpha_max < alpha_min:
             alpha_min, alpha_max = alpha_max, alpha_min
         alpha_min = float(np.clip(alpha_min, 0.0, 1.0))
         alpha_max = float(np.clip(alpha_max, 0.0, 1.0))
-        power = float(getattr(self.config, "rec_graph_agg_conf_alpha_power", 1.0))
+        power = float(self.config.rec_graph_agg_conf_alpha_power)
         if power <= 0:
             power = 1.0
 
@@ -472,7 +466,7 @@ class ScSVCSr(BenchmarkSVC):
             )
             return None
 
-        q = float(getattr(self.config, "rec_graph_agg_low_conf_quantile", 0.2))
+        q = float(self.config.rec_graph_agg_low_conf_quantile)
         q = min(max(q, 0.0), 1.0)
         thr = float(np.quantile(conf[finite], q))
         mask = np.zeros(conf.shape[0], dtype=bool)
@@ -514,7 +508,7 @@ class ScSVCSr(BenchmarkSVC):
             )
             return None
 
-        q = float(getattr(self.config, "rec_graph_agg_anchor_high_conf_quantile", 0.8))
+        q = float(self.config.rec_graph_agg_anchor_high_conf_quantile)
         q = min(max(q, 0.0), 1.0)
         thr = float(np.quantile(conf[finite], q))
         mask = np.zeros(conf.shape[0], dtype=bool)
@@ -689,7 +683,7 @@ class ScSVCSr(BenchmarkSVC):
                 strength=self._conditioning_strength,
             )
             distance_matrix[~valid_neighbor_mask] = np.inf
-            T_transform = solve_local_ot(
+            T_transform = OTKernel.couple(
                 nu,
                 mu,
                 distance_matrix.T,

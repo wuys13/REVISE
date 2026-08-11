@@ -1,11 +1,11 @@
 import numpy as np
 from scipy.sparse import issparse
 
-from revise.backend.runners.base_svc_anchor import BaseSVCAnchor
+from revise.backend.runners.base_svc import BaseSVC
 from revise.utils.format import warn_if_processed
 
 
-class BenchmarkSVC(BaseSVCAnchor):
+class BenchmarkSVC(BaseSVC):
     """
     Base class for SVC methods in benchmark scenarios.
     

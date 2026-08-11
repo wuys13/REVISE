@@ -5,10 +5,10 @@ import scanpy as sc
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphAggregateKernel as GraphAggregate
 from revise.backend.kernels import SpotSrKernel as SpotSr
+from revise.backend.kernels.ot import OTKernel, stabilize_local_ot_support
 from revise.backend.ops.distance import similarity_to_distance
 from revise.backend.ops.meta import construct_sc_ref
 from revise.backend.ops.meta import get_sc_obs
-from revise.backend.ops.local_ot import solve_local_ot, stabilize_local_ot_support
 from revise.backend.ops.sr_allocation import (
     condition_virtual_cell_ot_cost,
     mandatory_reference_allocation,
@@ -32,7 +32,6 @@ class ScSVCSr(ApplicationSVC):
     def __init__(self, st_adata, sc_ref_adata, config, logger):
         super().__init__(st_adata, sc_ref_adata, config, None, logger)
         self._adata_validate_dec()
-        self._adata_processing()
         self._adata_validate()
         self.svc_obs = self._get_svc_obs()
         self.spot_sr = SpotSr(self.config, self.logger)
@@ -160,11 +159,7 @@ class ScSVCSr(ApplicationSVC):
             assignment,
             self.svc_obs,
         )
-        conditioning_strength = getattr(
-            self.config,
-            "local_refinement_strength",
-            0.0,
-        )
+        conditioning_strength = self.config.local_refinement_strength
         refinement_applied = False
 
         n_cells = SVC_X.shape[0]
@@ -260,7 +255,7 @@ class ScSVCSr(ApplicationSVC):
                         strength=conditioning_strength,
                     )
                     distance_matrix[~valid_neighbor_mask] = np.inf
-                    T_transform = solve_local_ot(
+                    T_transform = OTKernel.couple(
                         nu,
                         mu,
                         distance_matrix.T,
@@ -295,7 +290,7 @@ class ScSVCSr(ApplicationSVC):
         else:
             self.logger.info("Skipping OT enhancement due to small cell count")
 
-        if getattr(self.config, "rec_match_spot_sum", False):
+        if self.config.rec_match_spot_sum:
             self.logger.info("Rescaling single-cell expressions to match spot totals")
             current_sum = np.zeros_like(X, dtype=np.float64)
             np.add.at(current_sum, spot_indices, SVC_X)

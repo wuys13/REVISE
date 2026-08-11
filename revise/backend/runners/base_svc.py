@@ -39,23 +39,6 @@ class BaseSVC(ABC):
         pass
 
     @abstractmethod
-    def global_anchoring(self, *args, **kwargs):
-        """
-        Annotate spatial spots with cell type labels via global anchoring.
-        
-        This method assigns cell type probabilities or labels to each spot
-        in the spatial transcriptomics data based on the single-cell reference.
-        
-        Args:
-            *args: Variable positional arguments (implementation-specific)
-            **kwargs: Variable keyword arguments (implementation-specific)
-            
-        Returns:
-            Implementation-specific return value (typically None, modifies self.st_adata)
-        """
-        raise NotImplementedError("Annotate method not implemented.")
-
-    @abstractmethod
     def local_refinement(self, *args, **kwargs):
         """
         Reconstruct single-cell resolution expression profiles.

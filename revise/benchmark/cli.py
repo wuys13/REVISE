@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from importlib import resources
 import json
 import os
 import sys
@@ -9,15 +10,16 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
+import yaml
 
 from revise.framework import REVISEPipeline
+from revise.config.authority import ENGINE_DEFAULTS
+from revise.utils.provenance import hash_jsonable
 
-# Base settings aligned with Sim2Real-ST benchmark convention.
-SEG_METHODS = ["seg_1", "seg_2", "seg_3", "seg_4"]
-BIN2CELL_METHODS = ["bin2cell"]
-BATCH_NUMS = [1, 2, 3, 4]
-SPOT_SIZES = [20, 50, 100, 200]
-SR_CONFOUNDINGS = {"batch_effect", "spot_size"}
+BENCHMARK_ROUTES = frozenset(
+    {"segmentation", "bin2cell", "batch_effect", "spot_size", "gene_panel", "gene_dropout"}
+)
+SR_ROUTES = {"batch_effect", "spot_size"}
 REMOVED_ASSIGNMENT_GUIDANCE_FLAGS = frozenset(
     {
         "--local-refinement-guidance",
@@ -76,18 +78,10 @@ def get_parser() -> argparse.ArgumentParser:
         help="Benchmark platform route",
     )
     parser.add_argument(
-        "--confounding",
+        "--config",
         required=True,
         type=str,
-        choices=[
-            "segmentation",
-            "bin2cell",
-            "batch_effect",
-            "spot_size",
-            "gene_panel",
-            "gene_dropout",
-        ],
-        help="Confounding factor: segmentation/bin2cell/batch_effect/spot_size/gene_panel/gene_dropout",
+        help="Benchmark route YAML path or packaged template name",
     )
     parser.add_argument("--data-root", required=True, type=str, help="Benchmark data root path")
     parser.add_argument(
@@ -110,7 +104,6 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-root", default="results_unified", type=str, help="Output root")
     parser.add_argument("--sample-size", type=int, default=None, help="Optional subsample size")
-    parser.add_argument("--config", default="revise/revise.yaml", help="Path to unified config")
     parser.add_argument("--seed", type=int, default=42, help="Base random seed for reproducibility")
     parser.add_argument(
         "--seed-scope",
@@ -141,6 +134,42 @@ def get_args() -> argparse.Namespace:
     return get_parser().parse_args()
 
 
+def _read_benchmark_request_with_metadata(
+    config: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    path = Path(config)
+    if path.is_file():
+        raw = path.read_bytes()
+        source_path = str(path.resolve())
+    elif path.name == config and config in {f"{route}.yaml" for route in BENCHMARK_ROUTES}:
+        raw = resources.files("revise.benchmark").joinpath("templates", config).read_bytes()
+        source_path = f"package:revise.benchmark/templates/{config}"
+    else:
+        raise FileNotFoundError(f"Benchmark config not found: {config}")
+    request = yaml.safe_load(raw)
+    if not isinstance(request, dict) or request.get("schema_version") != 1:
+        raise ValueError("Benchmark config must be a schema_version 1 mapping")
+    if set(request) != {"schema_version", "route", "cases", "io", "algorithm"}:
+        raise ValueError("Benchmark config must contain only schema_version/route/cases/io/algorithm")
+    route = request["route"]
+    if route not in BENCHMARK_ROUTES:
+        raise ValueError(f"Unsupported benchmark route: {route}")
+    if not all(isinstance(request[key], dict) for key in ("cases", "io", "algorithm")):
+        raise ValueError("Benchmark cases/io/algorithm must be mappings")
+    metadata = {
+        "source_path": source_path,
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+        "effective_request": request,
+        "effective_request_hash": hash_jsonable(request),
+    }
+    return request, metadata
+
+
+def _read_benchmark_request(config: str) -> dict[str, object]:
+    request, _ = _read_benchmark_request_with_metadata(config)
+    return request
+
+
 def _build_local_refinement_overrides(args: argparse.Namespace) -> Dict[str, object]:
     strength = getattr(args, "local_refinement_strength", None)
     if strength is None:
@@ -151,7 +180,7 @@ def _build_local_refinement_overrides(args: argparse.Namespace) -> Dict[str, obj
 def _build_sr_refinement_overrides(args: argparse.Namespace) -> Dict[str, object]:
     if args.sr_refinement_preset is None:
         return {}
-    if args.confounding not in SR_CONFOUNDINGS and args.sr_refinement_preset != "none":
+    if args.route not in SR_ROUTES and args.sr_refinement_preset != "none":
         raise ValueError(
             "--sr-refinement-preset is only valid for batch_effect and spot_size benchmark routes"
         )
@@ -162,6 +191,23 @@ def _build_algorithm_overrides(args: argparse.Namespace) -> Dict[str, object]:
     overrides = _build_local_refinement_overrides(args)
     overrides.update(_build_sr_refinement_overrides(args))
     return overrides
+
+
+def _cli_overrides(args: argparse.Namespace) -> Dict[str, object]:
+    keys = (
+        "st_file",
+        "gt_svc_file",
+        "sc_ref_file",
+        "sample_size",
+        "local_refinement_strength",
+        "sr_refinement_preset",
+        "seed_scope",
+    )
+    return {
+        key: value
+        for key in keys
+        if (value := getattr(args, key, None)) is not None
+    }
 
 
 def _aggregate_local_refinement(
@@ -206,18 +252,34 @@ def _read_manifest_snapshot(
 def _run_case(
     pipeline: REVISEPipeline,
     *,
-    confounding: str,
+    route: str,
     io_overrides: Dict[str, object],
     runtime_seed: int | None,
     algorithm_overrides: Dict[str, object] | None = None,
+    benchmark_config_metadata: Dict[str, object] | None = None,
 ) -> Dict[str, object]:
+    if runtime_seed is None:
+        runtime_seed = int(ENGINE_DEFAULTS["runtime"]["seed"])
+    if benchmark_config_metadata is not None:
+        benchmark_config_metadata = dict(benchmark_config_metadata)
+        effective_request = {
+            "route": route,
+            "io": dict(io_overrides),
+            "algorithm": dict(algorithm_overrides or {}),
+            "runtime": {"seed": runtime_seed},
+        }
+        benchmark_config_metadata["effective_request"] = effective_request
+        benchmark_config_metadata["effective_request_hash"] = hash_jsonable(
+            effective_request
+        )
     try:
         svc = pipeline.run(
             svc_type=None,
-            cf=confounding,
+            cf=route,
             runtime_overrides={"seed": runtime_seed},
             io_overrides=io_overrides,
             algorithm_overrides=algorithm_overrides,
+            benchmark_config_metadata=benchmark_config_metadata,
             dry_run=False,
         )
         summary = svc.summary()
@@ -268,7 +330,7 @@ def _run_case(
 
 def _base_io(args: argparse.Namespace) -> Dict[str, object]:
     data_root = os.path.join(args.data_root, args.dataset_task) if args.dataset_task else args.data_root
-    output_task = args.dataset_task or args.confounding
+    output_task = args.dataset_task or args.route
     output_root = os.path.join(args.output_root, output_task)
     io_cfg: Dict[str, object] = {
         "data_root": data_root,
@@ -286,32 +348,6 @@ def _append_result(results: List[Dict[str, object]], tag: str, run_result: Dict[
     results.append(item)
     status = "OK" if run_result["ok"] else "FAIL"
     print(f"[{status}] {tag} -> {run_result.get('run_dir') or run_result.get('error')}")
-
-
-def _discover_spot_sizes(*, data_root: str, sample_name: str, st_file: str) -> List[int]:
-    sample_root = Path(data_root) / sample_name
-    sizes: List[int] = []
-    for spot_dir in sorted(sample_root.glob("spot_*")):
-        if not spot_dir.is_dir():
-            continue
-        suffix = spot_dir.name.removeprefix("spot_")
-        if not suffix.isdigit():
-            continue
-        if (spot_dir / st_file).exists():
-            sizes.append(int(suffix))
-    return sorted(set(sizes)) or list(SPOT_SIZES)
-
-
-def _batch_spec(batch_num: int) -> tuple[str, str]:
-    if batch_num == 1:
-        return "selected_xenium.h5ad", "selected_xenium.h5ad"
-    if batch_num == 2:
-        return "selected_xenium.h5ad", "real_sc_ref_part.h5ad"
-    if batch_num == 3:
-        return "selected_xenium.h5ad", "real_sc_ref_all.h5ad"
-    if batch_num == 4:
-        return "selected_xenium.h5ad", "real_sc_ref_others.h5ad"
-    raise NotImplementedError(f"batch_num {batch_num} not implemented")
 
 
 def _resolve_seed_scope(args: argparse.Namespace) -> str:
@@ -334,20 +370,28 @@ def main(args: argparse.Namespace | None = None) -> None:
     if args is None:
         args = get_args()
         print(args)
-    pipeline = REVISEPipeline(config_path=args.config)
+    request, benchmark_config_metadata = _read_benchmark_request_with_metadata(
+        args.config
+    )
+    benchmark_config_metadata["cli_overrides"] = _cli_overrides(args)
+    args.route = request["route"]
+    cases = request["cases"]
+    request_io = request["io"]
+    pipeline = REVISEPipeline()
     results: List[Dict[str, object]] = []
     base_io = _base_io(args)
     seed_scope = _resolve_seed_scope(args)
     next_runtime_seed = _runtime_seed_supplier(args, seed_scope)
     try:
-        algorithm_overrides = _build_algorithm_overrides(args)
+        algorithm_overrides = dict(request["algorithm"])
+        algorithm_overrides.update(_build_algorithm_overrides(args))
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    if args.confounding == "segmentation":
-        st_file = args.st_file or "xenium_spot.h5ad"
-        gt_svc_file = args.gt_svc_file or "selected_xenium.h5ad"
-        sc_ref_file = args.sc_ref_file or "real_sc_ref.h5ad"
-        for seg_method in SEG_METHODS:
+    if args.route == "segmentation":
+        st_file = args.st_file or request_io["st_file"]
+        gt_svc_file = args.gt_svc_file or request_io["gt_svc_file"]
+        sc_ref_file = args.sc_ref_file or request_io["sc_ref_file"]
+        for seg_method in cases["segmentation_methods"]:
             io_cfg = dict(base_io)
             io_cfg.update(
                 {
@@ -359,18 +403,19 @@ def main(args: argparse.Namespace | None = None) -> None:
             )
             run_result = _run_case(
                 pipeline,
-                confounding="segmentation",
+                route="segmentation",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
                 algorithm_overrides=algorithm_overrides,
+                benchmark_config_metadata=benchmark_config_metadata,
             )
             _append_result(results, f"segmentation:{seg_method}", run_result)
 
-    elif args.confounding == "bin2cell":
-        st_file = args.st_file or "xenium_spot.h5ad"
-        gt_svc_file = args.gt_svc_file or "selected_xenium.h5ad"
-        sc_ref_file = args.sc_ref_file or "real_sc_ref.h5ad"
-        for seg_method in BIN2CELL_METHODS:
+    elif args.route == "bin2cell":
+        st_file = args.st_file or request_io["st_file"]
+        gt_svc_file = args.gt_svc_file or request_io["gt_svc_file"]
+        sc_ref_file = args.sc_ref_file or request_io["sc_ref_file"]
+        for seg_method in cases["segmentation_methods"]:
             io_cfg = dict(base_io)
             io_cfg.update(
                 {
@@ -382,23 +427,21 @@ def main(args: argparse.Namespace | None = None) -> None:
             )
             run_result = _run_case(
                 pipeline,
-                confounding="bin2cell",
+                route="bin2cell",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
                 algorithm_overrides=algorithm_overrides,
+                benchmark_config_metadata=benchmark_config_metadata,
             )
             _append_result(results, f"bin2cell:{seg_method}", run_result)
 
-    elif args.confounding == "batch_effect":
-        st_file = args.st_file or "xenium_spot.h5ad"
-        spot_sizes = _discover_spot_sizes(
-            data_root=str(base_io["data_root"]),
-            sample_name=args.sample_name,
-            st_file=st_file,
-        )
-        for spot_size in spot_sizes:
-            for batch_num in BATCH_NUMS:
-                gt_svc_file, sc_ref_file = _batch_spec(batch_num)
+    elif args.route == "batch_effect":
+        st_file = args.st_file or request_io["st_file"]
+        for spot_size in cases["spot_sizes"]:
+            for batch in cases["batches"]:
+                batch_num = batch["number"]
+                gt_svc_file = batch["gt_svc_file"]
+                sc_ref_file = batch["sc_ref_file"]
                 io_cfg = dict(base_io)
                 io_cfg.update(
                     {
@@ -410,22 +453,23 @@ def main(args: argparse.Namespace | None = None) -> None:
                 )
                 run_result = _run_case(
                     pipeline,
-                    confounding="batch_effect",
+                    route="batch_effect",
                     io_overrides=io_cfg,
                     runtime_seed=next_runtime_seed(),
                     algorithm_overrides=algorithm_overrides,
+                    benchmark_config_metadata=benchmark_config_metadata,
                 )
                 _append_result(results, f"batch_effect:{spot_size}_{batch_num}", run_result)
 
-    elif args.confounding == "spot_size":
-        batch_num = 3
-        gt_svc_file = "selected_xenium.h5ad"
-        sc_ref_file = "real_sc_ref_all.h5ad"
-        for spot_size in SPOT_SIZES:
+    elif args.route == "spot_size":
+        batch_num = cases["batch_number"]
+        gt_svc_file = request_io["gt_svc_file"]
+        sc_ref_file = request_io["sc_ref_file"]
+        for spot_size in cases["spot_sizes"]:
             io_cfg = dict(base_io)
             io_cfg.update(
                 {
-                    "st_file": "xenium_spot.h5ad",
+                    "st_file": request_io["st_file"],
                     "gt_svc_file": gt_svc_file,
                     "sc_ref_file": sc_ref_file,
                     "spot_size": spot_size,
@@ -433,58 +477,61 @@ def main(args: argparse.Namespace | None = None) -> None:
             )
             run_result = _run_case(
                 pipeline,
-                confounding="spot_size",
+                route="spot_size",
                 io_overrides=io_cfg,
                 runtime_seed=next_runtime_seed(),
                 algorithm_overrides=algorithm_overrides,
+                benchmark_config_metadata=benchmark_config_metadata,
             )
             _append_result(results, f"spot_size:{spot_size}_{batch_num}", run_result)
 
-    elif args.confounding == "gene_panel":
+    elif args.route == "gene_panel":
         io_cfg = dict(base_io)
         io_cfg.update(
             {
-                "st_file": "selected_xenium.h5ad",
-                "gt_svc_file": "selected_xenium.h5ad",
-                "sc_ref_file": "real_sc_ref.h5ad",
+                "st_file": request_io["st_file"],
+                "gt_svc_file": request_io["gt_svc_file"],
+                "sc_ref_file": request_io["sc_ref_file"],
             }
         )
         run_result = _run_case(
             pipeline,
-            confounding="gene_panel",
+            route="gene_panel",
             io_overrides=io_cfg,
             runtime_seed=next_runtime_seed(),
             algorithm_overrides=algorithm_overrides,
+            benchmark_config_metadata=benchmark_config_metadata,
         )
         _append_result(results, "gene_panel", run_result)
 
-    elif args.confounding == "gene_dropout":
+    elif args.route == "gene_dropout":
         io_cfg = dict(base_io)
         io_cfg.update(
             {
-                "st_file": "selected_xenium.h5ad",
-                "gt_svc_file": "selected_xenium.h5ad",
-                "sc_ref_file": "real_sc_ref.h5ad",
+                "st_file": request_io["st_file"],
+                "gt_svc_file": request_io["gt_svc_file"],
+                "sc_ref_file": request_io["sc_ref_file"],
             }
         )
         run_result = _run_case(
             pipeline,
-            confounding="gene_dropout",
+            route="gene_dropout",
             io_overrides=io_cfg,
             runtime_seed=next_runtime_seed(),
             algorithm_overrides=algorithm_overrides,
+            benchmark_config_metadata=benchmark_config_metadata,
         )
         _append_result(results, "gene_dropout", run_result)
 
     else:
-        raise NotImplementedError(f"Unsupported confounding: {args.confounding}")
+        raise NotImplementedError(f"Unsupported benchmark route: {args.route}")
 
     report = {
         "platform": args.platform,
-        "confounding": args.confounding,
+        "route": args.route,
         "sample_name": args.sample_name,
         "dataset_task": args.dataset_task,
-        "output_task": args.dataset_task or args.confounding,
+        "output_task": args.dataset_task or args.route,
         "seed": args.seed,
         "seed_scope": seed_scope,
         "local_refinement": _aggregate_local_refinement(results),
@@ -498,7 +545,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     if not report["ok"]:
         raise SystemExit(1)
     if cli_invocation:
-        print("Done:", args.confounding)
+        print("Done:", args.route)
 
 
 if __name__ == "__main__":

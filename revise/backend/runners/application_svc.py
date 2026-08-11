@@ -1,42 +1,13 @@
-import scanpy as sc
-
-from revise.backend.runners.base_svc_anchor import BaseSVCAnchor
+from revise.backend.runners.base_svc import BaseSVC
 from revise.utils.format import warn_if_processed
 
 
-class ApplicationSVC(BaseSVCAnchor):
+class ApplicationSVC(BaseSVC):
     """SVC class for application scenarios (real data analysis).
     
-    This class provides data preprocessing and validation methods
+    This class provides data validation methods
     suitable for real-world spatial transcriptomics data analysis.
     """
-
-    def _adata_processing(self):
-        """Preprocess spatial and single-cell reference data.
-        
-        This method filters cells and genes, and normalizes cell type
-        column names by replacing '/' with '_' to avoid issues in
-        downstream processing.
-        """
-        sc.pp.filter_cells(self.st_adata, min_counts=self.config.prep_st_min_counts)
-        sc.pp.filter_genes(self.st_adata, min_cells=self.config.prep_st_min_cells)
-
-        sc.pp.filter_cells(self.sc_ref_adata, min_counts=self.config.prep_sc_min_counts)
-        sc.pp.filter_genes(self.sc_ref_adata, min_cells=self.config.prep_sc_min_cells)
-        annotation_columns = {
-            str(getattr(self.config, "cell_type_col", "Level1")),
-            str(getattr(self.config, "sub_cell_type_col", "Level2")),
-        }
-        for column in annotation_columns:
-            if column not in self.sc_ref_adata.obs:
-                continue
-            self.sc_ref_adata.obs[column] = self.sc_ref_adata.obs[column].replace(
-                {
-                    value: value.replace("/", "_")
-                    for value in self.sc_ref_adata.obs[column].unique().tolist()
-                    if isinstance(value, str) and "/" in value
-                }
-            )
 
     def _adata_validate(self):
         """Validate that spatial and reference data have overlapping genes.

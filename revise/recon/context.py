@@ -25,17 +25,22 @@ class PipelineContext:
     )
 
     merged_config: Dict[str, Any]
-    raw_config: Dict[str, Any]
-    config_path: str
     profile: Optional[str]
     runtime: Dict[str, Any]
     route_key: str
     run_dir: Path
     logger: logging.Logger
-    config_hash: Optional[str] = None
+    engine_defaults_hash: Optional[str] = None
+    authority_hash: Optional[str] = None
+    algorithm_config_hash: Optional[str] = None
+    effective_config_hash: Optional[str] = None
     dry_run: bool = False
+    application_preprocess_callback: Optional[
+        Callable[[AnnData, AnnData], tuple[AnnData, AnnData]]
+    ] = None
     finalize_callback: Optional[Callable[["PipelineContext"], None]] = None
     application_config_metadata: Dict[str, Any] = field(default_factory=dict)
+    benchmark_config_metadata: Dict[str, Any] = field(default_factory=dict)
 
     runner_config: Any = None
     runner: Any = None
@@ -357,7 +362,7 @@ class PipelineContext:
 
     @property
     def compatibility_mode(self) -> bool:
-        return bool(self.runtime.get("compatibility_mode", False))
+        return bool(self.runtime["compatibility_mode"])
 
     @property
     def route(self) -> Dict[str, Any]:

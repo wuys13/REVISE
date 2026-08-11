@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import uuid
 import warnings
 from typing import Any
 
 import numpy as np
+import pandas as pd
+from anndata import AnnData
 
+from revise.backend.ops.assignment import GlobalAssignment, validate_global_assignment
+from revise.backend.ops.distance import bhattacharyya_distance
 from revise.backend.ops.tacco_runtime import require_tacco
 
 
@@ -224,7 +229,7 @@ def stabilize_local_ot_support(
     return source_idx, target_idx, support[np.ix_(source_idx, target_idx)]
 
 
-def solve_local_ot(
+def _couple(
     source_mass,
     target_mass,
     cost_matrix,
@@ -499,3 +504,236 @@ def solve_local_ot(
     coupling = np.zeros(full_shape, dtype=active_coupling.dtype)
     coupling[np.ix_(source_idx, target_idx)] = active_coupling
     return coupling
+
+
+def _reference_categories(reference_labels) -> pd.Index:
+    return pd.Index(pd.unique(pd.Series(reference_labels, copy=False)))
+
+
+def _validated_annotation_coupling(result, expected_shape) -> np.ndarray:
+    coupling = np.asarray(result)
+    if coupling.shape != expected_shape:
+        raise ValueError(
+            f"Global OT coupling has shape {coupling.shape}, expected {expected_shape}"
+        )
+    try:
+        finite = np.isfinite(coupling)
+    except TypeError as exc:
+        raise ValueError("Global OT coupling values must be numeric") from exc
+    if not np.all(finite):
+        raise ValueError("Global OT coupling values must be finite")
+    if np.any(coupling < 0):
+        raise ValueError("Global OT coupling values must be non-negative")
+    if np.any(coupling.sum(axis=1) <= 0):
+        raise ValueError("Global OT coupling rows must have positive mass")
+    return coupling
+
+
+def _publish_annotation(
+    target: AnnData,
+    assignment: GlobalAssignment,
+    *,
+    annotation_key: str,
+    confidence_key: str,
+) -> AnnData:
+    result = target.copy()
+    result.obsm[annotation_key] = assignment.posterior
+    result.obs[annotation_key] = assignment.labels.to_numpy(copy=True)
+    result.obs[confidence_key] = assignment.posterior.max(axis=1).to_numpy(copy=True)
+    return result
+
+
+def _annotate(
+    target: AnnData,
+    reference: AnnData,
+    *,
+    method: str,
+    annotation_key: str,
+    confidence_key: str,
+    pot_reg: float | None = None,
+    pot_reg_m: float | None = None,
+    pot_reg_type: str | None = None,
+    pot_verbose: bool = True,
+    pot_num_iter_max: int = 5000,
+    multi_center: int | None = None,
+    lamb: float | None = None,
+) -> AnnData:
+    """Annotate a complete target from a complete reference through POT or TACCO."""
+    normalized_method = str(method).strip().lower()
+    if normalized_method == "pot":
+        if pot_reg is None or pot_reg_m is None or pot_reg_type is None:
+            raise ValueError(
+                "POT annotation requires pot_reg, pot_reg_m, and pot_reg_type"
+            )
+
+        overlap_genes = list(target.var_names.intersection(reference.var_names))
+        reference_overlap = reference[:, overlap_genes].copy()
+        target_overlap = target[:, overlap_genes].copy()
+        expected_categories = _reference_categories(
+            reference_overlap.obs[annotation_key]
+        )
+        dummies = pd.get_dummies(
+            reference_overlap.obs[annotation_key],
+            dtype=reference_overlap.X.dtype,
+        ).loc[:, expected_categories]
+        category_counts = dummies.sum(axis=0)
+        dummies /= category_counts.to_numpy()
+        profiles = reference_overlap.X.T @ dummies.to_numpy()
+        profiles = pd.DataFrame(
+            profiles,
+            index=reference_overlap.var.index,
+            columns=dummies.columns,
+        )
+        reference_overlap.varm[annotation_key] = profiles
+        target_matrix = target_overlap.X
+        if hasattr(target_matrix, "toarray"):
+            target_matrix = target_matrix.toarray()
+        distance = bhattacharyya_distance(profiles.values.T, target_matrix)
+
+        cell_profile_mapping = pd.get_dummies(
+            reference_overlap.obs[annotation_key]
+        ).loc[:, expected_categories]
+        cell_profile_mapping /= cell_profile_mapping.sum(axis=1).to_numpy()[:, None]
+        category_prior = (
+            np.array(reference_overlap.X.sum(axis=1)).flatten()
+            @ cell_profile_mapping
+        )
+        target_prior = pd.Series(
+            np.array(target_overlap.X.sum(axis=1)).flatten(),
+            index=target_overlap.obs.index,
+        )
+        target_total = target_prior.sum()
+        category_total = category_prior.sum()
+        if target_total > 0:
+            target_prior /= target_total
+        else:
+            target_prior = target_prior / len(target_prior)
+        if category_total > 0:
+            category_prior /= category_total
+        else:
+            category_prior = category_prior / len(category_prior)
+
+        distance = np.nan_to_num(distance)
+        distance_max = distance.max()
+        if distance_max <= 0:
+            distance_max = 1.0
+        distance = distance.T / distance_max
+
+        import ot
+
+        coupling = ot.unbalanced.sinkhorn_unbalanced(
+            target_prior.values,
+            category_prior.values,
+            distance,
+            reg=pot_reg,
+            reg_m=pot_reg_m,
+            reg_type=pot_reg_type,
+            verbose=pot_verbose,
+            numItermax=pot_num_iter_max,
+        )
+        coupling = _validated_annotation_coupling(
+            coupling,
+            (len(target_prior), len(category_prior)),
+        )
+        posterior = pd.DataFrame(
+            coupling,
+            index=target_prior.index,
+            columns=category_prior.index,
+        )
+        posterior *= posterior > 0
+        posterior /= posterior.sum(axis=1).to_numpy()[:, None]
+        assignment = validate_global_assignment(
+            GlobalAssignment(labels=posterior.idxmax(axis=1), posterior=posterior),
+            expected_observations=target.obs_names,
+            expected_categories=expected_categories,
+        )
+        return _publish_annotation(
+            target,
+            assignment,
+            annotation_key=annotation_key,
+            confidence_key=confidence_key,
+        )
+
+    if normalized_method == "tacco":
+        overlap_genes = target.var_names.intersection(reference.var_names)
+        overlap_mass = np.asarray(target[:, overlap_genes].X.sum(axis=1)).ravel()
+        if not np.all(np.isfinite(overlap_mass)):
+            raise ValueError("TACCO target overlap-gene row sums must be finite")
+        if np.any(overlap_mass < 0):
+            raise ValueError("TACCO target overlap-gene row sums must be non-negative")
+        if not np.any(overlap_mass > 0):
+            raise ValueError(
+                "TACCO requires at least one target row with positive overlap-gene mass"
+            )
+
+        tacco = require_tacco()
+        target_input = target.copy()
+        reference_input = reference.copy()
+        reference_labels = reference_input.obs[annotation_key]
+        expected_categories = list(_reference_categories(reference_labels))
+        reference_input.obs[annotation_key] = pd.Categorical(
+            reference_labels,
+            categories=expected_categories,
+            ordered=getattr(reference_labels.dtype, "ordered", False),
+        )
+        result_key = f"__revise_tacco_{uuid.uuid4().hex}"
+        tacco_kwargs = {}
+        if multi_center is not None:
+            tacco_kwargs["multi_center"] = multi_center
+        if lamb is not None:
+            tacco_kwargs["lamb"] = lamb
+        tacco_output = tacco.tl.annotate(
+            target_input,
+            reference_input,
+            annotation_key,
+            result_key=result_key,
+            return_reference=True,
+            **tacco_kwargs,
+        )
+        if (
+            not isinstance(tacco_output, tuple)
+            or len(tacco_output) != 2
+            or not isinstance(tacco_output[0], AnnData)
+            or not isinstance(tacco_output[1], AnnData)
+        ):
+            raise ValueError(
+                "TACCO return_reference=True must return "
+                "(annotated_target, processed_reference)"
+            )
+        annotated_target, _processed_reference = tacco_output
+        if result_key not in annotated_target.obsm:
+            raise KeyError(
+                f"TACCO did not write the fresh requested obsm[{result_key!r}]"
+            )
+        posterior = annotated_target.obsm[result_key]
+        if isinstance(posterior, pd.DataFrame):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", FutureWarning)
+                try:
+                    labels = posterior.idxmax(axis=1)
+                except (TypeError, ValueError):
+                    labels = pd.Series(None, index=posterior.index, dtype=object)
+        else:
+            labels = pd.Series(dtype=object)
+        assignment = validate_global_assignment(
+            GlobalAssignment(labels=labels, posterior=posterior),
+            expected_observations=target.obs_names,
+            expected_categories=_reference_categories(reference.obs[annotation_key]),
+            require_category_order=False,
+            require_row_normalization=False,
+        )
+        return _publish_annotation(
+            target,
+            assignment,
+            annotation_key=annotation_key,
+            confidence_key=confidence_key,
+        )
+
+    raise NotImplementedError(f"Unsupported annotation method={method}")
+
+
+class OTKernel:
+    """Bottom-level optimal-transport operations shared by reconstruction routes."""
+
+    annotate = staticmethod(_annotate)
+    couple = staticmethod(_couple)

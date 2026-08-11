@@ -113,10 +113,15 @@ class ModeValidationPolicy(InputValidationPolicy):
             validation_columns["select_cell_type"] = (
                 ctx.merged_config.get("sc", {}) or {}
             ).get("select_ct")
+        reference_filter = ctx.application_config_metadata.get(
+            "reference_filter", {}
+        )
         report = input_service.preflight(
             specs,
             runtime=runtime,
             columns=validation_columns,
+            reference_filter_column=reference_filter.get("column"),
+            reference_filter_value=reference_filter.get("value"),
         )
         run_dir = Path(ctx.run_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -145,4 +150,4 @@ class ModeEvaluationPolicy(EvaluationPolicy):
         runtime = ctx.runtime
         if runtime.get("mode") == "benchmark":
             return True
-        return bool(ctx.merged_config.get("benchmark", {}).get("evaluate", False))
+        return bool(ctx.merged_config["benchmark"]["evaluate"])

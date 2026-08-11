@@ -18,7 +18,6 @@ _OPS_EXPORTS = {
     "get_true_cell_type": ("revise.backend.ops.meta", "get_true_cell_type"),
     "get_weighted_align_score": ("revise.backend.ops.coefficients", "get_weighted_align_score"),
     "merge_subcluster": ("revise.backend.ops.meta", "merge_subcluster"),
-    "solve_local_ot": ("revise.backend.ops.local_ot", "solve_local_ot"),
     "align_posterior_categories": (
         "revise.backend.ops.posterior_conditioning",
         "align_posterior_categories",

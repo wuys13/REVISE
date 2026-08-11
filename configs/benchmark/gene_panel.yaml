@@ -1,0 +1,17 @@
+schema_version: 1
+route: gene_panel
+cases: {}
+io:
+  st_file: selected_xenium.h5ad
+  gt_svc_file: selected_xenium.h5ad
+  sc_ref_file: real_sc_ref.h5ad
+algorithm:
+  impute:
+    merge_subcluster_method: mean
+    subcluster_resolution: 3
+    in_panel_subcluster_resolution: null
+    prune: true
+    n_neighbors: 1
+    method: mean
+    graph_preprocess: true
+    graph_n_pcs: 50

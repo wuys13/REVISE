@@ -10,8 +10,8 @@ from tqdm import tqdm
 from revise.backend.runners.benchmark_svc import BenchmarkSVC
 from revise.backend.kernels import GeneImputeKernel as GeneImpute
 from revise.backend.kernels import GeneUncertaintyKernel as GeneUncertainty
+from revise.backend.kernels import OTKernel
 from revise.backend.ops.distance import bhattacharyya_distance
-from revise.backend.ops.local_ot import solve_local_ot
 from revise.backend.ops.meta import get_subcluster
 from revise.backend.ops.meta import merge_subcluster
 from revise.backend.ops.shaver import get_prune_adata
@@ -290,7 +290,7 @@ class ScSVCImpute(BenchmarkSVC):
             dist_max = float(np.nanmax(ot_cost)) if ot_cost.size else 1.0
             if not np.isfinite(dist_max) or dist_max <= 0:
                 dist_max = 1.0
-            T_values = solve_local_ot(
+            T_values = OTKernel.couple(
                 spot_prior.values,
                 type_prior.values,
                 ot_cost / dist_max,
