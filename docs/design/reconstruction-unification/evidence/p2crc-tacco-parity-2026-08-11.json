@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-11",
+  "scope": "P2CRC Xenium_T sc-SVC TACCO technical parity against frozen test_sc legacy checkpoints",
+  "environment": {
+    "python": "3.10",
+    "tacco": "0.5.0",
+    "seed": 42,
+    "threads": 1
+  },
+  "configuration": {
+    "spatial": "P2CRC_Xenium.h5ad",
+    "reference": "adata_sc_all_reanno.h5ad",
+    "filter": "Patient == P2CRC",
+    "alpha": 0.2,
+    "resolutions": [0.6, 0.7, 0.8]
+  },
+  "preprocessing_checkpoints": {
+    "reference_patient_filter": {"equal": true, "n_obs": 30774},
+    "spatial_transcript_filter": {"equal": true, "n_obs": 242294},
+    "spatial_gene_filter": {"equal": true, "n_vars": 422},
+    "reference_gene_filter": {"equal": true, "n_vars": 13088},
+    "overlap_gene_axis": {"equal": true, "n_vars": 343},
+    "slash_label_normalization": {"equal": true}
+  },
+  "post_change_route_comparison": {
+    "level1_annotation": "exact",
+    "selected_T_axes": "exact",
+    "level2_annotation": "exact",
+    "gene_spatial_joint_graphs": "exact",
+    "leiden_partitions_and_scores": "exact",
+    "best_resolution": 0.7,
+    "reverse_annotation": "exact",
+    "final_spatial": {"shape": [14219, 343], "X": "exact", "Confidence": "exact"},
+    "final_expression": {"shape": [4964, 13088], "X": "exact", "Confidence": "exact"},
+    "false_exact_comparisons": 0,
+    "false_allclose_1e_12_comparisons": 0
+  },
+  "does_not_establish": [
+    "real POT parity",
+    "full-suite health",
+    "biological validity"
+  ]
+}
