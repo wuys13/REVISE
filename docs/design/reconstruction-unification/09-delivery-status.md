@@ -48,6 +48,8 @@ settings, the `Xenium_T.yaml` TACCO route, and fresh output under
 posteriors/labels/Confidence, graph inputs and outputs, Leiden results and
 best resolution, reverse annotation, and final sparse `X` matrices. The
 versioned evidence records only summary/hash/count facts, not H5AD or matrices.
+This was rerun after removing implicit reference-category reordering and
+zero-overlap reference-cell filtering; the same comparison remained exact.
 
 The historical `max_score` column is intentionally not reconciled in this
 round. `Confidence` is the parity comparison field. The spatial legacy column

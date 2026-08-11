@@ -27,7 +27,14 @@ def test_ot_kernel_tacco_annotation_uses_fresh_full_inputs_and_only_publishes_as
     )
     reference = AnnData(
         X=np.array([[2.0, 0.0], [0.0, 2.0]]),
-        obs=pd.DataFrame({"Level1": ["B", "A"]}, index=["cell1", "cell2"]),
+        obs=pd.DataFrame(
+            {
+                "Level1": pd.Categorical(
+                    ["B", "A"], categories=["A", "B"], ordered=True
+                )
+            },
+            index=["cell1", "cell2"],
+        ),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
     captured = {}
@@ -52,6 +59,7 @@ def test_ot_kernel_tacco_annotation_uses_fresh_full_inputs_and_only_publishes_as
             target_var=adata.var_names.copy(),
             reference_obs=ref.obs_names.copy(),
             reference_var=ref.var_names.copy(),
+            reference_categories=list(ref.obs[annotation_key].cat.categories),
             annotation_key=annotation_key,
             result_key=result_key,
             return_reference=return_reference,
@@ -86,6 +94,7 @@ def test_ot_kernel_tacco_annotation_uses_fresh_full_inputs_and_only_publishes_as
     assert captured["target_var"].equals(target.var_names)
     assert captured["reference_obs"].equals(reference.obs_names)
     assert captured["reference_var"].equals(reference.var_names)
+    assert captured["reference_categories"] == ["A", "B"]
     assert captured["annotation_key"] == "Level1"
     assert captured["result_key"] != "Level1"
     assert captured["return_reference"] is True

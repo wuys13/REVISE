@@ -36,6 +36,12 @@
     "false_exact_comparisons": 0,
     "false_allclose_1e_12_comparisons": 0
   },
+  "post_remote_cleanup_rerun": {
+    "removed_reference_category_reordering": true,
+    "removed_zero_overlap_reference_cell_filtering": true,
+    "legacy_checkpoint_comparison": "exact",
+    "false_boolean_comparisons": 0
+  },
   "does_not_establish": [
     "real POT parity",
     "full-suite health",

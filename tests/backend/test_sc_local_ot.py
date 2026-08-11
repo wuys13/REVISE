@@ -389,7 +389,7 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
         var=pd.DataFrame(index=["g1", "g2"]),
     )
     sc_adata = AnnData(
-        X=np.ones((2, 2), dtype=np.float64),
+        X=np.array([[1.0, 1.0], [0.0, 0.0]], dtype=np.float64),
         obs=pd.DataFrame(
             {
                 "Patient": ["sample", "sample"],

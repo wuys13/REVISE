@@ -669,13 +669,6 @@ def _annotate(
         tacco = require_tacco()
         target_input = target.copy()
         reference_input = reference.copy()
-        reference_labels = reference_input.obs[annotation_key]
-        expected_categories = list(_reference_categories(reference_labels))
-        reference_input.obs[annotation_key] = pd.Categorical(
-            reference_labels,
-            categories=expected_categories,
-            ordered=getattr(reference_labels.dtype, "ordered", False),
-        )
         result_key = f"__revise_tacco_{uuid.uuid4().hex}"
         tacco_kwargs = {}
         if multi_center is not None:
