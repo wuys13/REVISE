@@ -6,7 +6,7 @@ import runpy
 from pathlib import Path
 from types import SimpleNamespace
 
-from revise.config import load_raw_config
+from revise.config.authority import _authority_document
 
 try:
     import tomllib
@@ -81,9 +81,9 @@ def test_1x_case_notebooks_use_current_routes_and_vocabulary():
     assert "algorithm_overrides" not in notebooks
 
 
-def test_visium_case_custom_config_preserves_profile_defaults():
+def test_visium_case_uses_the_canonical_reconstruct_entrypoint():
     notebook = json.loads(
-        _read(ROOT / "reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb")
+        _read(ROOT / "reproduce/case/sc_SVC_sr_case_Visium_mouse_brain.ipynb")
     )
     source = "\n".join(
         line
@@ -91,8 +91,12 @@ def test_visium_case_custom_config_preserves_profile_defaults():
         for line in cell.get("source", [])
     )
 
-    for section in ("preprocess", "graph", "sc"):
-        assert f'case_profile.setdefault("{section}", {{}}).update(' in source
+    assert "REVISEPipeline" not in source
+    assert "application_sc_sr" not in source
+    assert "reconstruct.py --config configs/application/Visium.yaml" in source
+    assert "subprocess.run" in source
+    assert "cwd=REPO_ROOT" in source
+    assert "PM_ON_CELL_PATH" in source
 
 
 def test_quickstart_matches_application_yaml_entry_and_route_fields():
@@ -122,6 +126,25 @@ def test_quickstart_matches_application_yaml_entry_and_route_fields():
     assert "--spot-size" not in quickstart
     for removed in ("--svc-type", "--st-file", "--select-ct", "--ot-method"):
         assert removed not in quickstart
+
+
+def test_docs_name_typed_authority_and_all_eleven_route_yamls():
+    text = _joined()
+    assert "revise.config.authority" in text
+    for filename in (
+        "Xenium_T.yaml",
+        "Xenium_Fib.yaml",
+        "Xenium_Mono.yaml",
+        "VisiumHD.yaml",
+        "Visium.yaml",
+        "segmentation.yaml",
+        "bin2cell.yaml",
+        "batch_effect.yaml",
+        "spot_size.yaml",
+        "gene_panel.yaml",
+        "gene_dropout.yaml",
+    ):
+        assert filename in text
 
 
 def test_application_docs_match_strict_schema_and_root_resolution():
@@ -209,7 +232,7 @@ def test_installation_describes_base_and_optional_capability_layers():
 
 def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     text = _joined()
-    entrypoint = _read(ROOT / "reconstruct.py")
+    publication = _read(ROOT / "revise/application/publication.py")
     case = _read(ROOT / "docs/source/case.rst")
     configuration = _read(ROOT / "docs/source/configuration.rst")
     api_diagram = _read(ROOT / "docs/source/api/classes_revise.svg")
@@ -219,9 +242,9 @@ def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     )
 
     assert "<output-dir>/<output-name>.h5ad" in text
-    assert 'f"{config.output_name}.h5ad"' in entrypoint
-    assert 'f"{config.output_name}_expr.h5ad"' in entrypoint
-    assert 'f"{config.output_name}_spatial.h5ad"' in entrypoint
+    assert 'f"{config.output_name}.h5ad"' in publication
+    assert 'f"{prefix}expr.h5ad"' in publication
+    assert 'f"{prefix}spatial.h5ad"' in publication
     assert "sp-SVC" in text
     assert "sc-SVC" in text
     assert "sc-SVC-sr" in text
@@ -311,7 +334,7 @@ def test_benchmark_docs_describe_dedicated_configuration_controls():
         "--sr-refinement-preset",
     ):
         assert option in text
-    assert "applied after the selected profile or custom ``--config``" in text
+    assert "applied after the selected route YAML" in text
     assert "Omitting the strength creates no CLI override" in text
     assert "minimal ``local_refinement`` evidence" in text
     assert "Removed policy and posterior flags are rejected" in text
@@ -346,9 +369,8 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
     from revise.benchmark import cli as benchmark_main
 
     class FakePipeline:
-        def __init__(self, config_path):
-            self.config_path = config_path
-            self.raw_config = load_raw_config(ROOT / "revise/revise.yaml")
+        def __init__(self):
+            self.raw_config = _authority_document()
 
     monkeypatch.setattr(benchmark_main, "REVISEPipeline", FakePipeline)
     monkeypatch.setattr("builtins.print", lambda *args, **kwargs: None)
@@ -357,17 +379,19 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
         "_run_case",
         lambda *args, **kwargs: {
             "ok": True,
-            "profile": kwargs["profile"],
+            "profile": "synthetic",
+            "seed": kwargs["runtime_seed"],
             "run_dir": "synthetic",
+            "manifest_path": "synthetic/provenance.json",
+            "local_refinement": None,
             "summary": {},
             "error": None,
         },
     )
 
-    def args_for(confounding):
+    def args_for(route):
         return SimpleNamespace(
             platform="sim2real",
-            confounding=confounding,
             data_root=str(tmp_path / "data"),
             dataset_task=None,
             sample_name="sample",
@@ -376,20 +400,15 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
             sc_ref_file=None,
             output_root=str(tmp_path / "output"),
             sample_size=None,
-            config="revise/revise.yaml",
+            config=str(ROOT / "configs" / "benchmark" / f"{route}.yaml"),
             seed=42,
             seed_scope="run",
-            posterior_mode="off",
-            posterior_key=None,
-            posterior_beta=None,
-            posterior_min_affinity=None,
-            posterior_cost_strength=None,
-            posterior_strict=False,
+            local_refinement_strength=None,
             sr_refinement_preset=None,
         )
 
     observed = {}
-    for confounding in (
+    for route in (
         "segmentation",
         "bin2cell",
         "batch_effect",
@@ -404,8 +423,8 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
             results.append({"tag": tag, **run_result})
 
         monkeypatch.setattr(benchmark_main, "_append_result", collect)
-        benchmark_main.main(args_for(confounding))
-        observed[confounding] = tags
+        benchmark_main.main(args_for(route))
+        observed[route] = tags
     assert {name: len(tags) for name, tags in observed.items()} == {
         "segmentation": 4,
         "bin2cell": 1,
@@ -427,17 +446,19 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
 
     monkeypatch.setattr(benchmark_main, "_append_result", collect_discovered)
     benchmark_main.main(args_for("batch_effect"))
-    assert len(discovered_tags) == 8
+    assert len(discovered_tags) == 16
     assert {tag.split(":", 1)[1].split("_", 1)[0] for tag in discovered_tags} == {
-        "31",
-        "73",
+        "20",
+        "50",
+        "100",
+        "200",
     }
     benchmark = _read(ROOT / "docs/source/benchmark.rst")
     quickstart = _read(ROOT / "docs/source/quickstart.rst")
     assert "four segmentation leaves" in benchmark
-    assert "four batch levels for every discovered spot size" in benchmark
+    assert "four fixed spot sizes by four batch levels" in benchmark
     assert "four fixed spot-size leaves" in benchmark
-    assert "one confounding family" in quickstart
+    assert "one Benchmark route YAML" in quickstart
     assert "runs one Sim2Real-ST case" not in quickstart
 
 
@@ -469,25 +490,17 @@ def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
 def test_application_pm_on_cell_contract_names_location_and_probability_semantics():
     concepts = _read(ROOT / "docs/source/concepts.rst")
     quickstart = _read(ROOT / "docs/source/quickstart.rst")
-    normalized = " ".join(f"{concepts}\n{quickstart}".split())
+    limitations = _read(ROOT / "docs/source/limitations.rst")
+    normalized = " ".join(f"{concepts}\n{quickstart}\n{limitations}".split())
     runner_contract = runpy.run_path(ROOT / "revise/config/runner_conf.py")
-    config = runner_contract["ApplicationScSrConf"](
-        raw_data_path="data",
-        result_root_path="output",
-        sample_name="sample",
-        cell_type_col="Level1",
-        confidence_col="confidence",
-        unknown_key="unknown",
-        st_file="st.h5ad",
-        sc_ref_file="sc_ref.h5ad",
-    )
 
-    assert runner_contract["pm_on_cell_path_from_data_root"](
-        config.raw_data_path
-    ) == "data/PM_on_cell.csv"
+    assert (
+        runner_contract["pm_on_cell_path_from_data_root"]("data")
+        == "data/PM_on_cell.csv"
+    )
     assert "<data-root>/PM_on_cell.csv" in normalized
-    assert "case-sensitive" in concepts
-    assert "no CLI path override" in concepts
+    assert "exact ``inputs.pm_on_cell.path``" in normalized
+    assert "no sidecar is probed" in normalized
     assert "sample-local probability prior" in normalized
     assert "rows must exactly equal the active virtual-cell IDs" in normalized
     assert "columns must exactly equal the active normalized cell-type labels" in normalized
@@ -498,7 +511,7 @@ def test_application_pm_on_cell_contract_names_location_and_probability_semantic
     assert "seeded random" in normalized
 
     notebook = json.loads(
-        _read(ROOT / "reproduce/case/sc_SVC_case_Visium_mouse_brain.ipynb")
+        _read(ROOT / "reproduce/case/sc_SVC_sr_case_Visium_mouse_brain.ipynb")
     )
     source = "\n".join(
         line for cell in notebook["cells"] for line in cell.get("source", [])
@@ -534,8 +547,7 @@ def test_docs_state_minimal_manifest_and_publication_guarantees():
     assert "solver events" not in f"{configuration} {concepts}"
     assert "Software identity is collected once per run" in architecture
     assert "same-directory temporary H5AD" in combined
-    assert "reloads it before replacement" in combined
-    assert "best-effort caught-exception rollback" in combined
+    assert "does not provide rollback" in combined
     assert "not reader-atomic or crash-atomic" in combined
     assert "caller must guarantee one writer per stable public target" in combined
     assert "violating that precondition is undefined" in combined

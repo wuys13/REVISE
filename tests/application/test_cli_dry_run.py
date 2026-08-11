@@ -10,6 +10,8 @@ import pandas as pd
 from anndata import AnnData
 import yaml
 
+from revise.utils.provenance import hash_jsonable
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -24,7 +26,11 @@ def _write_inputs(data_root: Path) -> None:
     sc = AnnData(
         X=np.ones((2, 2)),
         obs=pd.DataFrame(
-            {"Level1": ["A", "B"], "Level2": ["A1", "B1"]},
+            {
+                "Level1": ["A", "B"],
+                "Level2": ["A1", "B1"],
+                "Donor": ["D1", "D2"],
+            },
             index=["cell-1", "cell-2"],
         ),
         var=pd.DataFrame(index=["g1", "g2"]),
@@ -49,6 +55,18 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
                     "reference": {
                         "path": "sc.h5ad",
                         "format": "h5ad",
+                        "filter_column": "Donor",
+                        "filter_value": "D2",
+                    },
+                },
+                "preprocessing": {
+                    "spatial": {
+                        "min_transcript_counts": 60,
+                        "min_cell_counts": 100,
+                    },
+                    "reference": {
+                        "min_transcript_counts": None,
+                        "min_cell_counts": 100,
                     },
                 },
                 "global_anchoring": {"broad_column": "Level1"},
@@ -90,7 +108,7 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
     provenance = json.loads(
         (Path(payload["preflight"]).parent / "provenance.json").read_text()
     )
-    assert provenance["application_config"] == {
+    expected_application_config = {
         "source_path": str(config_path.resolve()),
         "source_sha256": __import__("hashlib").sha256(config_path.read_bytes()).hexdigest(),
         "declared_root": str(tmp_path),
@@ -108,3 +126,11 @@ def test_application_cli_dry_run_performs_preflight_without_reconstruction(tmp_p
         "effective_action": "preflight",
         "cli_overrides": {},
     }
+    application_config = provenance["application_config"]
+    assert {
+        key: application_config[key]
+        for key in expected_application_config
+    } == expected_application_config
+    assert application_config["effective_request_hash"] == hash_jsonable(
+        application_config["effective_request"]
+    )

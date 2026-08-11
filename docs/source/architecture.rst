@@ -41,14 +41,13 @@ profile/task/strategy for the selector supplied by each frontend.
 Configuration and routing
 -------------------------
 
-``revise/revise.yaml`` contains:
+``revise.config.authority`` contains:
 
-- ``defaults`` for runtime, IO, columns, preprocessing, graph, OT, and route
+- ``ENGINE_DEFAULTS`` for runtime, IO, columns, preprocessing, graph, OT, and route
   behavior;
-- ``profiles`` for declared application and benchmark requests;
-- ``router.application`` mappings from SVC data type to profile and strategy;
-- ``router.benchmark`` mappings from confounding family to profile and strategy;
-- ``locked_params`` for governed low-level values.
+- typed ``ROUTES`` mappings from Application SVC type or Benchmark confounding
+  selector to its profile metadata, strategy, and overrides;
+- ``LOCKED_KEYS`` for governed low-level values.
 
 GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
 preserve the same two-stage selection even when a legacy runner has a different
@@ -104,7 +103,7 @@ For both the single-file and paired 1.x outputs, the entrypoint writes all
 same-directory temporary H5AD files before replacing public targets. The pair
 is not reader-atomic or crash-atomic, and replacement does not provide rollback
 after a process failure. The caller must guarantee one writer per stable public
-target.
+target; violating that precondition is undefined.
 
 ``provenance.json.local_refinement`` is the minimal route-level evidence:
 ``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,

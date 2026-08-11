@@ -136,10 +136,7 @@ def test_ist_local_refinement_uses_configured_columns_and_local_ot(
         logger=None,
     )
 
-    def fail_global(*args, **kwargs):
-        raise AssertionError("sc-SVC local refinement reused the global annotation kernel")
-
-    runner.annotate_method.run = fail_global
+    assert not hasattr(runner, "annotate_method")
     local_calls = []
 
     def run_local(target, reference, **kwargs):
@@ -173,8 +170,22 @@ def test_application_sc_config_carries_local_ot_method():
         sc_ref_file="sc.h5ad",
         annotate_mode="pot",
         rec_ot_method="tacco",
+        annotate_pot_reg=0.1,
+        annotate_pot_reg_m=0.0,
+        annotate_pot_reg_type="entropy",
         tacco_annotate_multi_center=1,
         tacco_annotate_lamb=0.001,
+        rec_graph_n_neighbors=10,
+        rec_graph_exp_neighbor_num=15,
+        rec_graph_spatial_neighbor_num=6,
+        rec_graph_method="joint",
+        rec_graph_alpha=0.2,
+        rec_random_state=42,
+        rec_pot_reg=0.1,
+        rec_pot_reg_m=0.0,
+        rec_pot_reg_type="entropy",
+        rec_alpha=0.5,
+        rec_match_spot_sum=False,
     )
 
     assert config.annotate_mode == "pot"
@@ -184,7 +195,7 @@ def test_application_sc_config_carries_local_ot_method():
 def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
     monkeypatch,
 ):
-    from revise.backend.kernels import global_anchoring, local_anchoring
+    from revise.backend.kernels import global_anchoring, local_anchoring, ot
     from revise.config.runner_conf import ApplicationScConf
 
     config = ApplicationScConf(
@@ -198,8 +209,22 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
         sc_ref_file="sc.h5ad",
         annotate_mode="tacco",
         rec_ot_method="tacco",
+        annotate_pot_reg=0.1,
+        annotate_pot_reg_m=0.0,
+        annotate_pot_reg_type="entropy",
         tacco_annotate_multi_center=1,
         tacco_annotate_lamb=0.001,
+        rec_graph_n_neighbors=10,
+        rec_graph_exp_neighbor_num=15,
+        rec_graph_spatial_neighbor_num=6,
+        rec_graph_method="joint",
+        rec_graph_alpha=0.2,
+        rec_random_state=42,
+        rec_pot_reg=0.1,
+        rec_pot_reg_m=0.0,
+        rec_pot_reg_type="entropy",
+        rec_alpha=0.5,
+        rec_match_spot_sum=False,
     )
     calls = []
 
@@ -232,7 +257,7 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
         return adata, reference
 
     monkeypatch.setattr(
-        global_anchoring,
+        ot,
         "require_tacco",
         lambda: SimpleNamespace(tl=SimpleNamespace(annotate=annotate)),
     )
@@ -272,74 +297,75 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
     assert all(call["lamb"] == 0.001 for call in calls)
 
 
-@pytest.mark.parametrize("method", ["pot", "tacco"])
-def test_local_anchoring_routes_normalized_problem_to_shared_solver(
-    monkeypatch, method
-):
-    _import_sc_svc(monkeypatch)
+def test_application_sc_pot_local_annotation_uses_annotation_contract(monkeypatch):
     from revise.backend.kernels import local_anchoring
+    from revise.config.runner_conf import ApplicationScConf
 
-    config = SimpleNamespace(
-        rec_ot_method=method,
-        rec_pot_reg=0.2,
-        rec_pot_reg_m=0.3,
-        rec_pot_reg_type="kl",
+    config = ApplicationScConf(
+        sample_name="sample",
+        raw_data_path="data",
+        result_root_path="output",
         cell_type_col="Level1",
         confidence_col="Confidence",
         unknown_key="Unknown",
-    )
-    kernel = local_anchoring.LocalAnchoringKernel(config)
-    target = AnnData(
-        X=np.array([[2.0, 0.0], [0.0, 2.0]]),
-        obs=pd.DataFrame(index=["sp1", "sp2"]),
-        var=pd.DataFrame(index=["g1", "g2"]),
-    )
-    reference = AnnData(
-        X=np.array([[1.0, 0.0], [0.0, 1.0]]),
-        obs=pd.DataFrame({"Level2": ["A", "B"]}, index=["sc1", "sc2"]),
-        var=pd.DataFrame(index=["g1", "g2"]),
-    )
-    monkeypatch.setattr(
-        local_anchoring,
-        "bhattacharyya_distance",
-        lambda profiles, expression: np.array([[0.0, 2.0], [1.0, 3.0]]),
+        st_file="sp.h5ad",
+        sc_ref_file="sc.h5ad",
+        annotate_mode="pot",
+        rec_ot_method="pot",
+        annotate_pot_reg=0.1,
+        annotate_pot_reg_m=0.0,
+        annotate_pot_reg_type="entropy",
+        tacco_annotate_multi_center=1,
+        tacco_annotate_lamb=0.001,
+        rec_graph_n_neighbors=10,
+        rec_graph_exp_neighbor_num=15,
+        rec_graph_spatial_neighbor_num=6,
+        rec_graph_method="joint",
+        rec_graph_alpha=0.2,
+        rec_random_state=0,
+        rec_pot_reg=0.2,
+        rec_pot_reg_m=0.3,
+        rec_pot_reg_type="kl",
+        rec_alpha=0.5,
+        rec_match_spot_sum=False,
     )
     captured = {}
 
-    def solve(source, target_mass, cost, **kwargs):
-        captured.update(
-            source=np.asarray(source),
-            target=np.asarray(target_mass),
-            cost=np.asarray(cost),
-            kwargs=kwargs,
-        )
-        return np.array([[0.5, 0.0], [0.0, 0.5]])
+    def annotate(target, reference, **kwargs):
+        captured.update(kwargs)
+        result = target.copy()
+        result.obs[kwargs["annotation_key"]] = "A"
+        result.obs[kwargs["confidence_key"]] = 1.0
+        return result
 
-    monkeypatch.setattr(local_anchoring, "solve_local_ot", solve)
-
-    result = kernel.run(target, reference, cell_type_col="Level2")
-
-    np.testing.assert_allclose(captured["source"], [0.5, 0.5])
-    np.testing.assert_allclose(captured["target"], [0.5, 0.5])
-    np.testing.assert_allclose(
-        captured["cost"],
-        [[0.0, 1.0 / 3.0], [2.0 / 3.0, 1.0]],
+    monkeypatch.setattr(
+        local_anchoring,
+        "OTKernel",
+        SimpleNamespace(annotate=annotate),
     )
-    assert captured["kwargs"] == {
-        "method": method,
+    target = _adata(["sp1", "sp2"], ["A", "A"])
+    reference = _adata(["sc1", "sc2"], ["A", "B"])
+    reference.obs["Level2"] = ["A1", "B1"]
+
+    result = local_anchoring.LocalAnchoringKernel(config).run(
+        target,
+        reference,
+        cell_type_col="Level2",
+    )
+
+    assert captured == {
+        "method": "pot",
+        "annotation_key": "Level2",
+        "confidence_key": "Confidence",
         "pot_reg": 0.2,
         "pot_reg_m": 0.3,
         "pot_reg_type": "kl",
         "pot_verbose": False,
         "pot_num_iter_max": 5000,
+        "multi_center": None,
+        "lamb": None,
     }
-    assert result.obs["Level2"].tolist() == ["A", "B"]
-    assert tuple(result.obsm["Level2"].index) == ("sp1", "sp2")
-    assert tuple(result.obsm["Level2"].columns) == ("A", "B")
-    np.testing.assert_allclose(
-        result.obsm["Level2"].to_numpy(), [[1.0, 0.0], [0.0, 1.0]]
-    )
-    np.testing.assert_allclose(result.obs["Confidence"], [1.0, 1.0])
+    assert result.obs["Level2"].tolist() == ["A", "A"]
 
 
 @pytest.mark.parametrize(
@@ -400,8 +426,17 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
                 "impute": {"reg": 5.0, "reg_m": 0.0, "reg_type": "kl"},
             },
             "preprocess": {},
-            "graph": {},
+                "graph": {
+                    "method": "joint",
+                    "alpha": 0.2,
+                    "n_neighbors": 10,
+                    "exp_neighbors": 15,
+                    "spatial_neighbors": 6,
+                    "random_state": 0,
+                },
+            "reconstruct": {"alpha": 0.5},
             "sc": {
+                "match_spot_sum": False,
                 "tacco_annotate": {
                     "multi_center": 1,
                     "lamb": 0.001,
@@ -422,7 +457,16 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
             "unknown_key": "Unknown",
         },
         run_dir=tmp_path,
+        runtime={"seed": 42},
+        input_specs=(
+            SimpleNamespace(role="st", path="sp.h5ad"),
+            SimpleNamespace(role="sc_ref", path="sc.h5ad"),
+        ),
         logger=None,
+        application_preprocess_callback=lambda spatial, reference: (
+            spatial.copy(),
+            reference.copy(),
+        ),
     )
 
     adapters.ScSvcApplicationStrategy().prepare_context(ctx)
@@ -532,11 +576,20 @@ def test_application_ot_method_switches_global_and_local_together(method):
 
     overrides = _engine_overrides(
         SimpleNamespace(
+            svc_type=request.svc_type,
             ot_method=request.ot_method,
             broad_column=request.broad_column,
             subtype_column=request.subtype_column,
             select_cell_type=request.select_cell_type,
             local_refinement_strength=request.local_refinement_strength,
+            local_refinement_alpha=0.2,
+            local_refinement_resolutions=(0.6, 0.7, 0.8),
+            local_refinement_graph_method=None,
+            local_refinement_graph_alpha=None,
+            local_refinement_graph_n_neighbors=None,
+            local_refinement_graph_exp_neighbors=None,
+            local_refinement_graph_spatial_neighbors=None,
+            local_refinement_match_spot_sum=None,
             seed=None,
             st_path=Path("st"),
             reference_path=Path("ref"),

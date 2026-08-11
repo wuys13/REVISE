@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 import sys
 import types
@@ -211,7 +212,7 @@ def test_lightweight_fixture_restores_relevant_prefix_keys_and_identities():
     next(fixture)
     try:
         importlib.import_module("revise.backend.ops.assignment")
-        importlib.import_module("revise.backend.ops.local_ot")
+        importlib.import_module("revise.backend.kernels.ot")
         importlib.import_module("revise.backend.ops.posterior_conditioning")
         importlib.import_module("revise.backend.ops.sr_allocation")
         sys.modules[probe_name] = probe
@@ -323,6 +324,12 @@ def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path
         lambda *args, **kwargs: None,
         raising=False,
     )
+    preprocess_calls = []
+
+    def application_preprocess(spatial, reference_data):
+        preprocess_calls.append((spatial.copy(), reference_data.copy()))
+        return spatial.copy(), reference_data.copy()
+
     ctx = SimpleNamespace(
         merged_config={
             "ot": {
@@ -336,10 +343,23 @@ def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path
                 },
                 "impute": {"reg": 5.0, "reg_m": 0.0, "reg_type": "kl"},
             },
-                "preprocess": {},
-                "graph": {},
-                "plot": {},
-                "local_refinement": {"strength": 0.2},
+            "preprocess": {},
+            "graph": {
+                "method": "joint",
+                "alpha": 0.5,
+                "n_neighbors": 10,
+                "exp_neighbors": 10,
+                "spatial_neighbors": 10,
+            },
+            "plot": {
+                "enabled": False,
+                "cluster_resolutions": [0.1, 0.3, 0.5],
+                "min_genes": 20,
+                "min_cells": 3,
+                "sample_size": 10000,
+            },
+            "reconstruct": {"alpha": 0.5},
+            "local_refinement": {"strength": 0.2},
         },
         io={
             "sample_name": "sample",
@@ -355,13 +375,43 @@ def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path
             "unknown_key": "Unknown",
         },
         run_dir=tmp_path,
+        input_specs=(
+            SimpleNamespace(role="st", path="st.h5ad"),
+            SimpleNamespace(role="sc_ref", path="sc.h5ad"),
+        ),
         logger=logging.getLogger("test-sp-label-normalization"),
+        application_preprocess_callback=application_preprocess,
     )
 
     adapters.SpSvcApplicationStrategy().prepare_context(ctx)
 
+    assert len(preprocess_calls) == 1
+    assert preprocess_calls[0][1].obs["major_type"].tolist() == ["T/NK", "T/NK"]
     assert ctx.runner.sc_ref_adata.obs["major_type"].tolist() == ["T_NK", "T_NK"]
     assert ctx.runner.sc_ref_adata.obs["minor_type"].tolist() == ["T_1", "T_2"]
+
+
+def test_all_application_strategies_require_the_lifecycle_preprocess_callback():
+    from revise.backend import adapters
+
+    for strategy in (
+        adapters.SpSvcApplicationStrategy,
+        adapters.ScSvcApplicationStrategy,
+        adapters.ScSvcSrApplicationStrategy,
+    ):
+        source = inspect.getsource(strategy.prepare_context)
+        assert "application_preprocess_callback" in source
+        assert "Application preprocessing callback is required" in source
+
+
+def test_sc_sr_ensures_spot_cells_before_application_preprocessing():
+    from revise.backend import adapters
+
+    source = inspect.getsource(adapters.ScSvcSrApplicationStrategy.prepare_context)
+
+    assert source.index("ensure_all_cells_in_spot") < source.index(
+        "application_preprocess("
+    )
 
 
 def test_reference_label_normalization_rejects_category_collisions():
@@ -446,9 +496,11 @@ def test_sp_argmax_without_soft_posterior_fails_before_local_solver(
 
     monkeypatch.setattr(
         module,
-        "solve_local_ot",
-        lambda *_args, **_kwargs: pytest.fail(
-            "missing soft Q must fail before local solve"
+        "OTKernel",
+        SimpleNamespace(
+            couple=lambda *_args, **_kwargs: pytest.fail(
+                "missing soft Q must fail before local solve"
+            )
         ),
     )
 

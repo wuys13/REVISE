@@ -8,12 +8,20 @@ import pytest
 
 def _args(**overrides):
     values = {
-        "confounding": "segmentation",
+        "route": "segmentation",
         "local_refinement_strength": None,
         "sr_refinement_preset": None,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
+
+
+def test_benchmark_yaml_is_the_only_route_selector():
+    from revise.benchmark.cli import get_parser
+
+    help_text = get_parser().format_help()
+    assert "--config" in help_text
+    assert "--confounding" not in help_text
 
 
 def test_benchmark_cli_does_not_expose_generic_set_overrides(monkeypatch):
@@ -24,8 +32,8 @@ def test_benchmark_cli_does_not_expose_generic_set_overrides(monkeypatch):
         "argv",
         [
             "benchmark_main.py",
-            "--confounding",
-            "segmentation",
+            "--config",
+            "segmentation.yaml",
             "--data-root",
             "data",
             "--sample-name",
@@ -44,8 +52,8 @@ def test_benchmark_cli_rejects_removed_set_option(monkeypatch):
         "argv",
         [
             "benchmark_main.py",
-            "--confounding",
-            "segmentation",
+            "--config",
+            "segmentation.yaml",
             "--data-root",
             "data",
             "--sample-name",
@@ -66,7 +74,7 @@ def test_sr_refinement_preset_builds_nested_sc_configuration():
 
     overrides = _build_algorithm_overrides(
         _args(
-            confounding="spot_size",
+            route="spot_size",
             sr_refinement_preset="confidence_anchor",
         )
     )
@@ -78,6 +86,7 @@ def test_sr_refinement_preset_builds_nested_sc_configuration():
 
 def test_run_case_uses_only_the_benchmark_selector():
     from revise.benchmark.cli import _run_case
+    from revise.utils.provenance import hash_jsonable
 
     captured = {}
 
@@ -99,17 +108,36 @@ def test_run_case_uses_only_the_benchmark_selector():
 
     result = _run_case(
         Pipeline(),
-        confounding="segmentation",
+        route="segmentation",
         io_overrides={"sample_name": "sample"},
         runtime_seed=None,
         algorithm_overrides={"local_refinement": {"strength": 0.0}},
+        benchmark_config_metadata={
+            "source_sha256": "abc",
+            "effective_request": {"route": "segmentation"},
+            "cli_overrides": {"st_file": "override.h5ad"},
+        },
     )
 
     assert result["ok"] is True
     assert result["profile"] == "benchmark_seg"
     assert captured["svc_type"] is None
     assert captured["cf"] == "segmentation"
-    assert captured["runtime_overrides"] == {"seed": None}
+    assert captured["runtime_overrides"] == {"seed": 42}
+    expected_metadata = {
+        "source_sha256": "abc",
+        "effective_request": {
+            "route": "segmentation",
+            "io": {"sample_name": "sample"},
+            "algorithm": {"local_refinement": {"strength": 0.0}},
+            "runtime": {"seed": 42},
+        },
+        "cli_overrides": {"st_file": "override.h5ad"},
+    }
+    expected_metadata["effective_request_hash"] = hash_jsonable(
+        expected_metadata["effective_request"]
+    )
+    assert captured["benchmark_config_metadata"] == expected_metadata
 
 
 def test_seed_scope_preserves_fixed_run_seed_and_distinct_process_seeds():

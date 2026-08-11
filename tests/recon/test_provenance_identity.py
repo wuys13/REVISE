@@ -14,21 +14,18 @@ from anndata import AnnData
 
 from revise.config.runner_conf import resolve_input_specs
 from revise.config import (
-    load_raw_config,
     merge_unified_config,
     resolve_semantic_route,
 )
+from revise.config.authority import _authority_document
 from revise.framework import REVISEPipeline
 from revise.recon.context import PipelineContext
 from revise.utils.deterministic import canonical_config_projection
 from revise.utils.provenance import hash_jsonable, input_identities
 
 
-CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
-
-
 def _resolved_config(profile, algorithm_overrides=None):
-    raw = load_raw_config(CONFIG_PATH)
+    raw = _authority_document()
     selector = {
         "application_sp": {"svc_type": "sp-SVC"},
         "application_sc": {"svc_type": "sc-SVC"},
@@ -228,12 +225,12 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
         manifests.append(json.loads((run_dir / "provenance.json").read_text()))
         configs.append(json.loads((run_dir / "merged_config.json").read_text()))
 
-    assert manifests[0]["schema_version"] == manifests[1]["schema_version"] == 3
+    assert manifests[0]["schema_version"] == manifests[1]["schema_version"] == 4
     assert manifests[0]["run_dir"] != manifests[1]["run_dir"]
     assert manifests[0]["run"]["started_at"] != manifests[1]["run"]["started_at"]
     assert configs[0]["io"]["data_root"] != configs[1]["io"]["data_root"]
     assert configs[0]["io"]["output_root"] != configs[1]["io"]["output_root"]
-    assert manifests[0]["config_hash"] == manifests[1]["config_hash"]
+    assert manifests[0]["algorithm_config_hash"] == manifests[1]["algorithm_config_hash"]
     assert "data_fingerprint" not in manifests[0]
     assert "data_fingerprint" not in manifests[1]
     assert [record["role"] for record in manifests[0]["input_identities"]] == [
@@ -249,8 +246,13 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
     for manifest, config in zip(manifests, configs):
         expected_specs = resolve_input_specs(config["runtime"], config["io"])
         assert manifest["runtime_seed"] == config["runtime"]["seed"]
-        assert manifest["config_hash"] == hash_jsonable(
-            canonical_config_projection(config)
+        assert manifest["algorithm_config_hash"] == config["_identity"][
+            "algorithm_config_hash"
+        ]
+        assert manifest["algorithm_config_hash"] == hash_jsonable(
+            canonical_config_projection(
+                {key: value for key, value in config.items() if key != "_identity"}
+            )
         )
         assert manifest["input_identities"] == sorted(
             input_identities(expected_specs),
@@ -308,6 +310,7 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / name),
                 "sample_name": "sample",
+                "pm_on_cell_path": str(pm_path),
             },
             dry_run=True,
         )
@@ -346,6 +349,7 @@ def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
                 "data_root": str(data_root),
                 "output_root": str(output_root),
                 "sample_name": "sample",
+                "pm_on_cell_path": str(pm_path),
             },
             dry_run=True,
         )
@@ -409,8 +413,6 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     config = _config(tmp_path)
     ctx = PipelineContext(
         merged_config=config,
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="application_sp",
         runtime=config["runtime"],
         route_key="application:sp-SVC",
@@ -434,7 +436,7 @@ def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
     manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
-    assert manifest["schema_version"] == 3
+    assert manifest["schema_version"] == 4
     assert manifest["result"] == {
         "filename": "SVC.h5ad",
         "type": "sp-SVC",
@@ -479,8 +481,6 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
     }
     ctx = PipelineContext(
         merged_config=config,
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="application_sp",
         runtime=config["runtime"],
         route_key="application:sp-SVC",
@@ -492,7 +492,7 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
     manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
-    assert manifest["config_path"] == "revise/revise.yaml"
+    assert "config_path" not in manifest
     assert manifest["application_config"] == {
         key: value
         for key, value in application_config.items()
@@ -510,3 +510,27 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
         "output_name",
         "effective_action",
     }
+
+
+def test_benchmark_config_provenance_is_namespaced(tmp_path):
+    config = _config(tmp_path)
+    benchmark_config = {
+        "source_path": str(tmp_path / "segmentation.yaml"),
+        "source_sha256": "b" * 64,
+        "effective_request": {"route": "segmentation"},
+        "effective_request_hash": "c" * 64,
+    }
+    ctx = PipelineContext(
+        merged_config=config,
+        profile="benchmark_seg",
+        runtime=config["runtime"],
+        route_key="benchmark:segmentation",
+        run_dir=tmp_path / "run",
+        logger=logging.getLogger("test-benchmark-config-provenance"),
+        benchmark_config_metadata=benchmark_config,
+    )
+
+    REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
+
+    manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
+    assert manifest["benchmark_config"] == benchmark_config

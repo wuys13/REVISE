@@ -63,14 +63,16 @@ name first uses `configs/application/<name>.yaml` in the launch directory and
 then falls back to the packaged resource.
 
 Edit the selected YAML before running it. The fields you normally change are
-`paths.root_dir`, the exact ST/reference paths, the annotation columns, and
-`output.dir`/`output.name`. The three Xenium files describe the same Xenium
+`paths.root_dir`, the exact ST/reference paths, optional reference
+`filter_column`/`filter_value`, preprocessing thresholds, annotation columns,
+and `output.dir`/`output.name`. The three Xenium files describe the same Xenium
 assay with different reconstruction targets: `T`, `Fibroblast`, or
 `Mono_Macro`. Confirm that the selected label exists in the full reference
 `obs` column. Visium HD and Visium expose only `local_refinement.strength`.
 Visium's `0.0` still runs LR; it only disables assignment-posterior
-strengthening of the LR cost. The reference is used as supplied; this entry
-point does not filter it by patient.
+strengthening of the LR cost. The official Xenium templates filter the shared
+reference with `Patient == P2CRC`; the key names are generic and may describe a
+different reference cohort field in a custom YAML.
 
 From a source checkout, validate the complete request first:
 
@@ -78,7 +80,7 @@ From a source checkout, validate the complete request first:
 python reconstruct.py --config configs/application/VisiumHD.yaml --dry-run
 ```
 
-Then run the same YAML without the safety override:
+Then run the same YAML without `--dry-run`:
 
 ```bash
 python reconstruct.py --config configs/application/VisiumHD.yaml
@@ -97,20 +99,21 @@ paths that the formal run will use. The three routes publish:
 
 ```text
 output/P1CRC_HD_sp-SVC.h5ad
-output/REVISEVisiumMouseBrain_sc-SVC-sr.h5ad
+output/visium_mouse_brain_revise/REVISEVisiumMouseBrain_sc-SVC-sr.h5ad
 ```
 
 Standard `sc-SVC` publishes its two reconstruction carriers separately:
 
 ```text
-output/P1CRC_Xenium_T_sc-SVC_spatial.h5ad
-output/P1CRC_Xenium_T_sc-SVC_expr.h5ad
+output/P2CRC_Xenium/T/spatial.h5ad
+output/P2CRC_Xenium/T/expr.h5ad
 ```
 
 The associated `provenance.json` keeps the application YAML identity under
 `application_config` (`source_path`, `source_sha256`, root and resolved paths,
-and effective action). Top-level `config_path` and `config_hash`
-remain the engine configuration identity. [`reconstruct.py`](reconstruct.py)
+effective request/hash, and action). Top-level `engine_defaults_hash`,
+`authority_hash`, `algorithm_config_hash`, and `effective_config_hash` identify
+the package engine authority and resolved run. [`reconstruct.py`](reconstruct.py)
 is the canonical Application implementation, and the installed
 `revise-reconstruct` command points to its same `main()` implementation.
 
@@ -135,8 +138,8 @@ cells without a supplied center remain at their source spot center.
 Set `inputs.st.path` and `inputs.reference.path` explicitly. `paths.root_dir: .` means the launch current
 working directory, not the application YAML directory; otherwise it must be an
 existing absolute directory. Input and output values are relative children of
-that root and cannot escape it with `..`. The package-internal
-`revise/revise.yaml` remains authoritative.
+that root and cannot escape it with `..`. Package code in
+`revise.config.authority` owns engine defaults and routing.
 
 - Both inputs must have non-empty `X`, unique `obs_names`, unique `var_names`,
   and at least one shared gene.
@@ -145,8 +148,9 @@ that root and cannot escape it with `..`. The package-internal
 - Every route requires `global_anchoring.broad_column` in reference `obs`. Only
   standard `sc-SVC` accepts and requires `local_refinement.subtype_column`.
   `sc-SVC-sr` composition and expression allocation use the broad assignment.
-- The reference is not filtered by patient. Prepare the reference before the
-  run if it contains multiple scientific cohorts.
+- A reference `filter_column` and `filter_value` must be provided together or
+  both omitted. When present, filtering runs before the spatial and reference
+  count/gene preprocessing steps.
 - For sST inputs with segmentation-derived centers, the optional
   `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
   index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
@@ -246,8 +250,10 @@ Application output names are declared in YAML. `sp-SVC` and `sc-SVC-sr` publish:
 <output-dir>/<output-name>.h5ad
 ```
 
+If `output.name` is omitted, a single-output route uses `svc.h5ad`.
 `sc-SVC` publishes `<output-name>_spatial.h5ad` and
-`<output-name>_expr.h5ad` in `<output-dir>`. The run's
+`<output-name>_expr.h5ad`; without `output.name` it uses `spatial.h5ad` and
+`expr.h5ad`. The run's
 `provenance.json` records each result role together with the resolved route,
 configuration, inputs, stages, and artifacts.
 
@@ -265,7 +271,7 @@ From a source checkout, run one confounding family:
 
 ```bash
 python reproduce/benchmark_main.py \
-  --confounding segmentation \
+  --config configs/benchmark/segmentation.yaml \
   --data-root raw_data/Sim2Real-ST \
   --sample-name P2CRC/cut_part1 \
   --dataset-task segmentation \
@@ -316,12 +322,11 @@ databases.
 ```python
 from reconstruct import run_application
 
-execution = run_application(
-    "configs/application/Xenium_T.yaml",
-    dry_run=True,
-)
-print(execution.status)
-print(execution.output_paths)
+spatial_svc = run_application("configs/application/VisiumHD.yaml")
+spatial, expression = run_application("configs/application/Xenium_T.yaml")
+
+# sp-SVC and sc-SVC-sr return one AnnData; sc-SVC returns this fixed pair.
+assert run_application("configs/application/VisiumHD.yaml", dry_run=True) is None
 ```
 
 Application callers provide one YAML. `REVISEPipeline.run()` remains the

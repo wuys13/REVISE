@@ -15,14 +15,13 @@ import pytest
 from anndata import AnnData, concat as anndata_concat
 from scipy import sparse
 
-from revise.backend.ops.local_ot import solve_local_ot
+from revise.backend.kernels.ot import OTKernel
 from revise.recon.context import PipelineContext
 from revise.svc import SVC
 
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_OT_CALLERS = {
-    "revise/backend/kernels/local_anchoring.py": 1,
     "revise/backend/runners/sp_svc_application.py": 1,
     "revise/backend/runners/sp_svc_benchmark.py": 1,
     "revise/backend/runners/sc_svc_sr_application.py": 1,
@@ -78,8 +77,6 @@ def _context(
         merged_config["local_refinement"] = {"strength": strength}
     return PipelineContext(
         merged_config=merged_config,
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="application_sc",
         runtime={"task": task} if task is not None else {},
         route_key="sc_svc:segmentation",
@@ -134,7 +131,7 @@ def test_local_pot_routes_without_importing_tacco(monkeypatch):
         return real_import_module(name, package)
 
     monkeypatch.setattr(importlib, "import_module", guarded_import)
-    coupling = solve_local_ot(
+    coupling = OTKernel.couple(
         [0.5, 0.5],
         [0.5, 0.5],
         [[0.0, 1.0], [1.0, 0.0]],
@@ -169,7 +166,7 @@ def test_manifest_has_ot_config_but_no_ot_events(tmp_path):
 
 
 def test_local_empty_support_returns_zero_coupling():
-    coupling = solve_local_ot(
+    coupling = OTKernel.couple(
         [0.5, 0.5],
         [0.5, 0.5],
         [[0.0, 1.0], [1.0, 0.0]],
@@ -236,7 +233,10 @@ def test_sp_benchmark_validates_ga_before_insufficient_units_short_circuit():
             X=sparse.csr_matrix(np.ones((1, 2))),
             obs=pd.DataFrame({"major_type": ["A"]}, index=["ref-1"]),
         ),
-        config=SimpleNamespace(cell_type_col="major_type"),
+        config=SimpleNamespace(
+            cell_type_col="major_type",
+            local_refinement_strength=0.2,
+        ),
         logger=SimpleNamespace(
             info=lambda *_args, **_kwargs: None,
             warning=lambda *_args, **_kwargs: None,
@@ -264,7 +264,7 @@ def test_local_pot_rejects_unusable_finite_coupling(
 ):
     _fake_ot(monkeypatch, coupling=coupling)
     with pytest.raises(ValueError, match=message):
-        solve_local_ot(
+        OTKernel.couple(
             [0.5, 0.5],
             [0.5, 0.5],
             [[0.0, 1.0], [1.0, 0.0]],
@@ -288,7 +288,7 @@ def test_missing_tacco_is_actionable_and_does_not_fallback(monkeypatch):
         ModuleNotFoundError,
         match=r'python -m pip install "tacco==0\.5\.0"',
     ) as caught:
-        solve_local_ot(
+        OTKernel.couple(
             [0.5, 0.5],
             [0.5, 0.5],
             [[0.0, 1.0], [1.0, 0.0]],
@@ -315,7 +315,7 @@ def test_missing_tacco_transitive_dependency_is_not_reported_as_missing_tacco(
         ImportError,
         match=r'transitive_dep.*python -m pip install "tacco==0\.5\.0"',
     ) as caught:
-        solve_local_ot(
+        OTKernel.couple(
             [0.5, 0.5],
             [0.5, 0.5],
             [[0.0, 1.0], [1.0, 0.0]],
@@ -335,7 +335,7 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
         RuntimeError,
         match=r'requires tacco==0\.5\.0.*0\.5\.1.*python -m pip install',
     ) as caught:
-        solve_local_ot(
+        OTKernel.couple(
             [0.5, 0.5],
             [0.5, 0.5],
             [[0.0, 1.0], [1.0, 0.0]],
@@ -345,7 +345,7 @@ def test_unsupported_tacco_version_is_actionable_and_does_not_fallback(monkeypat
     assert "algorithm.ot_method: pot" in str(caught.value)
 
 
-def test_physical_local_ot_callers_have_no_event_callback_wiring():
+def test_physical_local_ot_callers_use_ot_kernel_without_event_callback_wiring():
     found = {}
     for relative, expected_count in LOCAL_OT_CALLERS.items():
         source = (ROOT / relative).read_text()
@@ -354,11 +354,14 @@ def test_physical_local_ot_callers_have_no_event_callback_wiring():
             node
             for node in ast.walk(tree)
             if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "solve_local_ot"
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "OTKernel"
+            and node.func.attr == "couple"
         ]
         found[relative] = len(calls)
         assert len(calls) == expected_count
+        assert "solve_local_ot" not in source
         assert all(
             keyword.arg != "event_callback"
             for call in calls
@@ -369,6 +372,36 @@ def test_physical_local_ot_callers_have_no_event_callback_wiring():
         )
 
     assert found == LOCAL_OT_CALLERS
+
+
+def test_annotation_solver_and_ga_lr_boundaries_are_static():
+    solver_patterns = (
+        "tacco.tl.annotate",
+        "tc.tl.annotate",
+        "tacco.utils.solve_OT",
+        "ot.unbalanced.sinkhorn_unbalanced",
+    )
+    offenders = []
+    for path in (ROOT / "revise").rglob("*.py"):
+        if path == ROOT / "revise/backend/kernels/ot.py":
+            continue
+        source = path.read_text()
+        if any(pattern in source for pattern in solver_patterns):
+            offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
+
+    local_source = (ROOT / "revise/backend/kernels/local_anchoring.py").read_text()
+    assert "GlobalAnchoringKernel" not in local_source
+    for relative in (
+        "revise/backend/runners/base_svc.py",
+        "revise/backend/runners/application_svc.py",
+        "revise/backend/runners/benchmark_svc.py",
+    ):
+        source = (ROOT / relative).read_text()
+        assert "GlobalAnchoringKernel" not in source
+        assert "annotate_method" not in source
+        assert "def global_anchoring" not in source
+    assert not (ROOT / "revise/backend/runners/base_svc_anchor.py").exists()
 
 
 def test_runner_strategy_records_completed_conditioning_before_later_failure(

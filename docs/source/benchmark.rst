@@ -13,20 +13,23 @@ From the repository root:
 .. code-block:: bash
 
    python reproduce/benchmark_main.py \
-     --confounding segmentation \
+     --config configs/benchmark/segmentation.yaml \
      --data-root raw_data/Sim2Real-ST \
      --dataset-task segmentation \
      --sample-name P2CRC/cut_part1 \
      --output-root output/benchmark
 
-``--confounding`` accepts ``segmentation``, ``bin2cell``, ``batch_effect``,
-``spot_size``, ``gene_panel``, or ``gene_dropout``. Route-specific parameters
-determine the leaf runs inside that family:
+The YAML ``route`` is the only family selector and accepts ``segmentation``,
+``bin2cell``, ``batch_effect``, ``spot_size``, ``gene_panel``, or
+``gene_dropout``. Route-specific ``cases`` determine the leaf runs:
+
+Maintained requests are ``segmentation.yaml``, ``bin2cell.yaml``,
+``batch_effect.yaml``, ``spot_size.yaml``, ``gene_panel.yaml``, and
+``gene_dropout.yaml`` under ``configs/benchmark``.
 
 - segmentation runs four segmentation leaves;
 - bin2cell runs one leaf;
-- batch effect runs four batch levels for every discovered spot size, falling
-  back to the four configured spot sizes when none are discoverable;
+- batch effect runs four fixed spot sizes by four batch levels;
 - spot size runs four fixed spot-size leaves;
 - gene panel and gene dropout each run one leaf.
 
@@ -34,7 +37,8 @@ Dedicated configuration controls
 --------------------------------
 
 Benchmark variants use named options rather than a generic key/value override.
-These options are applied after the selected profile or custom ``--config``:
+These options are applied after the selected route YAML and package-owned
+typed route:
 
 - ``--local-refinement-strength`` sets the non-negative finite OT conditioning
   strength for sp-SVC and sc-SVC-sr routes;
@@ -52,8 +56,10 @@ the strength controls only posterior-conditioned local OT.
 ``--seed-scope process`` (the default) derives a reproducible effective seed
 for each leaf run from ``--seed``. Every effective seed is stored as
 ``runtime.seed`` in that leaf's ``merged_config.json``, contributes to its
-``config_hash``, and is included in the benchmark report. Use
+``algorithm_config_hash`` and ``effective_config_hash``, and is included in the benchmark report. Use
 ``--seed-scope run`` to reuse the same ``--seed`` for every leaf instead.
+Each leaf provenance also records the selected Benchmark YAML under
+``benchmark_config`` with its source SHA-256 and effective request hash.
 
 For the example above, ``seg_1`` is one of four outputs. Its primary
 compatibility metric table is shaped like:

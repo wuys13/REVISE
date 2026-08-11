@@ -106,8 +106,6 @@ def _context(tmp_path) -> PipelineContext:
                 "lr": {"solver": "pot"},
             },
         },
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="test",
         runtime={"mode": "benchmark", "svc_kind": "sc"},
         route_key="test:test",
@@ -296,7 +294,7 @@ def test_finalize_callback_failure_marks_finalize_and_run_failed(tmp_path):
 
     with pytest.raises(OSError, match="public result write failed"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -330,7 +328,7 @@ def test_finalize_callback_can_register_public_result_before_success(tmp_path):
         ctx.record_artifact(completed_artifact("public_result", path))
 
     pipeline.run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(output_root),
@@ -392,7 +390,7 @@ def test_framework_rolls_back_publication_when_success_manifest_fails(tmp_path):
 
     with pytest.raises(OSError, match="success manifest failed"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -433,7 +431,7 @@ def test_framework_each_stage_failure_keeps_terminal_manifest(
 
     with pytest.raises(InjectedTermination, match=f"failed at {selected}"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -478,7 +476,7 @@ def test_framework_retries_terminal_manifest_without_masking_science_error(
 
     with pytest.raises(RuntimeError, match="framework validation failed") as exc_info:
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -510,7 +508,7 @@ def test_persistent_terminal_write_failure_preserves_running_disk_truth(
 
     with pytest.raises(RuntimeError, match="framework validation failed") as exc_info:
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -568,7 +566,7 @@ def test_framework_sigterm_is_persisted_and_host_handler_is_restored(tmp_path):
 
     with pytest.raises(KeyboardInterrupt, match="received SIGTERM"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -608,7 +606,7 @@ def test_framework_sigterm_chains_custom_handler_after_terminal_persistence(
 
         with pytest.raises(KeyboardInterrupt, match="received SIGTERM"):
             pipeline.run(
-                profile="application_sp",
+                svc_type="sp-SVC",
                 io_overrides={
                     "data_root": str(tmp_path),
                     "output_root": str(output_root),
@@ -656,7 +654,7 @@ class Registry:
 pipeline = REVISEPipeline()
 pipeline.registry = Registry()
 pipeline.run(
-    profile="application_sp",
+    svc_type="sp-SVC",
     io_overrides={{
         "data_root": {str(tmp_path)!r},
         "output_root": {str(output_root)!r},
@@ -720,7 +718,7 @@ def test_only_completed_artifacts_are_registered_before_finalize_failure(tmp_pat
 
     with pytest.raises(OSError, match="second artifact failed"):
         pipeline.run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),

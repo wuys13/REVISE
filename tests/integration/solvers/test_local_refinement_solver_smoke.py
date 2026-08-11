@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from revise.backend.ops.assignment import GlobalAssignment
-from revise.backend.ops.local_ot import solve_local_ot
+from revise.backend.kernels.ot import OTKernel
 from revise.backend.ops.posterior_conditioning import condition_local_ot_cost
 
 
@@ -33,7 +33,7 @@ def _conditioned_problem() -> tuple[np.ndarray, np.ndarray]:
 def _solve_with_installed_solver(method: str) -> tuple[np.ndarray, np.ndarray]:
     cost, valid_support = _conditioned_problem()
     return (
-        solve_local_ot(
+        OTKernel.couple(
             [0.5, 0.5],
             [0.5, 0.5],
             cost,

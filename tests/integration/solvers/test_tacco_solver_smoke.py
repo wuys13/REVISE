@@ -43,7 +43,7 @@ from anndata import AnnData
 
 from revise.backend.kernels.global_anchoring import GlobalAnchoringKernel
 from revise.backend.kernels.local_anchoring import LocalAnchoringKernel
-from revise.backend.ops.local_ot import solve_local_ot
+from revise.backend.kernels.ot import OTKernel
 from revise.backend.ops.tacco_runtime import require_tacco
 from revise.config.runner_conf import ApplicationScConf
 
@@ -109,7 +109,7 @@ annotated_reference = local.run(
     cell_type_col="SVC_cluster",
 )
 
-coupling = solve_local_ot(
+coupling = OTKernel.couple(
     [0.5, 0.5],
     [0.5, 0.5],
     [[0.0, 1.0], [1.0, 0.0]],

@@ -3,18 +3,18 @@ Configuration
 
 Application users pass one strict YAML to ``python reconstruct.py --config``
 or ``revise-reconstruct --config``. The full top-level schema is
-``application``, ``paths``, ``algorithm``, ``inputs``,
+``application``, ``paths``, ``algorithm``, ``inputs``, ``preprocessing``,
 ``global_anchoring``, ``local_refinement``, ``output``, and ``execution`` plus
 ``schema_version``. Unknown, missing, misspelled, and route-inapplicable fields
 fail before scientific computation.
 
-The package-owned ``revise/revise.yaml`` remains the sole engine authority for
-defaults, profiles, routing, expert settings, and locked values. It is not an
-application field and is not passed to application ``--config``.
+The package-owned ``revise.config.authority`` module is the sole engine
+authority for defaults, typed routes, expert settings, and locked values. It
+is not an application field and is not passed to application ``--config``.
 
 Application and Benchmark selection are deliberately separate. Application
-YAML supplies ``application.svc_type``; Benchmark supplies its confounding
-factor. Both reach the same engine execution Interface, whose router resolves
+YAML supplies ``application.svc_type``; Benchmark YAML supplies its ``route``.
+Both reach the same engine execution Interface, whose router resolves
 profile, task, SVC kind, and strategy. Application runtime/provenance contains
 ``application_route`` and no Benchmark ``confounding`` field.
 
@@ -57,8 +57,10 @@ Route-specific fields
        ``local_refinement.strength``
      - ``Visium.yaml`` with strength ``0.0``
 
-Application does not filter the reference by patient. Prepare the reference
-before running when it contains multiple cohorts.
+Reference filtering is generic: ``inputs.reference.filter_column`` and
+``filter_value`` must either both be present or both be omitted. The official
+Xenium templates use ``Patient`` and ``P2CRC``. Filtering runs before the two
+preprocessing calls.
 
 GA and LR OT selection
 ----------------------
@@ -107,10 +109,11 @@ Preflight may write run evidence, including ``preflight.json`` and
 
 Application identity is namespaced under ``application_config`` with
 ``source_path``, ``source_sha256``, ``declared_root``, ``resolved_root``,
-``cwd``, ``resolved_inputs``, ``output_paths``, and ``effective_action``.
-Top-level ``config_path`` and ``config_hash`` remain the
-top-level engine configuration identity and are not overwritten by the
-application YAML identity.
+``cwd``, ``resolved_inputs``, ``output_paths``, ``effective_request``,
+``effective_request_hash``, and ``effective_action``. Top-level
+``engine_defaults_hash``, ``authority_hash``, ``algorithm_config_hash``, and
+``effective_config_hash`` remain separate from the application YAML source
+identity.
 
 For an official bare template name, the CLI first checks
 ``configs/application/<name>.yaml`` in the launch directory and then reads the
@@ -120,6 +123,8 @@ paths are not guessed.
 Output
 ------
 
-sp-SVC and sc-SVC-sr publish ``<output-dir>/<output-name>.h5ad``. Standard
-sc-SVC publishes ``<output-dir>/<output-name>_spatial.h5ad`` and
-``<output-dir>/<output-name>_expr.h5ad``.
+sp-SVC and sc-SVC-sr publish ``<output-dir>/<output-name>.h5ad`` or
+``<output-dir>/svc.h5ad`` when ``output.name`` is omitted. Standard sc-SVC
+publishes ``<output-dir>/<output-name>_spatial.h5ad`` and
+``<output-dir>/<output-name>_expr.h5ad``; without ``output.name`` it publishes
+``spatial.h5ad`` and ``expr.h5ad``.

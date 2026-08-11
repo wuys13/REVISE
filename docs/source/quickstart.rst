@@ -7,7 +7,7 @@ reconstruction. Paper notebooks require a source checkout and external data.
 Benchmark
 ---------
 
-From the repository root, ``python reproduce/benchmark_main.py`` runs one confounding family;
+From the repository root, ``python reproduce/benchmark_main.py`` runs one Benchmark route YAML;
 ``bash reproduce/benchmark_main.sh`` launches the bounded multi-family workflow.
 Benchmark notebooks are under
 ``reproduce/benchmark/``.
@@ -23,17 +23,17 @@ Source-checkout users select one maintained file:
    * - ST data / sample
      - Template
      - Declared inputs
-   * - Xenium T / ``P1CRC``
+   * - Xenium T / ``P2CRC``
      - ``configs/application/Xenium_T.yaml``
-     - ``raw_data/Real_application/P1CRC_Xenium.h5ad`` and
+     - ``raw_data/Real_application/P2CRC_Xenium.h5ad`` and
        ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
-   * - Xenium fibroblast / ``P1CRC``
+   * - Xenium fibroblast / ``P2CRC``
      - ``configs/application/Xenium_Fib.yaml``
-     - ``raw_data/Real_application/P1CRC_Xenium.h5ad`` and
+     - ``raw_data/Real_application/P2CRC_Xenium.h5ad`` and
        ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
-   * - Xenium mono/macro / ``P1CRC``
+   * - Xenium mono/macro / ``P2CRC``
      - ``configs/application/Xenium_Mono.yaml``
-     - ``raw_data/Real_application/P1CRC_Xenium.h5ad`` and
+     - ``raw_data/Real_application/P2CRC_Xenium.h5ad`` and
        ``raw_data/Real_application/adata_sc_all_reanno.h5ad``
    * - Visium HD / ``P1CRC``
      - ``configs/application/VisiumHD.yaml``
@@ -60,15 +60,18 @@ another REVISE API:
    with as_file(resource) as source:
        copyfile(source, "VisiumHD.yaml")
 
-The real P1CRC and mouse-brain H5AD files are not distributed in the package.
+The real P1CRC/P2CRC and mouse-brain H5AD files are not distributed in the package.
 Replace paths or stage those files beneath the chosen run root before use.
 
 Application YAML
 ----------------
 
 The complete schema contains ``application``, ``paths``, ``algorithm``,
-``inputs``, ``global_anchoring``, ``local_refinement``, ``output``, and
+``inputs``, ``preprocessing``, ``global_anchoring``, ``local_refinement``, ``output``, and
 ``execution`` (plus ``schema_version``). A complete Visium HD request is:
+
+The two exact input keys are ``inputs.st.path`` and
+``inputs.reference.path``.
 
 .. code-block:: yaml
 
@@ -90,6 +93,14 @@ The complete schema contains ``application``, ``paths``, ``algorithm``,
      reference:
        path: data/sc_ref.h5ad
        format: h5ad
+
+   preprocessing:
+     spatial:
+       min_transcript_counts: 60
+       min_cell_counts: 100
+     reference:
+       min_transcript_counts: null
+       min_cell_counts: 100
 
    global_anchoring:
      broad_column: Level1
@@ -114,8 +125,8 @@ Application inputs are always exact direct paths. ST and reference resolve as
 sc-SVC-sr prior is also an exact ``inputs.pm_on_cell.path``; when omitted, no
 sidecar is searched and seeded random quota-slot assignment is used.
 
-The full engine configuration ``revise/revise.yaml`` is package-internal and
-authoritative. ``algorithm`` contains only optional ``ot_method``.
+The full engine configuration in ``revise.config.authority`` is package-owned
+and authoritative. ``algorithm`` contains only optional ``ot_method``.
 ``algorithm.ot_method`` controls both GA and LR; omitting it keeps the selected
 engine profile authoritative.
 
@@ -187,9 +198,10 @@ Standard ``sc-SVC`` publishes two carriers:
 Each file links to the canonical run's ``provenance.json``. Application request
 identity is namespaced under ``application_config`` as ``source_path``,
 ``source_sha256``, ``declared_root``, ``resolved_root``, ``cwd``,
-``resolved_inputs``, ``output_paths``, and ``effective_action``. The top-level
-engine configuration identity remains
-separate in ``config_path`` and ``config_hash``. There is no solver-event
+``resolved_inputs``, ``output_paths``, ``effective_request``,
+``effective_request_hash``, and ``effective_action``. The top-level engine
+configuration identity remains separate in ``engine_defaults_hash``,
+``authority_hash``, ``algorithm_config_hash``, and ``effective_config_hash``. There is no solver-event
 telemetry.
 
 Paper reproduction notebooks

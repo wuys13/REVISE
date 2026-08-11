@@ -1,21 +1,33 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import pytest
 
-from revise.config import ConfigError, load_raw_config, merge_unified_config
-
-
-CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
+from revise.config import ConfigError, merge_unified_config, resolve_semantic_route
+from revise.config.authority import _authority_document
 
 
 def _merge(profile: str, algorithm_overrides=None):
+    raw = _authority_document()
+    route = next(
+        (namespace, selector)
+        for namespace, routes in raw["router"].items()
+        for selector, spec in routes.items()
+        if spec["profile"] == profile
+    )
+    selector = (
+        {"svc_type": route[1]}
+        if route[0] == "application"
+        else {"cf": route[1]}
+    )
+    runtime = resolve_semantic_route(raw, **selector)
+    runtime.pop("profile")
+    runtime.pop("warning")
     return merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
+        raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=runtime,
         io_overrides={},
         algorithm_overrides=algorithm_overrides or {},
     )

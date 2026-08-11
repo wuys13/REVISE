@@ -23,9 +23,9 @@ def test_source_entrypoint_exposes_version_without_a_config():
 
 
 def test_help_shows_application_flow_groups():
-    import reconstruct
+    from revise.application.cli import build_parser
 
-    help_text = reconstruct.build_parser().format_help()
+    help_text = build_parser().format_help()
     for group in (
         "Application:",
         "Inputs:",
@@ -44,7 +44,7 @@ def test_execution_error_is_one_actionable_line_without_traceback(monkeypatch, c
     def fail(*args, **kwargs):
         raise RuntimeError("missing input data/sample.h5ad")
 
-    monkeypatch.setattr(reconstruct, "run_application", fail)
+    monkeypatch.setattr(reconstruct, "_execute_application", fail)
     with pytest.raises(SystemExit) as exc_info:
         reconstruct.main(["--config", "VisiumHD.yaml"])
 

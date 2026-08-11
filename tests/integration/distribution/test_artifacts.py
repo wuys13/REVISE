@@ -98,18 +98,33 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         }
         sdist_names = list(members)
 
-    assert "revise/revise.yaml" in wheel_names
-    packaged_templates = {
-        f"revise/application/templates/{filename}"
-        for filename in (
-            "Xenium_T.yaml",
-            "Xenium_Fib.yaml",
-            "Xenium_Mono.yaml",
-            "VisiumHD.yaml",
-            "Visium.yaml",
-        )
+    assert "revise/revise.yaml" not in wheel_names
+    template_mirrors = {
+        **{
+            f"revise/application/templates/{filename}": f"configs/application/{filename}"
+            for filename in (
+                "Xenium_T.yaml",
+                "Xenium_Fib.yaml",
+                "Xenium_Mono.yaml",
+                "VisiumHD.yaml",
+                "Visium.yaml",
+            )
+        },
+        **{
+            f"revise/benchmark/templates/{route}.yaml": f"configs/benchmark/{route}.yaml"
+            for route in (
+                "segmentation",
+                "bin2cell",
+                "batch_effect",
+                "spot_size",
+                "gene_panel",
+                "gene_dropout",
+            )
+        },
     }
+    packaged_templates = set(template_mirrors)
     assert packaged_templates <= set(wheel_names)
+    assert len(packaged_templates) == 11
     assert "reconstruct.py" in wheel_names
     assert "revise-reconstruct = reconstruct:main" in entry_points
     assert (
@@ -140,6 +155,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "revise/**/*.py",
         "revise/**/*.yaml",
         "configs/application/*.yaml",
+        "configs/benchmark/*.yaml",
         "constraints/*.txt",
     ]:
         expected_sdist.update(
@@ -175,10 +191,9 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         assert actual_wheel_sources == expected_wheel_sources
         for source_path in expected_wheel_sources:
             assert archive.read(source_path) == (ROOT / source_path).read_bytes()
-        for package_path in packaged_templates:
-            filename = Path(package_path).name
+        for package_path, mirror_path in template_mirrors.items():
             assert archive.read(package_path) == (
-                ROOT / "configs" / "application" / filename
+                ROOT / mirror_path
             ).read_bytes()
         license_name = next(
             name for name in wheel_names if name.endswith("/licenses/LICENSE")
@@ -186,10 +201,9 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         assert archive.read(license_name) == (ROOT / "LICENSE").read_bytes()
 
     with tarfile.open(artifacts["sdist"], "r:gz") as archive:
-        for package_path in packaged_templates:
-            filename = Path(package_path).name
+        for package_path, mirror_path in template_mirrors.items():
             packaged = archive.extractfile(members[package_path])
-            mirrored = archive.extractfile(members[f"configs/application/{filename}"])
+            mirrored = archive.extractfile(members[mirror_path])
             assert packaged is not None
             assert mirrored is not None
             assert packaged.read() == mirrored.read()

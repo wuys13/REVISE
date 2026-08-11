@@ -42,9 +42,9 @@ sc-SVC-sr
 
    revise-reconstruct --config configs/application/Visium.yaml
 
-The manifest records the logical output name and ``sc-SVC-sr`` route. Missing curated
-spot-to-cell and PM-on-cell inputs use the quota and seeded random allocation
-described in :doc:`concepts`.
+The manifest records the logical output name and ``sc-SVC-sr`` route. Omitting
+curated spot-to-cell and PM-on-cell inputs uses the quota and seeded random
+allocation described in :doc:`concepts`; a configured input path must exist.
 
 Shared provenance
 -----------------

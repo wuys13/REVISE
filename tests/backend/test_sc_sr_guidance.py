@@ -301,8 +301,14 @@ def _runner_config(*, graph_enabled=True, strength=0.0, seed=17):
         local_refinement_strength=strength,
         rec_graph_agg_enabled=graph_enabled,
         rec_graph_agg_low_conf_only=False,
+        rec_graph_agg_low_conf_quantile=0.2,
         rec_graph_agg_anchor_only=False,
+        rec_graph_agg_anchor_high_conf_quantile=0.8,
+        rec_graph_agg_confidence_mode="auto",
         rec_graph_agg_conf_weighted_alpha=False,
+        rec_graph_agg_conf_alpha_min=0.0,
+        rec_graph_agg_conf_alpha_max=-1.0,
+        rec_graph_agg_conf_alpha_power=1.0,
         rec_graph_n_neighbors=2,
         rec_graph_method="joint",
         rec_graph_alpha=0.2,
@@ -428,7 +434,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
                 np.asarray(target) / np.sum(target),
             )
 
-        monkeypatch.setattr(module, "solve_local_ot", solve)
+        monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
         applied = runner.local_refinement()
         snapshots.append(
             {
@@ -507,7 +513,7 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
             np.asarray(target) / np.sum(target),
         )
 
-    monkeypatch.setattr(module, "solve_local_ot", solve)
+    monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
 
     assert runner.local_refinement() is True
     assert len(calls) == 2

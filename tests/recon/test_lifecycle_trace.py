@@ -105,13 +105,12 @@ def _context(tmp_path: Path, *, dry_run: bool = False) -> PipelineContext:
                 "lr": {"solver": "pot"},
             },
         },
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="test",
         runtime={
             "mode": "application",
             "svc_kind": "sc",
             "strategy": "RecordingStrategy",
+            "compatibility_mode": False,
         },
         route_key="test:test",
         run_dir=tmp_path,
@@ -226,7 +225,7 @@ def test_framework_dry_run_persists_the_same_five_stage_truth(
     _write_application_inputs(tmp_path, "dry-run-case")
 
     svc = framework.REVISEPipeline().run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(output_root),

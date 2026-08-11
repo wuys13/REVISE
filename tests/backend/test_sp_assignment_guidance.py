@@ -53,7 +53,7 @@ SETUP_ISOLATION_PREFIXES = (
     "revise.backend.kernels",
     "revise.backend.runners",
     "revise.backend.ops.distance",
-    "revise.backend.ops.local_ot",
+    "revise.backend.kernels.ot",
     "revise.backend.ops.meta",
     "revise.backend.ops.shaver",
     "revise.backend.ops.tacco_runtime",
@@ -217,13 +217,13 @@ def test_sp_module_environment_restores_relevant_prefix_closure():
     }
     with _isolated_sp_module_environment():
         importlib.import_module("revise.backend.kernels.factory")
-        importlib.import_module("revise.backend.ops.local_ot")
+        importlib.import_module("revise.backend.kernels.ot")
         importlib.import_module(
             "revise.backend.runners.sp_svc_application"
         )
         inside = relevant_modules()
         assert "revise.backend.kernels.factory" in inside
-        assert "revise.backend.ops.local_ot" in inside
+        assert "revise.backend.kernels.ot" in inside
         assert "revise.backend.runners.sp_svc_application" in inside
 
     after = relevant_modules()
@@ -374,7 +374,7 @@ def _patch_application_problem(
         )
         return np.asarray(kwargs["valid_support_mask"], dtype=np.float64)
 
-    monkeypatch.setattr(module, "solve_local_ot", solve)
+    monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
 
 
 def test_sp_assignment_requires_soft_q(
@@ -471,9 +471,11 @@ def test_application_rejects_q_category_axis_that_differs_from_reference(
     )
     monkeypatch.setattr(
         application,
-        "solve_local_ot",
-        lambda *_args, **_kwargs: pytest.fail(
-            "category mismatch must fail before solve"
+        "OTKernel",
+        SimpleNamespace(
+            couple=lambda *_args, **_kwargs: pytest.fail(
+                "category mismatch must fail before solve"
+            )
         ),
     )
 
@@ -581,7 +583,9 @@ def test_same_hard_labels_with_different_soft_q_change_solver_coupling(
             )
             return coupling
 
-        monkeypatch.setattr(application, "solve_local_ot", solve)
+        monkeypatch.setattr(
+            application, "OTKernel", SimpleNamespace(couple=solve)
+        )
         runner.local_refinement()
 
     for coupling, nu, mu in solutions:
@@ -713,7 +717,7 @@ def _patch_benchmark_problem(module, monkeypatch, captured):
         )
         return np.asarray(kwargs["valid_support_mask"], dtype=np.float64)
 
-    monkeypatch.setattr(module, "solve_local_ot", solve)
+    monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
 
 
 def test_benchmark_conditions_replace_to_donor_q(sp_modules, monkeypatch):

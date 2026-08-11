@@ -78,6 +78,16 @@ def _write_application_config(
                         "format": "h5ad",
                     },
                 },
+                "preprocessing": {
+                    "spatial": {
+                        "min_transcript_counts": 60,
+                        "min_cell_counts": 100,
+                    },
+                    "reference": {
+                        "min_transcript_counts": None,
+                        "min_cell_counts": 100,
+                    },
+                },
                 "global_anchoring": {"broad_column": "Level1"},
                 "local_refinement": {"strength": 0.2},
                 "output": {"dir": output_path, "name": "sample_sp-SVC"},
@@ -196,14 +206,31 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
     assert "revise/application/config.py" in names
     assert "revise/benchmark/cli.py" in names
     assert "revise/benchmark/launcher.py" in names
-    assert "revise/revise.yaml" in names
-    assert {
+    assert "revise/revise.yaml" not in names
+    application_templates = {
         "revise/application/templates/Xenium_T.yaml",
         "revise/application/templates/Xenium_Fib.yaml",
         "revise/application/templates/Xenium_Mono.yaml",
         "revise/application/templates/VisiumHD.yaml",
         "revise/application/templates/Visium.yaml",
-    } <= set(names)
+    }
+    benchmark_templates = {
+        f"revise/benchmark/templates/{route}.yaml"
+        for route in (
+            "segmentation",
+            "bin2cell",
+            "batch_effect",
+            "spot_size",
+            "gene_panel",
+            "gene_dropout",
+        )
+    }
+    assert {
+        name for name in names if name.startswith("revise/application/templates/")
+    } == application_templates
+    assert {
+        name for name in names if name.startswith("revise/benchmark/templates/")
+    } == benchmark_templates
     assert any(".dist-info/" in name and name.endswith("/LICENSE") for name in names)
     assert not any(name.startswith("tests/") for name in names)
     assert "revise-reconstruct = reconstruct:main" in entry_points

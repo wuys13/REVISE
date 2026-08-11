@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-from pathlib import Path
 import sys
 import types
 from types import SimpleNamespace
@@ -12,10 +11,8 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
-from revise.config import load_raw_config, merge_unified_config
-
-
-CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
+from revise.config import merge_unified_config, resolve_semantic_route
+from revise.config.authority import _authority_document
 ISOLATED_MODULE_NAMES = (
     "scanpy",
     "revise.backend.adapters",
@@ -32,6 +29,20 @@ ISOLATED_MODULE_NAMES = (
     "revise.backend.runners.sc_svc_sr_application",
 )
 _MISSING = object()
+
+
+def _merged_application_sr(algorithm_overrides=None):
+    raw = _authority_document()
+    runtime = resolve_semantic_route(raw, svc_type="sc-SVC-sr")
+    profile = runtime.pop("profile")
+    runtime.pop("warning")
+    return merge_unified_config(
+        raw_config=raw,
+        profile=profile,
+        runtime_overrides=runtime,
+        io_overrides={},
+        algorithm_overrides=algorithm_overrides or {},
+    )
 
 
 def _snapshot_modules(module_names):
@@ -157,16 +168,12 @@ def sst_adatas():
     return st_adata, sc_ref_adata
 
 
-def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
+def test_application_spot_sr_prepare_context_uses_callback_filtered_genes(
     adapters, monkeypatch, tmp_path, sst_adatas
 ):
-    merged = merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
-        profile="application_sc_sr",
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={},
-    )
+    from revise.application.preprocess import preprocess_reference, preprocess_spatial
+
+    merged = _merged_application_sr()
     merged["io"].update(
         sample_name="sample",
         data_root=str(tmp_path),
@@ -199,6 +206,18 @@ def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
         run_dir=tmp_path,
         logger=logging.getLogger("test-spot-sr-min-cells"),
         compatibility_mode=False,
+        input_specs=(
+            SimpleNamespace(role="st", path="/resolved/st.h5ad"),
+            SimpleNamespace(role="sc_ref", path="/resolved/sc_ref.h5ad"),
+        ),
+        application_preprocess_callback=lambda spatial, reference: (
+            preprocess_spatial(
+                spatial,
+                min_transcript_counts=None,
+                min_cell_counts=2,
+            ),
+            preprocess_reference(reference, min_cell_counts=2),
+        ),
     )
 
     adapters.ScSvcSrApplicationStrategy().prepare_context(ctx)
@@ -211,17 +230,13 @@ def test_application_spot_sr_prepare_context_filters_genes_by_observation_count(
 def test_application_spot_sr_prepare_context_honors_configured_annotation_columns(
     adapters, monkeypatch, tmp_path
 ):
-    merged = merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
-        profile="application_sc_sr",
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={
+    merged = _merged_application_sr(
+        {
             "columns": {
                 "cell_type_col": "major_type",
                 "sub_cell_type_col": "minor_type",
             }
-        },
+        }
     )
     merged["io"].update(
         sample_name="sample",
@@ -276,6 +291,14 @@ def test_application_spot_sr_prepare_context_honors_configured_annotation_column
         run_dir=tmp_path,
         logger=logging.getLogger("test-spot-sr-custom-columns"),
         compatibility_mode=False,
+        input_specs=(
+            SimpleNamespace(role="st", path="/resolved/st.h5ad"),
+            SimpleNamespace(role="sc_ref", path="/resolved/sc_ref.h5ad"),
+        ),
+        application_preprocess_callback=lambda spatial, reference_data: (
+            spatial.copy(),
+            reference_data.copy(),
+        ),
     )
 
     adapters.ScSvcSrApplicationStrategy().prepare_context(ctx)
@@ -287,13 +310,9 @@ def test_application_spot_sr_prepare_context_honors_configured_annotation_column
 def test_application_spot_sr_validates_overlap_after_gene_filtering(
     adapters, monkeypatch, tmp_path
 ):
-    merged = merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
-        profile="application_sc_sr",
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={},
-    )
+    from revise.application.preprocess import preprocess_reference, preprocess_spatial
+
+    merged = _merged_application_sr()
     merged["io"].update(
         sample_name="sample",
         data_root=str(tmp_path),
@@ -345,6 +364,18 @@ def test_application_spot_sr_validates_overlap_after_gene_filtering(
         run_dir=tmp_path,
         logger=logging.getLogger("test-spot-sr-post-filter-overlap"),
         compatibility_mode=False,
+        input_specs=(
+            SimpleNamespace(role="st", path="/resolved/st.h5ad"),
+            SimpleNamespace(role="sc_ref", path="/resolved/sc_ref.h5ad"),
+        ),
+        application_preprocess_callback=lambda spatial, reference: (
+            preprocess_spatial(
+                spatial,
+                min_transcript_counts=None,
+                min_cell_counts=2,
+            ),
+            preprocess_reference(reference, min_cell_counts=2),
+        ),
     )
 
     with pytest.raises(ValueError) as exc_info:

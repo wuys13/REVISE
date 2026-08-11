@@ -77,9 +77,9 @@ REVISE only reindexes them into active order. Values must be numeric and finite
 within ``[0, 1]``, and every row must sum to one with zero relative tolerance
 and an absolute tolerance of ``1e-6``. REVISE never clips or normalizes PM.
 PM is the assignment's prior score matrix, not a case table, cohort registry,
-or generic assignment posterior. If the file is missing, one seeded random
+or generic assignment posterior. If the field is omitted, one seeded random
 permutation assigns the quota slots to the existing virtual-cell rows inside
-each spot.
+each spot. A declared PM path that is missing is an input error.
 
 The tested invariant is exact per-spot composition, plus repeatability for the
 same seed. Which virtual-cell row receives a type can change with the seed.

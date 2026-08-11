@@ -59,3 +59,35 @@ def test_preflight_accepts_slash_normalized_selected_cell_type(tmp_path):
     )
 
     assert report["status"] == "ready"
+
+
+@pytest.mark.parametrize(
+    ("filter_column", "filter_value", "message"),
+    [
+        ("Donor", "P2", "filter_column.*Donor"),
+        ("Patient", "P3", "filter_value.*P3.*matched no rows"),
+    ],
+)
+def test_preflight_rejects_unusable_reference_filter(
+    tmp_path,
+    filter_column,
+    filter_value,
+    message,
+):
+    st_path = tmp_path / "st.h5ad"
+    reference_path = tmp_path / "reference.h5ad"
+    _write(st_path, ["T", "T"])
+    _write(reference_path, ["T", "Fibroblast"], patient=["P1", "P2"])
+
+    with pytest.raises(ValueError, match=message):
+        REVISEInputService().preflight(
+            (InputSpec("st", st_path), InputSpec("sc_ref", reference_path)),
+            runtime={"mode": "application", "task": "sc_svc"},
+            columns={
+                "cell_type_col": "Level1",
+                "sub_cell_type_col": "Level2",
+                "select_cell_type": "T",
+            },
+            reference_filter_column=filter_column,
+            reference_filter_value=filter_value,
+        )

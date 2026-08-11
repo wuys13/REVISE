@@ -5,7 +5,6 @@ import itertools
 import logging
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,10 +13,32 @@ import pytest
 from anndata import AnnData
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
-from revise.config import load_raw_config, merge_unified_config
+from revise.config import merge_unified_config, resolve_semantic_route
+from revise.config.authority import _authority_document
 
 
-CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
+def _merged(profile, *, runtime_overrides=None, io_overrides=None):
+    raw = _authority_document()
+    namespace, selector = next(
+        (namespace, selector)
+        for namespace, routes in raw["router"].items()
+        for selector, spec in routes.items()
+        if spec["profile"] == profile
+    )
+    runtime = resolve_semantic_route(
+        raw,
+        **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
+    )
+    selected_profile = runtime.pop("profile")
+    runtime.pop("warning")
+    runtime.update(runtime_overrides or {})
+    return merge_unified_config(
+        raw_config=raw,
+        profile=selected_profile,
+        runtime_overrides=runtime,
+        io_overrides=io_overrides or {},
+        algorithm_overrides={},
+    )
 
 
 def _kernel(*, pm=None, seed=42, cell_type_col="Level1"):
@@ -395,14 +416,7 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     runner_module,
     runner_class,
 ):
-    raw = load_raw_config(CONFIG_PATH)
-    merged = merge_unified_config(
-        raw_config=raw,
-        profile=profile,
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={},
-    )
+    merged = _merged(profile)
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path)
     runtime = dict(merged["runtime"])
@@ -414,8 +428,16 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
 
     captured = {}
 
-    def capture_conf(conf, _cfg):
+    conf_type = (
+        adapters.ApplicationScSrConf
+        if profile == "application_sc_sr"
+        else adapters.BenchmarkSrConf
+    )
+
+    def capture_conf(**kwargs):
+        conf = conf_type(**kwargs)
         captured["conf"] = conf
+        return conf
 
     class StopAfterConfig(Exception):
         pass
@@ -423,14 +445,17 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     def stop_before_io(_ctx):
         raise StopAfterConfig
 
-    monkeypatch.setattr(adapters, "_attach_local_refinement_strength", capture_conf)
+    monkeypatch.setattr(adapters, conf_type.__name__, capture_conf)
     monkeypatch.setattr(adapters, "_input_service", stop_before_io)
     ctx = SimpleNamespace(
         merged_config=merged,
         io=merged["io"],
         columns=merged["columns"],
         runtime=runtime,
-        route_key=f"{runtime['platform']}:{runtime['confounding']}",
+        route_key=(
+            f"{runtime['mode']}:"
+            f"{runtime.get('application_route') or runtime.get('confounding')}"
+        ),
         run_dir=tmp_path,
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=False,
@@ -449,13 +474,10 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
     monkeypatch,
     tmp_path,
 ):
-    raw = load_raw_config(CONFIG_PATH)
-    merged = merge_unified_config(
-        raw_config=raw,
-        profile="benchmark_sr_batch",
+    merged = _merged(
+        "benchmark_sr_batch",
         runtime_overrides={"seed": 17},
         io_overrides={"sample_size": 1},
-        algorithm_overrides={},
     )
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path / "output")
@@ -523,7 +545,11 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
         logger=logging.getLogger("test-sr-subsampled-pm"),
         compatibility_mode=False,
         pm_on_cell=pm,
-        input_specs=None,
+        input_specs=(
+            SimpleNamespace(role="st", path="/resolved/st.h5ad"),
+            SimpleNamespace(role="sc_ref", path="/resolved/sc_ref.h5ad"),
+            SimpleNamespace(role="gt", path="/resolved/gt.h5ad"),
+        ),
     )
 
     adapters.ScSvcSrBenchmarkStrategy().prepare_context(ctx)
@@ -538,13 +564,9 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
     monkeypatch,
     tmp_path,
 ):
-    raw = load_raw_config(CONFIG_PATH)
-    merged = merge_unified_config(
-        raw_config=raw,
-        profile="benchmark_sr_batch",
+    merged = _merged(
+        "benchmark_sr_batch",
         runtime_overrides={"seed": None},
-        io_overrides={},
-        algorithm_overrides={},
     )
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path)
@@ -559,8 +581,12 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
 
     captured = {}
 
-    def capture_conf(conf, _cfg):
+    conf_type = adapters.BenchmarkSrConf
+
+    def capture_conf(**kwargs):
+        conf = conf_type(**kwargs)
         captured["conf"] = conf
+        return conf
 
     class StopAfterConfig(Exception):
         pass
@@ -568,7 +594,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
     def stop_before_io(_ctx):
         raise StopAfterConfig
 
-    monkeypatch.setattr(adapters, "_attach_local_refinement_strength", capture_conf)
+    monkeypatch.setattr(adapters, "BenchmarkSrConf", capture_conf)
     monkeypatch.setattr(adapters, "_input_service", stop_before_io)
     ctx = SimpleNamespace(
         merged_config=merged,

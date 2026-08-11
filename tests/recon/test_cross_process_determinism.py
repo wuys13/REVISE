@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
-from revise.backend.ops.local_ot import solve_local_ot
+from revise.backend.kernels.ot import OTKernel
 from revise.utils.deterministic import canonical_config_projection
 from revise.utils.provenance import hash_jsonable
 
@@ -88,7 +88,7 @@ kernel = SpotSrKernel(
 assigned = kernel.assign_cell_types_random(svc_obs, quota)
 ordered = assigned.sort_values(["spot_name", "cell_id"], kind="stable")
 
-coupling = solve_local_ot(
+coupling = OTKernel.couple(
     [0.4, 0.6],
     [0.5, 0.5],
     [[0.0, 1.0], [1.0, 0.0]],

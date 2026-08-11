@@ -20,10 +20,10 @@ extension points.
 
     from reconstruct import run_application
 
-    execution = run_application(
-        "configs/application/Xenium_T.yaml",
-        dry_run=True,
-    )
+    result = run_application("configs/application/VisiumHD.yaml")
+
+``sp-SVC`` and ``sc-SVC-sr`` return one ``AnnData``. ``sc-SVC`` returns the
+fixed ``(spatial, expression)`` pair, and a dry run returns ``None``.
 
 Pipeline
 ~~~~~~~~
@@ -36,7 +36,6 @@ Application entry point
     :nosignatures:
 
     reconstruct.run_application
-    reconstruct.ApplicationExecution
 
 The engine pipeline remains available for Benchmark and advanced integrations:
 
@@ -52,8 +51,8 @@ The engine pipeline remains available for Benchmark and advanced integrations:
 Configuration
 ~~~~~~~~~~~~~
 
-``revise/revise.yaml`` is the package-owned engine configuration and routing
-authority; application YAML is the external request surface.
+``revise.config.authority`` is the package-owned typed engine configuration
+and routing authority; application YAML is the external request surface.
 ``revise.config.runner_conf`` contains internal runner contracts used by
 backend adapters and compatibility notebooks.
 
