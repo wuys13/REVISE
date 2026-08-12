@@ -47,8 +47,7 @@ the standard ``importlib.resources`` interface, then edit the copy:
        copyfile(source, "Xenium_T.yaml")
 
 This resource-copy recipe does not add a REVISE CLI or Python API. Run the
-copied request with ``revise-reconstruct --config Xenium_T.yaml`` and optionally
-``--dry-run``. Passing an official bare name or
+copied request with ``revise-reconstruct --config Xenium_T.yaml``. Passing an official bare name or
 ``configs/application/<name>.yaml`` uses an existing external mirror first and
 the package resource only when that file is absent.
 

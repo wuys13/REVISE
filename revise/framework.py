@@ -6,7 +6,7 @@ import threading
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from anndata import AnnData
 
@@ -40,14 +40,12 @@ from revise.utils.logging import log_exception_to_run_file
 _APPLICATION_CONFIG_PROVENANCE_KEYS = (
     "source_path",
     "source_sha256",
-    "cli_overrides",
     "declared_root",
     "resolved_root",
     "cwd",
     "resolved_inputs",
     "output_name",
     "output_paths",
-    "effective_action",
     "effective_request",
     "effective_request_hash",
 )
@@ -129,9 +127,8 @@ class REVISEPipeline:
         io_overrides: Optional[Dict[str, Any]] = None,
         algorithm_overrides: Optional[Dict[str, Any]] = None,
         dry_run: bool = False,
-        application_preprocess_callback: Optional[
-            Callable[[AnnData, AnnData], tuple[AnnData, AnnData]]
-        ] = None,
+        st_adata: AnnData | None = None,
+        sc_ref_adata: AnnData | None = None,
         finalize_callback=None,
         application_config_metadata: Optional[Dict[str, Any]] = None,
         benchmark_config_metadata: Optional[Dict[str, Any]] = None,
@@ -141,6 +138,8 @@ class REVISEPipeline:
         runtime_overrides = dict(runtime_overrides or {})
         io_overrides = dict(io_overrides or {})
         algorithm_overrides = dict(algorithm_overrides or {})
+        if (st_adata is None) != (sc_ref_adata is None):
+            raise ValueError("st_adata and sc_ref_adata must be supplied together")
 
         route_identity_keys = {
             "platform",
@@ -235,7 +234,8 @@ class REVISEPipeline:
                     algorithm_config_hash=algorithm_config_hash,
                     effective_config_hash=effective_config_hash,
                     dry_run=dry_run,
-                    application_preprocess_callback=application_preprocess_callback,
+                    st_adata=st_adata,
+                    sc_ref_adata=sc_ref_adata,
                     finalize_callback=finalize_callback,
                     application_config_metadata=application_config_metadata,
                     benchmark_config_metadata=benchmark_config_metadata,
@@ -267,9 +267,8 @@ class REVISEPipeline:
         algorithm_config_hash: str,
         effective_config_hash: str,
         dry_run: bool,
-        application_preprocess_callback: Optional[
-            Callable[[AnnData, AnnData], tuple[AnnData, AnnData]]
-        ],
+        st_adata: AnnData | None,
+        sc_ref_adata: AnnData | None,
         finalize_callback,
         application_config_metadata: Optional[Dict[str, Any]],
         benchmark_config_metadata: Optional[Dict[str, Any]],
@@ -300,7 +299,8 @@ class REVISEPipeline:
             algorithm_config_hash=algorithm_config_hash,
             effective_config_hash=effective_config_hash,
             dry_run=bool(dry_run),
-            application_preprocess_callback=application_preprocess_callback,
+            st_adata=st_adata,
+            sc_ref_adata=sc_ref_adata,
             finalize_callback=finalize_callback,
             application_config_metadata=copy.deepcopy(
                 application_config_metadata or {}

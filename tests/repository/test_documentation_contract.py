@@ -177,7 +177,7 @@ def test_application_docs_match_strict_schema_and_root_resolution():
     assert "cannot escape it with ``..``" in normalized
 
 
-def test_application_docs_cover_templates_inputs_actions_and_provenance():
+def test_application_docs_cover_templates_inputs_and_provenance():
     text = _joined(APPLICATION_DOCS)
     normalized = " ".join(text.split())
 
@@ -187,15 +187,13 @@ def test_application_docs_cover_templates_inputs_actions_and_provenance():
     assert "inputs.pm_on_cell.path" in text
     assert "``algorithm.ot_method`` controls both GA and LR" in normalized
     assert "omitting it keeps the selected engine profile authoritative" in normalized
-    assert "may write run evidence" in normalized
-    assert "does not publish a result H5AD" in normalized
     for field in (
         "source_path",
         "source_sha256",
         "resolved_root",
         "resolved_inputs",
         "output_paths",
-        "effective_action",
+        "effective_request",
     ):
         assert f"``{field}``" in text
     assert "top-level engine configuration identity" in normalized
@@ -272,7 +270,7 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
         " ".join(document.split())
         for document in (readme, installation, quickstart, configuration)
     )
-    service = _read(ROOT / "reconstruct.py")
+    engine_compiler = _read(ROOT / "revise/application/config.py")
     runtime = _read(ROOT / "revise/backend/ops/tacco_runtime.py")
 
     assert "algorithm.ot_method" in text
@@ -282,8 +280,8 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert "does not fall back" in text.lower()
     assert "annotate.mode" not in text
     assert "local_ot.method" not in text
-    assert '"ga": {"solver": config.ot_method}' in service
-    assert '"lr": {"solver": config.ot_method}' in service
+    assert '"ga": {"solver": config.ot_method}' in engine_compiler
+    assert '"lr": {"solver": config.ot_method}' in engine_compiler
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
     for document in normalized_docs:
         assert "algorithm.ot_method" in document

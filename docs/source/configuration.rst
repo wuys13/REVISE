@@ -98,19 +98,10 @@ The manifest records only ``route``, ``applied``, and ``strength`` under
 ``local_refinement``; mandatory sc-SVC-sr allocation is separate under
 ``sr_allocation``. It does not expose solver-event telemetry.
 
-Action and evidence
--------------------
-
-The request runs by default. ``--dry-run`` (or ``dry_run=True`` in
-``run_application``) changes only the effective action to ``preflight``.
-
-Preflight may write run evidence, including ``preflight.json`` and
-``provenance.json``, but does not publish a result H5AD.
-
 Application identity is namespaced under ``application_config`` with
 ``source_path``, ``source_sha256``, ``declared_root``, ``resolved_root``,
 ``cwd``, ``resolved_inputs``, ``output_paths``, ``effective_request``,
-``effective_request_hash``, and ``effective_action``. Top-level
+``effective_request_hash``. Top-level
 ``engine_defaults_hash``, ``authority_hash``, ``algorithm_config_hash``, and
 ``effective_config_hash`` remain separate from the application YAML source
 identity.

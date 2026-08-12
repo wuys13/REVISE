@@ -35,9 +35,6 @@ class PipelineContext:
     algorithm_config_hash: Optional[str] = None
     effective_config_hash: Optional[str] = None
     dry_run: bool = False
-    application_preprocess_callback: Optional[
-        Callable[[AnnData, AnnData], tuple[AnnData, AnnData]]
-    ] = None
     finalize_callback: Optional[Callable[["PipelineContext"], None]] = None
     application_config_metadata: Dict[str, Any] = field(default_factory=dict)
     benchmark_config_metadata: Dict[str, Any] = field(default_factory=dict)
@@ -45,7 +42,6 @@ class PipelineContext:
     runner_config: Any = None
     runner: Any = None
     input_specs: Any = None
-    input_bundle: Any = None
     st_adata: Optional[AnnData] = None
     sc_ref_adata: Optional[AnnData] = None
     real_st_adata: Optional[AnnData] = None

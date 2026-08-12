@@ -74,13 +74,7 @@ strengthening of the LR cost. The official Xenium templates filter the shared
 reference with `Patient == P2CRC`; the key names are generic and may describe a
 different reference cohort field in a custom YAML.
 
-From a source checkout, validate the complete request first:
-
-```bash
-python reconstruct.py --config configs/application/VisiumHD.yaml --dry-run
-```
-
-Then run the same YAML without `--dry-run`:
+From a source checkout, run the YAML directly:
 
 ```bash
 python reconstruct.py --config configs/application/VisiumHD.yaml
@@ -93,9 +87,7 @@ equivalent entry name:
 revise-reconstruct --config configs/application/VisiumHD.yaml
 ```
 
-`--dry-run` is the only preflight switch. It may write run evidence but does
-not publish a result H5AD. A successful preflight reports the exact output
-paths that the formal run will use. The three routes publish:
+The three routes publish:
 
 ```text
 output/P1CRC_HD_sp-SVC.h5ad
@@ -326,7 +318,6 @@ spatial_svc = run_application("configs/application/VisiumHD.yaml")
 spatial, expression = run_application("configs/application/Xenium_T.yaml")
 
 # sp-SVC and sc-SVC-sr return one AnnData; sc-SVC returns this fixed pair.
-assert run_application("configs/application/VisiumHD.yaml", dry_run=True) is None
 ```
 
 Application callers provide one YAML. `REVISEPipeline.run()` remains the

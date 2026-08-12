@@ -26,9 +26,7 @@ def output_paths(config: ApplicationConfig) -> dict[str, Path]:
 def application_metadata(
     config: ApplicationConfig,
     *,
-    cli_overrides: Mapping[str, Any],
     paths: Mapping[str, Path],
-    dry_run: bool,
 ) -> dict[str, Any]:
     if config.svc_type == "sc-SVC":
         local_refinement = {
@@ -88,14 +86,12 @@ def application_metadata(
     return {
         "source_path": config.source_path,
         "source_sha256": config.config_sha256,
-        "cli_overrides": dict(cli_overrides),
         "declared_root": config.declared_root,
         "resolved_root": str(config.resolved_root),
         "cwd": str(config.cwd),
         "resolved_inputs": config.resolved_inputs,
         "output_name": config.output_name,
         "output_paths": {key: str(path) for key, path in paths.items()},
-        "effective_action": "preflight" if dry_run else "run",
         "effective_request": effective_request,
         "effective_request_hash": hash_jsonable(effective_request),
     }

@@ -1,8 +1,8 @@
 """Application YAML loading and compilation.
 
 This module deliberately stops at a validated, resolved application
-configuration.  Runtime mapping and result publication live in the source
-entrypoint so the complete user-facing flow remains visible there.
+configuration. Runtime mapping is package-owned; the source entrypoint keeps
+the user-facing load, preprocess, reconstruct, and publication flow visible.
 """
 
 from __future__ import annotations
@@ -84,6 +84,60 @@ class ApplicationConfig:
         if self.pm_on_cell_path is not None:
             paths["pm_on_cell"] = str(self.pm_on_cell_path)
         return paths
+
+
+def _compile_engine_config(
+    config: ApplicationConfig,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Translate a compiled Application YAML into engine configuration sections."""
+    runtime = {"seed": config.seed} if config.seed is not None else {}
+    io = {
+        "st_path": str(config.st_path),
+        "sc_ref_path": str(config.reference_path),
+        "pm_on_cell_path": str(config.pm_on_cell_path) if config.pm_on_cell_path else "",
+        "output_root": str(config.output_dir),
+        "sample_name": config.svc_type,
+        "patient_key": "",
+        "save_outputs": False,
+        "input_format": config.st_format,
+        "data_root": "",
+        "st_file": "",
+        "sc_ref_file": "",
+    }
+    if config.st_format in {"spatialdata", "auto"}:
+        io["spatialdata_path"] = str(config.st_path)
+        if config.spatialdata_table is not None:
+            io["spatialdata_table"] = config.spatialdata_table
+        if config.spatialdata_element is not None:
+            io["spatialdata_spatial_element"] = config.spatialdata_element
+
+    algorithm: dict[str, Any] = {"columns": {"cell_type_col": config.broad_column}}
+    if config.subtype_column is not None:
+        algorithm["columns"]["sub_cell_type_col"] = config.subtype_column
+    if config.select_cell_type is not None:
+        algorithm["sc"] = {"select_ct": config.select_cell_type}
+    if config.local_refinement_strength is not None:
+        algorithm["local_refinement"] = {"strength": config.local_refinement_strength}
+    if config.local_refinement_alpha is not None:
+        algorithm["graph"] = {"alpha": config.local_refinement_alpha}
+    if config.local_refinement_resolutions is not None:
+        algorithm.setdefault("sc", {})["resolutions"] = list(config.local_refinement_resolutions)
+    if config.local_refinement_graph_method is not None:
+        algorithm["graph"] = {
+            "method": config.local_refinement_graph_method,
+            "alpha": config.local_refinement_graph_alpha,
+            "n_neighbors": config.local_refinement_graph_n_neighbors,
+            "exp_neighbors": config.local_refinement_graph_exp_neighbors,
+            "spatial_neighbors": config.local_refinement_graph_spatial_neighbors,
+        }
+    if config.local_refinement_match_spot_sum is not None:
+        algorithm.setdefault("sc", {})["match_spot_sum"] = config.local_refinement_match_spot_sum
+    if config.ot_method is not None:
+        algorithm["ot"] = {
+            "ga": {"solver": config.ot_method},
+            "lr": {"solver": config.ot_method},
+        }
+    return runtime, io, algorithm
 
 
 _OFFICIAL_TEMPLATES = frozenset(
@@ -313,82 +367,13 @@ def load_application_yaml(config: str | Path) -> tuple[ApplicationConfigSource, 
     return source, document
 
 
-def apply_application_overrides(
-    document: dict[str, Any],
-    values: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Apply only explicitly supplied high-level values to one YAML document."""
-    overrides: dict[str, Any] = {}
-
-    def set_if(name: str, section: str, key: str) -> None:
-        value = values.get(name)
-        if value is not None:
-            document.setdefault(section, {})[key] = value
-            overrides[name] = value
-
-    for name, section, key in (
-        ("svc_type", "application", "svc_type"),
-        ("root_dir", "paths", "root_dir"),
-        ("ot_method", "algorithm", "ot_method"),
-        ("cell_type_col", "global_anchoring", "broad_column"),
-        ("sub_cell_type_col", "local_refinement", "subtype_column"),
-        ("select_cell_type", "local_refinement", "select_cell_type"),
-        ("local_refinement_strength", "local_refinement", "strength"),
-        ("output_dir", "output", "dir"),
-        ("output_name", "output", "name"),
-        ("seed", "execution", "seed"),
-    ):
-        set_if(name, section, key)
-
-    for name, target, key in (
-        ("st_path", "st", "path"),
-        ("st_format", "st", "format"),
-        ("sc_ref_path", "reference", "path"),
-    ):
-        value = values.get(name)
-        if value is not None:
-            document.setdefault("inputs", {}).setdefault(target, {})[key] = value
-            overrides[name] = value
-
-    for name, key in (
-        ("spatialdata_table", "table"),
-        ("spatialdata_element", "element"),
-    ):
-        value = values.get(name)
-        if value is not None:
-            document.setdefault("inputs", {}).setdefault("st", {}).setdefault(
-                "spatialdata", {}
-            )[key] = value
-            overrides[name] = value
-
-    if values.get("pm_on_cell_path") is not None:
-        document.setdefault("inputs", {})["pm_on_cell"] = {
-            "path": values["pm_on_cell_path"]
-        }
-        overrides["pm_on_cell_path"] = values["pm_on_cell_path"]
-
-    for name, target, key in (
-        ("spatial_min_transcript_counts", "spatial", "min_transcript_counts"),
-        ("spatial_min_counts", "spatial", "min_counts"),
-        ("spatial_min_cell_counts", "spatial", "min_cell_counts"),
-        ("reference_min_transcript_counts", "reference", "min_transcript_counts"),
-        ("reference_min_genes", "reference", "min_genes"),
-        ("reference_min_cell_counts", "reference", "min_cell_counts"),
-    ):
-        value = values.get(name)
-        if value is not None:
-            document.setdefault("preprocessing", {}).setdefault(target, {})[key] = value
-            overrides[name] = value
-    return overrides
-
-
 def compile_application_config(
     document: Mapping[str, Any],
     *,
     source: ApplicationConfigSource,
     cwd: Path | None = None,
 ) -> ApplicationConfig:
-    """Validate one effective document after all CLI/Python overrides."""
+    """Validate one Application YAML document."""
     cwd = (cwd or Path.cwd()).resolve()
     document = _mapping(document, "application config")
     _reject_unknown(document, _TOP_LEVEL_KEYS, "application config")
@@ -582,7 +567,7 @@ def compile_application_config(
 
     execution = _mapping(document["execution"], "execution")
     if "action" in execution:
-        raise ApplicationConfigError("execution.action was removed; use --dry-run or dry_run=True")
+        raise ApplicationConfigError("execution.action is not supported")
     _reject_unknown(execution, {"seed"}, "execution")
     seed = execution.get("seed", ENGINE_DEFAULTS["runtime"]["seed"])
     if seed is None:
@@ -637,7 +622,6 @@ __all__ = [
     "ApplicationConfig",
     "ApplicationConfigError",
     "ApplicationConfigSource",
-    "apply_application_overrides",
     "compile_application_config",
     "load_application_yaml",
     "resolve_application_source",

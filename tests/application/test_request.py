@@ -216,9 +216,7 @@ def test_effective_request_metadata_hash_covers_application_algorithm_inputs(tmp
 
     metadata = application_metadata(
         config,
-        cli_overrides={},
         paths=output_paths(config),
-        dry_run=True,
     )
 
     request = metadata["effective_request"]
@@ -253,9 +251,7 @@ def test_application_null_seed_resolves_to_authority_default(tmp_path):
 
     metadata = application_metadata(
         config,
-        cli_overrides={},
         paths=output_paths(config),
-        dry_run=False,
     )
 
     assert config.seed == 42
@@ -268,5 +264,5 @@ def test_removed_action_is_rejected(tmp_path):
     document = _document()
     document["execution"]["action"] = "preflight"
     source, effective = load_application_yaml(_write_config(tmp_path, document))
-    with pytest.raises(ApplicationConfigError, match="execution.action was removed"):
+    with pytest.raises(ApplicationConfigError, match="execution.action is not supported"):
         compile_application_config(effective, source=source)

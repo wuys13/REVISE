@@ -14,7 +14,7 @@ System map
        `-- reconstruct.run_application
            `-- REVISEPipeline.run(svc_type=..., cf=None)
            |-- load and validate merged configuration
-           |-- resolve and preflight route inputs
+           |-- receive preloaded Application AnnData inputs
            |-- create canonical run envelope
            `-- UnifiedReconstructionPipeline
                |-- validate_inputs
@@ -32,11 +32,13 @@ deterministic setup, run/provenance lifecycle, and strategy dispatch. The
 unified pipeline owns stage order. Strategies change stage internals without
 creating a second lifecycle.
 
-``reconstruct.py`` owns the public argument parser, YAML overrides, engine
-mapping, and H5AD output writing. The package ``revise.application.config``
-module only compiles YAML into a validated configuration. Application and
-Benchmark meet at ``REVISEPipeline.run``; the engine router resolves the
-profile/task/strategy for the selector supplied by each frontend.
+``reconstruct.py`` owns the public argument parser, YAML compilation, and the
+visible load/preprocess/reconstruct orchestration. The package
+``revise.application.config`` compiles the validated Application request into
+engine configuration, while ``revise.application.publication`` owns H5AD
+publication. Application and Benchmark meet at ``REVISEPipeline.run``; the
+engine router resolves the profile/task/strategy for the selector supplied by
+each frontend.
 
 Configuration and routing
 -------------------------

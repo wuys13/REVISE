@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import inspect
 import logging
 import sys
 import types
@@ -283,14 +282,9 @@ def _sp_argmax_runner(module):
     return runner
 
 
-def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path):
-    from revise.backend import adapters
+def test_application_preprocessing_normalizes_configured_reference_labels():
+    from revise.application.preprocess import normalize_reference_labels
 
-    st = AnnData(
-        X=sparse.csr_matrix(np.ones((2, 2))),
-        obs=pd.DataFrame(index=["s1", "s2"]),
-        var=pd.DataFrame(index=["g1", "g2"]),
-    )
     reference = AnnData(
         X=sparse.csr_matrix(np.ones((2, 2))),
         obs=pd.DataFrame(
@@ -303,119 +297,14 @@ def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path
         ),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
+    normalized = normalize_reference_labels(reference, ["major_type", "minor_type"])
 
-    class InputService:
-        def read_st_adata(self, path):
-            return st.copy()
-
-        def read_sc_ref_adata(self, path):
-            return reference.copy()
-
-    monkeypatch.setattr(adapters, "_input_service", lambda ctx: InputService())
-    monkeypatch.setattr(
-        adapters.sc.pp,
-        "filter_cells",
-        lambda *args, **kwargs: None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        adapters.sc.pp,
-        "filter_genes",
-        lambda *args, **kwargs: None,
-        raising=False,
-    )
-    preprocess_calls = []
-
-    def application_preprocess(spatial, reference_data):
-        preprocess_calls.append((spatial.copy(), reference_data.copy()))
-        return spatial.copy(), reference_data.copy()
-
-    ctx = SimpleNamespace(
-        merged_config={
-            "ot": {
-                "ga": {
-                    "solver": "pot",
-                    "pot": {"reg": 0.1, "reg_m": 0.0, "reg_type": "entropy"},
-                },
-                "lr": {
-                    "solver": "pot",
-                    "pot": {"reg": 0.1, "reg_m": 0.0, "reg_type": "kl"},
-                },
-                "impute": {"reg": 5.0, "reg_m": 0.0, "reg_type": "kl"},
-            },
-            "preprocess": {},
-            "graph": {
-                "method": "joint",
-                "alpha": 0.5,
-                "n_neighbors": 10,
-                "exp_neighbors": 10,
-                "spatial_neighbors": 10,
-            },
-            "plot": {
-                "enabled": False,
-                "cluster_resolutions": [0.1, 0.3, 0.5],
-                "min_genes": 20,
-                "min_cells": 3,
-                "sample_size": 10000,
-            },
-            "reconstruct": {"alpha": 0.5},
-            "local_refinement": {"strength": 0.2},
-        },
-        io={
-            "sample_name": "sample",
-            "data_root": str(tmp_path),
-            "st_file": "st.h5ad",
-            "sc_ref_file": "sc.h5ad",
-            "patient_key": "Patient",
-        },
-        columns={
-            "cell_type_col": "major_type",
-            "sub_cell_type_col": "minor_type",
-            "confidence_col": "Confidence",
-            "unknown_key": "Unknown",
-        },
-        run_dir=tmp_path,
-        input_specs=(
-            SimpleNamespace(role="st", path="st.h5ad"),
-            SimpleNamespace(role="sc_ref", path="sc.h5ad"),
-        ),
-        logger=logging.getLogger("test-sp-label-normalization"),
-        application_preprocess_callback=application_preprocess,
-    )
-
-    adapters.SpSvcApplicationStrategy().prepare_context(ctx)
-
-    assert len(preprocess_calls) == 1
-    assert preprocess_calls[0][1].obs["major_type"].tolist() == ["T/NK", "T/NK"]
-    assert ctx.runner.sc_ref_adata.obs["major_type"].tolist() == ["T_NK", "T_NK"]
-    assert ctx.runner.sc_ref_adata.obs["minor_type"].tolist() == ["T_1", "T_2"]
-
-
-def test_all_application_strategies_require_the_lifecycle_preprocess_callback():
-    from revise.backend import adapters
-
-    for strategy in (
-        adapters.SpSvcApplicationStrategy,
-        adapters.ScSvcApplicationStrategy,
-        adapters.ScSvcSrApplicationStrategy,
-    ):
-        source = inspect.getsource(strategy.prepare_context)
-        assert "application_preprocess_callback" in source
-        assert "Application preprocessing callback is required" in source
-
-
-def test_sc_sr_ensures_spot_cells_before_application_preprocessing():
-    from revise.backend import adapters
-
-    source = inspect.getsource(adapters.ScSvcSrApplicationStrategy.prepare_context)
-
-    assert source.index("ensure_all_cells_in_spot") < source.index(
-        "application_preprocess("
-    )
+    assert normalized.obs["major_type"].tolist() == ["T_NK", "T_NK"]
+    assert normalized.obs["minor_type"].tolist() == ["T_1", "T_2"]
 
 
 def test_reference_label_normalization_rejects_category_collisions():
-    from revise.backend.adapters import _replace_slash_labels
+    from revise.application.preprocess import normalize_reference_labels
 
     reference = AnnData(
         X=np.ones((2, 1)),
@@ -424,7 +313,7 @@ def test_reference_label_normalization_rejects_category_collisions():
     )
 
     with pytest.raises(ValueError, match="collide after slash normalization"):
-        _replace_slash_labels(reference, ["major_type"])
+        normalize_reference_labels(reference, ["major_type"])
 
 
 def test_sp_local_refinement_trims_by_the_configured_cell_type(monkeypatch):

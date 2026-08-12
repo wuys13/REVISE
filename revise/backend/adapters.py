@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -75,30 +75,6 @@ def _subsample_obs(adata, n_obs: int, seed: int):
     rng = np.random.RandomState(seed)
     keep = rng.choice(adata.obs_names.to_numpy(), size=n_obs, replace=False)
     return adata[keep, :].copy(), keep
-
-
-def _replace_slash_labels(adata, columns: Iterable[str]) -> None:
-    for col in columns:
-        if col not in adata.obs:
-            continue
-        # Force string dtype first so categorical columns do not keep stale
-        # categories (e.g. "Mono/Macro") after replacement.
-        series = adata.obs[col].astype(str)
-        if series.str.contains("/", regex=False).any():
-            normalized = series.str.replace("/", "_", regex=False)
-            label_pairs = pd.DataFrame(
-                {"original": series, "normalized": normalized}
-            ).drop_duplicates()
-            collisions = (
-                label_pairs.groupby("normalized", sort=False)["original"].nunique()
-            )
-            if (collisions > 1).any():
-                names = collisions[collisions > 1].index.tolist()
-                raise ValueError(
-                    f"Reference labels in {col!r} collide after slash normalization: "
-                    f"{names[:5]}"
-                )
-            adata.obs[col] = normalized
 
 
 def _input_service(ctx) -> REVISEInputService:
@@ -330,27 +306,16 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
             **_ot_runner_kwargs(cfg),
         )
 
-        input_service = _input_service(ctx)
-        adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st")
-        )
+        adata_st = ctx.st_adata
+        adata_sc = ctx.sc_ref_adata
+        if adata_st is None or adata_sc is None:
+            raise RuntimeError("Application requires preloaded AnnData inputs")
         sample_size = io_cfg.get("sample_size")
         if sample_size is not None:
             # Match original script behavior when compatibility_mode=true.
             sample_seed = _resolve_sample_seed(ctx)
             sc.pp.subsample(adata_st, n_obs=int(sample_size), random_state=sample_seed)
 
-        adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref")
-        )
-        application_preprocess = ctx.application_preprocess_callback
-        if application_preprocess is None:
-            raise RuntimeError("Application preprocessing callback is required")
-        adata_st, adata_sc = application_preprocess(adata_st, adata_sc)
-        _replace_slash_labels(
-            adata_sc,
-            [columns["cell_type_col"], columns["sub_cell_type_col"]],
-        )
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc
@@ -394,30 +359,10 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             **_ot_runner_kwargs(cfg),
         )
 
-        input_service = _input_service(ctx)
-        adata_sp = input_service.read_st_adata(
-            _input_path(ctx, "st")
-        )
-        adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref")
-        )
-        application_preprocess = ctx.application_preprocess_callback
-        if application_preprocess is None:
-            raise RuntimeError("Application preprocessing callback is required")
-        adata_sp, adata_sc = application_preprocess(adata_sp, adata_sc)
-        cell_type_col = columns["cell_type_col"]
-        sub_cell_type_col = columns["sub_cell_type_col"]
-        required_cols = list(dict.fromkeys([cell_type_col, sub_cell_type_col]))
-        missing = [c for c in required_cols if c not in adata_sc.obs.columns]
-        if missing:
-            raise KeyError(f"Missing required columns in sc reference: {missing}")
-        adata_sc.obs = adata_sc.obs.loc[:, required_cols].copy()
-        _replace_slash_labels(adata_sc, required_cols)
-
-        overlap_genes = adata_sp.var_names.intersection(adata_sc.var_names)
-        if overlap_genes.empty:
-            raise ValueError("No overlapping genes between spatial and sc reference data")
-        adata_sp = adata_sp[:, overlap_genes].copy()
+        adata_sp = ctx.st_adata
+        adata_sc = ctx.sc_ref_adata
+        if adata_sp is None or adata_sc is None:
+            raise RuntimeError("Application requires preloaded AnnData inputs")
 
         ctx.runner_config = conf
         ctx.st_adata = adata_sp
@@ -495,22 +440,10 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
         )
         conf.pm_on_cell = getattr(ctx, "pm_on_cell", None)
 
-        input_service = _input_service(ctx)
-        adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st")
-        )
-        ensure_all_cells_in_spot(adata_st, logger=ctx.logger)
-        adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref")
-        )
-        application_preprocess = ctx.application_preprocess_callback
-        if application_preprocess is None:
-            raise RuntimeError("Application preprocessing callback is required")
-        adata_st, adata_sc = application_preprocess(adata_st, adata_sc)
-        _replace_slash_labels(
-            adata_sc,
-            [columns["cell_type_col"], columns["sub_cell_type_col"]],
-        )
+        adata_st = ctx.st_adata
+        adata_sc = ctx.sc_ref_adata
+        if adata_st is None or adata_sc is None:
+            raise RuntimeError("Application requires preloaded AnnData inputs")
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc

@@ -267,7 +267,7 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
         assert selected == expected
 
 
-def test_built_wheel_installs_console_help_and_version(installed_cli):
+def test_built_wheel_installs_console_help(installed_cli):
     command = installed_cli["command"]
     env = installed_cli["env"]
     cwd = installed_cli["root"]
@@ -275,37 +275,9 @@ def test_built_wheel_installs_console_help_and_version(installed_cli):
     help_result = _run([command, "--help"], cwd=cwd, env=env)
     assert help_result.returncode == 0, help_result.stderr
     assert "--config CONFIG" in help_result.stdout
-    assert "--dry-run" in help_result.stdout
-    assert "Xenium_T.yaml" in help_result.stdout
-    assert "Xenium_Fib.yaml" in help_result.stdout
-    assert "Xenium_Mono.yaml" in help_result.stdout
-    assert "VisiumHD.yaml" in help_result.stdout
-    assert "Visium.yaml" in help_result.stdout
     assert "--svc-type" not in help_result.stdout
     assert "--set" not in help_result.stdout
 
-    removed_set = _run(
-        [
-            str(command),
-            "--config",
-            "run.yaml",
-            "--set",
-            "graph.method=pca",
-        ],
-        cwd=installed_cli["root"],
-        env=env,
-    )
-    assert removed_set.returncode == 2
-    assert "internally managed" in removed_set.stderr
-
-    version = _run(
-        [str(command), "--version"],
-        cwd=cwd,
-        env=env,
-    )
-
-    assert version.returncode == 0, version.stderr
-    assert version.stdout.strip() == f"revise-reconstruct {__version__}"
 
 
 def test_installed_wheel_benchmark_module_and_refinement_option(installed_cli):
@@ -338,88 +310,6 @@ def test_installed_wheel_benchmark_module_and_refinement_option(installed_cli):
     assert str(installed_cli["root"] / "venv") in payload["module"]
 
 
-def test_installed_cli_preflight_runs_outside_checkout(installed_cli):
-    root = installed_cli["root"] / "visium-hd-preflight"
-    root.mkdir()
-    _write_inputs(
-        root / "raw_data/Real_application/P1CRC_HD.h5ad",
-        root / "raw_data/Real_application/adata_sc_all_reanno.h5ad",
-    )
-    result = _run(
-        [
-            installed_cli["command"],
-            "--config",
-            "configs/application/VisiumHD.yaml",
-            "--dry-run",
-        ],
-        cwd=root,
-        env=installed_cli["env"],
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "preflight_passed"
-    assert payload["pipeline"]["profile"] == "application_sp"
-    assert payload["pipeline"]["route"]["application_route"] == "sp-SVC"
-    assert "confounding" not in payload["pipeline"]["route"]
-    provenance = json.loads(
-        (Path(payload["preflight"]).parent / "provenance.json").read_text()
-    )
-    assert provenance["application_config"]["source_path"] == (
-        "package:revise.application.templates/VisiumHD.yaml"
-    )
-    assert not list((root / "output").rglob("*.h5ad"))
-
-
-def test_source_and_installed_preflights_match(installed_cli):
-    source_python = installed_cli["source_python"]
-    runs = []
-    for name, prefix in (
-        (
-            "source",
-            [source_python, ROOT / "reconstruct.py"],
-        ),
-        ("installed", [installed_cli["command"]]),
-    ):
-        root = installed_cli["root"] / f"{name}-preflight"
-        root.mkdir()
-        _write_inputs(root / "data/sample_st.h5ad", root / "data/sc.h5ad")
-        config_path = root / "application.yaml"
-        _write_application_config(
-            config_path,
-            st_path="data/sample_st.h5ad",
-            reference_path="data/sc.h5ad",
-            output_path="output",
-        )
-        result = _run(
-            [*prefix, "--config", config_path, "--dry-run"],
-            cwd=root,
-            env=installed_cli["env"],
-        )
-        assert result.returncode == 0, result.stderr
-        payload = json.loads(result.stdout)
-        preflight_path = Path(payload["preflight"])
-        assert preflight_path.is_file()
-        manifest_path = preflight_path.with_name("provenance.json")
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert manifest["run"]["status"] == "succeeded"
-        assert manifest["application_config"]["source_path"] == str(
-            config_path.resolve()
-        )
-        assert manifest["application_config"]["resolved_root"] == str(root.resolve())
-        assert manifest["application_config"]["resolved_inputs"]["output_dir"] == str(
-            (root / "output").resolve()
-        )
-        assert manifest["application_config"]["output_paths"]["svc"] == str(
-            (root / "output" / "sample_sp-SVC.h5ad").resolve()
-        )
-        runs.append((payload, manifest))
-
-    assert runs[0][0]["status"] == runs[1][0]["status"] == "preflight_passed"
-    assert runs[0][0]["pipeline"]["profile"] == runs[1][0]["pipeline"]["profile"]
-    assert runs[0][0]["pipeline"]["route"] == runs[1][0]["pipeline"]["route"]
-
-
 def test_installed_xenium_template_requires_tacco_extra_without_fallback(installed_cli):
     root = installed_cli["root"] / "xenium-tacco-gate"
     root.mkdir()
@@ -447,7 +337,7 @@ def test_installed_xenium_template_requires_tacco_extra_without_fallback(install
     env = installed_cli["env"].copy()
     env["PYTHONPATH"] = str(blocker)
     result = _run(
-        [installed_cli["command"], "--config", config_path, "--dry-run"],
+        [installed_cli["command"], "--config", config_path],
         cwd=root,
         env=env,
     )

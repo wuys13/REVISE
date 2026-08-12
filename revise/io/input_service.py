@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData, read_h5ad
 
-from revise.io.input_bundle import REVISEDataBundle
 from revise.io.spatialdata_service import SpatialDataService
 
 
@@ -137,31 +136,6 @@ class REVISEInputService:
 
         frame.index = normalized_index
         frame.columns = normalized_columns
-
-    def load_bundle(
-        self,
-        *,
-        st_path: Union[str, Path],
-        sc_ref_path: Union[str, Path],
-        real_st_path: Optional[Union[str, Path]] = None,
-    ) -> REVISEDataBundle:
-        st_loaded = self._read_role(st_path, role="st")
-        sc_loaded = self._read_role(sc_ref_path, role="sc_ref")
-        real_loaded = self._read_role(real_st_path, role="gt") if real_st_path is not None else None
-        source_report = {
-            "st": st_loaded.metadata,
-            "sc_ref": sc_loaded.metadata,
-        }
-        if real_loaded is not None:
-            source_report["gt"] = real_loaded.metadata
-        return REVISEDataBundle(
-            st_adata=st_loaded.adata,
-            sc_ref_adata=sc_loaded.adata,
-            real_st_adata=real_loaded.adata if real_loaded is not None else None,
-            sdata=st_loaded.sdata,
-            coordinate_system=self.io_config.get("spatialdata_coordinate_system", "global"),
-            source_report=source_report,
-        )
 
     def preflight(
         self,

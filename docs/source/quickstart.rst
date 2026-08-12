@@ -157,7 +157,6 @@ From a source checkout:
 
 .. code-block:: bash
 
-   python reconstruct.py --config configs/application/VisiumHD.yaml --dry-run
    python reconstruct.py --config configs/application/VisiumHD.yaml
 
 The installed command is equivalent and also accepts the official external
@@ -165,13 +164,9 @@ template path:
 
 .. code-block:: bash
 
-   revise-reconstruct --config configs/application/VisiumHD.yaml --dry-run
    revise-reconstruct --config configs/application/VisiumHD.yaml
 
-Without ``--dry-run`` the request runs; ``--dry-run`` is the only preflight
-switch.
-Preflight may write run evidence, including ``preflight.json`` and
-``provenance.json``, but does not publish a result H5AD.
+The Application command runs the YAML request and publishes its result H5AD.
 
 Standard sc-SVC selects TACCO by profile. Install
 ``python -m pip install "revise-svc[tacco]"`` for a published package or
@@ -199,7 +194,7 @@ Each file links to the canonical run's ``provenance.json``. Application request
 identity is namespaced under ``application_config`` as ``source_path``,
 ``source_sha256``, ``declared_root``, ``resolved_root``, ``cwd``,
 ``resolved_inputs``, ``output_paths``, ``effective_request``,
-``effective_request_hash``, and ``effective_action``. The top-level engine
+``effective_request_hash``. The top-level engine
 configuration identity remains separate in ``engine_defaults_hash``,
 ``authority_hash``, ``algorithm_config_hash``, and ``effective_config_hash``. There is no solver-event
 telemetry.

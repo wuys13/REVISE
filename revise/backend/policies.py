@@ -28,8 +28,8 @@ class ModeValidationPolicy(InputValidationPolicy):
         data_root = io_cfg.get("data_root")
         direct_application = bool(
             mode == "application"
-            and io_cfg.get("st_path")
-            and io_cfg.get("sc_ref_path")
+            and ctx.st_adata is not None
+            and ctx.sc_ref_adata is not None
         )
         if not direct_application:
             if not data_root:
@@ -108,21 +108,27 @@ class ModeValidationPolicy(InputValidationPolicy):
                 "Invalid input identities: "
                 f"{type(exc).__name__}: {exc}"
             ) from exc
-        validation_columns = dict(ctx.columns)
-        if mode == "application" and str(task) == "sc_svc":
-            validation_columns["select_cell_type"] = (
-                ctx.merged_config.get("sc", {}) or {}
-            ).get("select_ct")
-        reference_filter = ctx.application_config_metadata.get(
-            "reference_filter", {}
-        )
-        report = input_service.preflight(
-            specs,
-            runtime=runtime,
-            columns=validation_columns,
-            reference_filter_column=reference_filter.get("column"),
-            reference_filter_value=reference_filter.get("value"),
-        )
+        direct_inputs = ctx.st_adata is not None and ctx.sc_ref_adata is not None
+        if direct_inputs:
+            if mode != "application":
+                raise ValueError("preloaded AnnData is only supported for application runs")
+            report = {"inputs": "preloaded"}
+        else:
+            validation_columns = dict(ctx.columns)
+            if mode == "application" and str(task) == "sc_svc":
+                validation_columns["select_cell_type"] = (
+                    ctx.merged_config.get("sc", {}) or {}
+                ).get("select_ct")
+            reference_filter = ctx.application_config_metadata.get(
+                "reference_filter", {}
+            )
+            report = input_service.preflight(
+                specs,
+                runtime=runtime,
+                columns=validation_columns,
+                reference_filter_column=reference_filter.get("column"),
+                reference_filter_value=reference_filter.get("value"),
+            )
         run_dir = Path(ctx.run_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
         publication_dir = (

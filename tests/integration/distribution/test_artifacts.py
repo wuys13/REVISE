@@ -289,13 +289,6 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
     assert "0.1.0rc1" in probe.stdout
     assert str(venv) in probe.stdout
     assert str(ROOT) not in probe.stdout
-    version = _run(
-        [venv / "bin" / "revise-reconstruct", "--version"],
-        cwd=root,
-        env=env,
-    )
-    assert version.returncode == 0, version.stderr
-    assert "0.1.0rc1" in version.stdout
     histology_help = _run(
         [venv / "bin" / "revise-build-histology-priors", "--help"],
         cwd=root,

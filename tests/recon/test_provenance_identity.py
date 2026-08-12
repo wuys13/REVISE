@@ -474,9 +474,9 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
         "output_paths": {
             "svc": str(tmp_path / "output" / "sample.h5ad"),
         },
-        "cli_overrides": {},
         "output_name": "sample",
-        "effective_action": "preflight",
+        "effective_request": {"svc_type": "sp-SVC"},
+        "effective_request_hash": "b" * 64,
         "config_path": "must-not-shadow-canonical-engine-truth",
     }
     ctx = PipelineContext(
@@ -506,9 +506,9 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
         "cwd",
         "resolved_inputs",
         "output_paths",
-        "cli_overrides",
         "output_name",
-        "effective_action",
+        "effective_request",
+        "effective_request_hash",
     }
 
 

@@ -404,14 +404,14 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
         sc_adata.obs["Level1"] = ["legacy", "legacy"]
         sc_adata.obs["Level2"] = ["legacy1", "legacy2"]
 
-    class InputService:
-        def read_st_adata(self, path):
-            return st_adata.copy()
+    from revise.application.preprocess import prepare_sc_svc_pair
 
-        def read_sc_ref_adata(self, path):
-            return sc_adata.copy()
-
-    monkeypatch.setattr(adapters, "_input_service", lambda ctx: InputService())
+    prepared_st, prepared_sc = prepare_sc_svc_pair(
+        st_adata,
+        sc_adata,
+        broad_column=cell_type_col,
+        subtype_column=sub_cell_type_col,
+    )
     ctx = SimpleNamespace(
         merged_config={
             "ot": {
@@ -463,10 +463,8 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
             SimpleNamespace(role="sc_ref", path="sc.h5ad"),
         ),
         logger=None,
-        application_preprocess_callback=lambda spatial, reference: (
-            spatial.copy(),
-            reference.copy(),
-        ),
+        st_adata=prepared_st,
+        sc_ref_adata=prepared_sc,
     )
 
     adapters.ScSvcApplicationStrategy().prepare_context(ctx)
@@ -563,7 +561,7 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
 def test_application_ot_method_switches_global_and_local_together(method):
-    from reconstruct import _engine_overrides
+    from revise.application.config import _compile_engine_config
 
     request = SimpleNamespace(
         svc_type="sc-SVC",
@@ -574,7 +572,7 @@ def test_application_ot_method_switches_global_and_local_together(method):
         subtype_column="Level2",
     )
 
-    overrides = _engine_overrides(
+    overrides = _compile_engine_config(
         SimpleNamespace(
             svc_type=request.svc_type,
             ot_method=request.ot_method,

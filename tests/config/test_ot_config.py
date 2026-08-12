@@ -219,7 +219,7 @@ def test_non_seed_runtime_none_remains_omitted():
     assert merged["runtime"]["compatibility_mode"] is False
 
 
-def test_pipeline_public_api_accepts_structured_application_overrides():
+def test_pipeline_accepts_preloaded_application_data():
     from revise.framework import REVISEPipeline
     from reconstruct import run_application
 
@@ -227,8 +227,8 @@ def test_pipeline_public_api_accepts_structured_application_overrides():
 
     assert "algorithm_overrides" in public_parameters
     assert "set_overrides" not in public_parameters
-    assert "config" in inspect.signature(run_application).parameters
-    assert "ot_method" in inspect.signature(run_application).parameters
+    assert "st_adata" in public_parameters
+    assert list(inspect.signature(run_application).parameters) == ["config_path"]
 
 
 @pytest.mark.parametrize("phase", ["ga", "lr"])
@@ -267,7 +267,7 @@ def test_legacy_expose_in_cli_is_rejected_and_cannot_unlock_algorithm_parameters
 
 
 def test_explicit_ot_method_overrides_conflicting_profile_solvers():
-    from reconstruct import _engine_overrides
+    from revise.application.config import _compile_engine_config
 
     raw = _raw_config()
     raw["profiles"]["application_sp"]["ot"] = {
@@ -285,7 +285,7 @@ def test_explicit_ot_method_overrides_conflicting_profile_solvers():
         pm_on_cell_path=None, output_dir=Path("out"), output_name="sample",
         st_format="h5ad", spatialdata_table=None, spatialdata_element=None,
     )
-    merged = _merge(raw, "application_sp", _engine_overrides(config)[2])
+    merged = _merge(raw, "application_sp", _compile_engine_config(config)[2])
 
     assert merged["ot"]["ga"]["solver"] == "pot"
     assert merged["ot"]["lr"]["solver"] == "pot"
@@ -544,7 +544,7 @@ def test_structured_config_supports_mixed_ot_solvers():
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
 def test_explicit_application_ot_method_overrides_both_phases(method):
-    from reconstruct import _engine_overrides
+    from revise.application.config import _compile_engine_config
 
     config = SimpleNamespace(
         svc_type="sp-SVC", ot_method=method, broad_column="Level1", subtype_column=None,
@@ -557,7 +557,7 @@ def test_explicit_application_ot_method_overrides_both_phases(method):
         pm_on_cell_path=None, output_dir=Path("out"), output_name="sample",
         st_format="h5ad", spatialdata_table=None, spatialdata_element=None,
     )
-    overrides = _engine_overrides(config)[2]
+    overrides = _compile_engine_config(config)[2]
 
     assert overrides["ot"]["ga"]["solver"] == method
     assert overrides["ot"]["lr"]["solver"] == method
@@ -876,11 +876,8 @@ def test_six_strategies_put_ot_mapping_on_actual_runner_config(
                 else ("st", "sc_ref")
             )
         ),
-        application_preprocess_callback=(
-            (lambda spatial, reference: (spatial.copy(), reference.copy()))
-            if profile.startswith("application_")
-            else None
-        ),
+        st_adata=st.copy() if profile.startswith("application_") else None,
+        sc_ref_adata=sc_ref.copy() if profile.startswith("application_") else None,
     )
     getattr(adapters, strategy_name)().prepare_context(ctx)
 
@@ -890,9 +887,12 @@ def test_six_strategies_put_ot_mapping_on_actual_runner_config(
         key: getattr(ctx.runner_config, key)
         for key in expected
     } == expected
-    assert dict(loaded_paths) == {
-        spec.role: spec.path for spec in ctx.input_specs
-    }
+    if profile.startswith("application_"):
+        assert loaded_paths == []
+    else:
+        assert dict(loaded_paths) == {
+            spec.role: spec.path for spec in ctx.input_specs
+        }
     if profile.startswith("application_"):
         assert ctx.sc_ref_adata.n_obs == 4
     if "local_refinement" in merged:

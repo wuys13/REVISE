@@ -422,10 +422,6 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     runtime = dict(merged["runtime"])
     runtime["seed"] = 731
 
-    runner_stub = types.ModuleType(f"revise.backend.runners.{runner_module}")
-    setattr(runner_stub, runner_class, object)
-    monkeypatch.setitem(sys.modules, f"revise.backend.runners.{runner_module}", runner_stub)
-
     captured = {}
 
     conf_type = (
@@ -441,6 +437,17 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
 
     class StopAfterConfig(Exception):
         pass
+
+    runner_stub = types.ModuleType(f"revise.backend.runners.{runner_module}")
+    if profile == "application_sc_sr":
+        class StopRunner:
+            def __init__(self, *_args, **_kwargs):
+                raise StopAfterConfig
+
+        setattr(runner_stub, runner_class, StopRunner)
+    else:
+        setattr(runner_stub, runner_class, object)
+    monkeypatch.setitem(sys.modules, f"revise.backend.runners.{runner_module}", runner_stub)
 
     def stop_before_io(_ctx):
         raise StopAfterConfig
@@ -460,6 +467,8 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=False,
         pm_on_cell=pd.DataFrame([[1.0]], index=["c1"], columns=["A"]),
+        st_adata=(object() if profile == "application_sc_sr" else None),
+        sc_ref_adata=(object() if profile == "application_sc_sr" else None),
     )
 
     with pytest.raises(StopAfterConfig):
