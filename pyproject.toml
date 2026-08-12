@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "revise-svc"
+version = "0.0.29"
+description = "Spatial transcriptomics benchmarking and annotation toolkit."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Yushuai Wu and Yifeng Jiao" }
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Bio-Informatics"
+]
+dependencies = [
+  "anndata>=0.9",
+  "matplotlib>=3.6",
+  "numba>=0.57",
+  "numpy>=1.22",
+  "pandas>=1.5",
+  "POT==0.9.5",
+  "scanpy>=1.9",
+  "statsmodels>=0.14.1",
+  "scikit-image>=0.20",
+  "scikit-learn>=1.2",
+  "scipy>=1.9",
+  "seaborn>=0.12",
+  "squidpy>=1.2",
+  "tqdm>=4.64",
+  "igraph",
+  "leidenalg",
+  "scikit-misc",
+  "gseapy",
+  "shapely>=2.1.2"
+]
+
+[project.optional-dependencies]
+annotation = ["tacco>=0.2"]
+dev = [
+  "black",
+  "ruff",
+  "pytest",
+  "pytest-cov"
+]
+
+[project.urls]
+Homepage = "https://github.com/wuys13/REVISE"
+Repository = "https://github.com/wuys13/REVISE"
+Issues = "https://github.com/wuys13/REVISE/issues"
+
+[tool.setuptools]
+packages = { find = { include = ["revise*"] } }
+include-package-data = true
