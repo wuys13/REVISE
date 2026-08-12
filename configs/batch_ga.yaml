@@ -1,0 +1,33 @@
+schema_version: 1
+
+paths:
+  root_dir: .
+
+inputs:
+  st:
+    path: data/spatial.h5ad
+    format: h5ad
+  reference:
+    path: data/combined_reference.h5ad
+    format: h5ad
+    filter_column: reference_id
+    filter_value: all
+
+preprocessing:
+  spatial:
+    min_transcript_counts: 60
+    min_counts: null
+    min_cell_counts: 100
+  reference:
+    min_transcript_counts: null
+    min_genes: null
+    min_cell_counts: 100
+
+global_anchoring:
+  broad_column: Level1
+
+output:
+  dir: ga_output
+
+execution:
+  seed: 42
