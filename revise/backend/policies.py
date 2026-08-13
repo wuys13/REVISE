@@ -153,7 +153,4 @@ class ModeValidationPolicy(InputValidationPolicy):
 
 class ModeEvaluationPolicy(EvaluationPolicy):
     def should_evaluate(self, ctx) -> bool:
-        runtime = ctx.runtime
-        if runtime.get("mode") == "benchmark":
-            return True
         return bool(ctx.merged_config["benchmark"]["evaluate"])

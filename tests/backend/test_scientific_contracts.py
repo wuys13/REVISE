@@ -338,7 +338,7 @@ def test_pipeline_evaluation_passes_aligned_ground_truth_before_prediction(
         evaluation_policy=SimpleNamespace(should_evaluate=lambda _ctx: True),
     )
 
-    pipeline.evaluate_if_needed(ctx)
+    pipeline.evaluate(ctx)
 
     assert captured["obs"] == (["cell-b", "cell-a"], ["cell-b", "cell-a"])
     np.testing.assert_array_equal(captured["gt"].ravel(), [20.0, 10.0])

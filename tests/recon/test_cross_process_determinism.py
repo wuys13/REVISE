@@ -41,7 +41,6 @@ config = {
     "runtime": {
         "seed": seed,
         "deterministic": True,
-        "platform": "sc_svc_sr",
         "confounding": "spot_size",
         "mode": "application",
         "task": "sc_svc_sr",

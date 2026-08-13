@@ -142,7 +142,6 @@ class REVISEPipeline:
             raise ValueError("st_adata and sc_ref_adata must be supplied together")
 
         route_identity_keys = {
-            "platform",
             "application_route",
             "confounding",
             "mode",

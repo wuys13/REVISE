@@ -267,6 +267,7 @@ python reproduce/benchmark_main.py \
   --data-root raw_data/Sim2Real-ST \
   --sample-name P2CRC/cut_part1 \
   --dataset-task segmentation \
+  --evaluate true \
   --output-root output/benchmark
 ```
 

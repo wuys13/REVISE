@@ -44,7 +44,7 @@ class UnifiedReconstructionPipeline:
 
         evaluation_skip = self._evaluation_skip_reason_or_fail(ctx)
         if evaluation_skip is None:
-            self._run_stage(ctx, "evaluate", self.evaluate_if_needed)
+            self._run_stage(ctx, "evaluate", self.evaluate)
         else:
             ctx.skip_stage("evaluate", evaluation_skip)
         ctx.mark_run_succeeded()
@@ -105,10 +105,10 @@ class UnifiedReconstructionPipeline:
         if ctx.finalize_callback is not None:
             ctx.finalize_callback(ctx)
 
-    def evaluate_if_needed(self, ctx) -> None:
+    def evaluate(self, ctx) -> None:
         from revise.analysis.metrics import compute_metric
 
-        outputs = dict(ctx.svc.artifacts.get("outputs", {})) if ctx.svc else {}
+        outputs = self._outputs(ctx)
         metrics_dir = Path(ctx.run_dir) / "metrics"
         metrics_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,7 +157,7 @@ class UnifiedReconstructionPipeline:
         if not self.evaluation_policy.should_evaluate(ctx):
             ctx.logger.info("[pipeline] evaluation skipped by policy")
             return "policy_disabled"
-        outputs = dict(ctx.svc.artifacts.get("outputs", {})) if ctx.svc else {}
+        outputs = self._outputs(ctx)
         if not outputs:
             ctx.logger.warning("[pipeline] no outputs available for evaluation")
             return "no_outputs"
@@ -201,7 +201,7 @@ class UnifiedReconstructionPipeline:
         if not bool(ctx.merged_config["io"]["save_outputs"]):
             return
 
-        outputs = dict(ctx.svc.artifacts.get("outputs", {}))
+        outputs = self._outputs(ctx)
         if not outputs:
             return
 
@@ -222,6 +222,10 @@ class UnifiedReconstructionPipeline:
 
         if ctx.compatibility_mode:
             self._emit_compatibility_files(ctx, outputs)
+
+    @staticmethod
+    def _outputs(ctx) -> Dict[str, Any]:
+        return ctx.svc.artifacts["outputs"] if ctx.svc is not None else {}
 
     def _emit_compatibility_files(self, ctx, outputs: Dict[str, Any]) -> None:
         compatibility_map = {

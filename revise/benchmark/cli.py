@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 from importlib import resources
 import json
@@ -72,12 +73,6 @@ class _BenchmarkArgumentParser(argparse.ArgumentParser):
 def get_parser() -> argparse.ArgumentParser:
     parser = _BenchmarkArgumentParser("REVISE benchmark (unified interface wrapper)")
     parser.add_argument(
-        "--platform",
-        default="sim2real",
-        choices=["sim2real"],
-        help="Benchmark platform route",
-    )
-    parser.add_argument(
         "--config",
         required=True,
         type=str,
@@ -91,17 +86,6 @@ def get_parser() -> argparse.ArgumentParser:
         help="Optional dataset task subdirectory under data-root",
     )
     parser.add_argument("--sample-name", required=True, type=str, help="Sample name (e.g. P2CRC/cut_part1)")
-    parser.add_argument("--st-file", type=str, help="ST file name for routes that need an override")
-    parser.add_argument(
-        "--gt-svc-file",
-        type=str,
-        help="Ground-truth SVC file name for routes that need an override",
-    )
-    parser.add_argument(
-        "--sc-ref-file",
-        type=str,
-        help="sc reference file name for routes that need an override",
-    )
     parser.add_argument("--output-root", default="results_unified", type=str, help="Output root")
     parser.add_argument("--sample-size", type=int, default=None, help="Optional subsample size")
     parser.add_argument("--seed", type=int, default=42, help="Base random seed for reproducibility")
@@ -127,11 +111,28 @@ def get_parser() -> argparse.ArgumentParser:
         default=None,
         help="SR-only graph refinement preset",
     )
+    parser.add_argument(
+        "--evaluate",
+        type=_parse_bool,
+        default=True,
+        help="Evaluate reconstructed AnnData outputs (true or false; default: true)",
+    )
     return parser
 
 
 def get_args() -> argparse.Namespace:
     return get_parser().parse_args()
+
+
+def _parse_bool(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = value.lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
 
 
 def _read_benchmark_request_with_metadata(
@@ -190,18 +191,17 @@ def _build_sr_refinement_overrides(args: argparse.Namespace) -> Dict[str, object
 def _build_algorithm_overrides(args: argparse.Namespace) -> Dict[str, object]:
     overrides = _build_local_refinement_overrides(args)
     overrides.update(_build_sr_refinement_overrides(args))
+    overrides["benchmark"] = {"evaluate": bool(args.evaluate)}
     return overrides
 
 
 def _cli_overrides(args: argparse.Namespace) -> Dict[str, object]:
     keys = (
-        "st_file",
-        "gt_svc_file",
-        "sc_ref_file",
         "sample_size",
         "local_refinement_strength",
         "sr_refinement_preset",
         "seed_scope",
+        "evaluate",
     )
     return {
         key: value
@@ -346,8 +346,6 @@ def _append_result(results: List[Dict[str, object]], tag: str, run_result: Dict[
     item = {"tag": tag}
     item.update(run_result)
     results.append(item)
-    status = "OK" if run_result["ok"] else "FAIL"
-    print(f"[{status}] {tag} -> {run_result.get('run_dir') or run_result.get('error')}")
 
 
 def _resolve_seed_scope(args: argparse.Namespace) -> str:
@@ -365,11 +363,34 @@ def _runtime_seed_supplier(args: argparse.Namespace, seed_scope: str):
     return lambda: int(seed_stream.randint(0, np.iinfo(np.int32).max))
 
 
-def main(args: argparse.Namespace | None = None) -> None:
-    cli_invocation = args is None
-    if args is None:
-        args = get_args()
-        print(args)
+def run_benchmark(
+    config_path: str | Path,
+    data_root: str | Path,
+    sample_name: str,
+    output_root: str | Path = "results_unified",
+    *,
+    dataset_task: str | None = None,
+    sample_size: int | None = None,
+    seed: int = 42,
+    seed_scope: str | None = None,
+    local_refinement_strength: float | None = None,
+    sr_refinement_preset: str | None = None,
+    evaluate: bool = True,
+) -> Dict[str, object]:
+    """Run every leaf declared by one Benchmark YAML and return its report."""
+    args = argparse.Namespace(
+        config=str(config_path),
+        data_root=str(data_root),
+        dataset_task=dataset_task,
+        sample_name=sample_name,
+        output_root=str(output_root),
+        sample_size=sample_size,
+        seed=seed,
+        seed_scope=seed_scope,
+        local_refinement_strength=local_refinement_strength,
+        sr_refinement_preset=sr_refinement_preset,
+        evaluate=evaluate,
+    )
     request, benchmark_config_metadata = _read_benchmark_request_with_metadata(
         args.config
     )
@@ -382,22 +403,17 @@ def main(args: argparse.Namespace | None = None) -> None:
     base_io = _base_io(args)
     seed_scope = _resolve_seed_scope(args)
     next_runtime_seed = _runtime_seed_supplier(args, seed_scope)
-    try:
-        algorithm_overrides = dict(request["algorithm"])
-        algorithm_overrides.update(_build_algorithm_overrides(args))
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+    algorithm_overrides = copy.deepcopy(request["algorithm"])
+    for section, values in _build_algorithm_overrides(args).items():
+        algorithm_overrides.setdefault(section, {}).update(values)
     if args.route == "segmentation":
-        st_file = args.st_file or request_io["st_file"]
-        gt_svc_file = args.gt_svc_file or request_io["gt_svc_file"]
-        sc_ref_file = args.sc_ref_file or request_io["sc_ref_file"]
         for seg_method in cases["segmentation_methods"]:
             io_cfg = dict(base_io)
             io_cfg.update(
                 {
-                    "st_file": st_file,
-                    "gt_svc_file": gt_svc_file,
-                    "sc_ref_file": sc_ref_file,
+                    "st_file": request_io["st_file"],
+                    "gt_svc_file": request_io["gt_svc_file"],
+                    "sc_ref_file": request_io["sc_ref_file"],
                     "seg_method": seg_method,
                 }
             )
@@ -412,16 +428,13 @@ def main(args: argparse.Namespace | None = None) -> None:
             _append_result(results, f"segmentation:{seg_method}", run_result)
 
     elif args.route == "bin2cell":
-        st_file = args.st_file or request_io["st_file"]
-        gt_svc_file = args.gt_svc_file or request_io["gt_svc_file"]
-        sc_ref_file = args.sc_ref_file or request_io["sc_ref_file"]
         for seg_method in cases["segmentation_methods"]:
             io_cfg = dict(base_io)
             io_cfg.update(
                 {
-                    "st_file": st_file,
-                    "gt_svc_file": gt_svc_file,
-                    "sc_ref_file": sc_ref_file,
+                    "st_file": request_io["st_file"],
+                    "gt_svc_file": request_io["gt_svc_file"],
+                    "sc_ref_file": request_io["sc_ref_file"],
                     "seg_method": seg_method,
                 }
             )
@@ -436,7 +449,6 @@ def main(args: argparse.Namespace | None = None) -> None:
             _append_result(results, f"bin2cell:{seg_method}", run_result)
 
     elif args.route == "batch_effect":
-        st_file = args.st_file or request_io["st_file"]
         for spot_size in cases["spot_sizes"]:
             for batch in cases["batches"]:
                 batch_num = batch["number"]
@@ -445,7 +457,7 @@ def main(args: argparse.Namespace | None = None) -> None:
                 io_cfg = dict(base_io)
                 io_cfg.update(
                     {
-                        "st_file": st_file,
+                        "st_file": request_io["st_file"],
                         "gt_svc_file": gt_svc_file,
                         "sc_ref_file": sc_ref_file,
                         "spot_size": spot_size,
@@ -527,7 +539,6 @@ def main(args: argparse.Namespace | None = None) -> None:
         raise NotImplementedError(f"Unsupported benchmark route: {args.route}")
 
     report = {
-        "platform": args.platform,
         "route": args.route,
         "sample_name": args.sample_name,
         "dataset_task": args.dataset_task,
@@ -536,16 +547,43 @@ def main(args: argparse.Namespace | None = None) -> None:
         "seed_scope": seed_scope,
         "local_refinement": _aggregate_local_refinement(results),
         "sr_refinement_preset": args.sr_refinement_preset,
+        "evaluate": args.evaluate,
         "ok": all(item["ok"] for item in results),
         "total_runs": len(results),
         "passed_runs": sum(1 for item in results if item["ok"]),
         "results": results,
     }
+    return report
+
+
+def main(args: argparse.Namespace | None = None) -> None:
+    cli_invocation = args is None
+    if args is None:
+        args = get_args()
+    try:
+        report = run_benchmark(
+            args.config,
+            args.data_root,
+            args.sample_name,
+            args.output_root,
+            dataset_task=args.dataset_task,
+            sample_size=args.sample_size,
+            seed=args.seed,
+            seed_scope=args.seed_scope,
+            local_refinement_strength=args.local_refinement_strength,
+            sr_refinement_preset=args.sr_refinement_preset,
+            evaluate=args.evaluate,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    for item in report["results"]:
+        status = "OK" if item["ok"] else "FAIL"
+        print(f"[{status}] {item['tag']} -> {item.get('run_dir') or item.get('error')}")
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if not report["ok"]:
         raise SystemExit(1)
     if cli_invocation:
-        print("Done:", args.route)
+        print("Done:", report["route"])
 
 
 if __name__ == "__main__":

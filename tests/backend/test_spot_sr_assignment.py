@@ -568,7 +568,7 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
     assert ctx.pm_on_cell.index.tolist() == ["c1", "c2", "c3"]
 
 
-def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed_is_none(
+def test_sr_benchmark_uses_resolved_default_seed_when_override_is_none(
     adapters,
     monkeypatch,
     tmp_path,
@@ -616,11 +616,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
         compatibility_mode=True,
     )
 
-    np.random.seed(731)
-    expected_seed = int(
-        np.random.RandomState(731).randint(0, np.iinfo(np.int32).max)
-    )
     with pytest.raises(StopAfterConfig):
         adapters.ScSvcSrBenchmarkStrategy().prepare_context(ctx)
 
-    assert captured["conf"].sr_assignment_seed == expected_seed
+    assert captured["conf"].sr_assignment_seed == 42

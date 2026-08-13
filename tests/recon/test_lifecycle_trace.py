@@ -167,6 +167,66 @@ def test_success_records_five_owned_terminal_stages(monkeypatch, tmp_path):
         assert stage["error"] is None
 
 
+def test_finalize_persists_outputs_before_evaluate_uses_the_same_mapping(
+    monkeypatch,
+    tmp_path,
+):
+    events = []
+    data = _adata(["c1", "c2"])
+    outputs = {"result": data}
+    strategy = RecordingStrategy(outputs=outputs, ground_truth=data.copy())
+    ctx = _context(tmp_path)
+    ctx.merged_config["io"]["save_outputs"] = True
+
+    monkeypatch.setattr(
+        data,
+        "write_h5ad",
+        lambda _path: events.append(("save", data)),
+    )
+    metrics = types.ModuleType("revise.analysis.metrics")
+
+    def compute_metric(_gt, pred, *_args, **_kwargs):
+        events.append(("evaluate", outputs, pred.obs_names.tolist()))
+        return pd.DataFrame({"g1": [0.0]}, index=["MSE"])
+
+    metrics.compute_metric = compute_metric
+    monkeypatch.setitem(sys.modules, "revise.analysis.metrics", metrics)
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "to_csv",
+        lambda self, _path: None,
+    )
+    monkeypatch.setattr(
+        "revise.recon.pipeline.completed_artifact",
+        lambda name, path: {"name": name, "path": str(path)},
+    )
+
+    _pipeline(strategy, evaluate=True).run(ctx)
+
+    assert events[0] == ("save", data)
+    assert events[1][0] == "evaluate"
+    assert events[1][1] is ctx.svc.artifacts["outputs"]
+    assert ctx.svc.artifacts["outputs"]["result"] is data
+
+
+def test_disabled_evaluation_still_persists_reconstruction(monkeypatch, tmp_path):
+    writes = []
+    data = _adata(["c1"])
+    strategy = RecordingStrategy(outputs={"result": data}, ground_truth=data.copy())
+    ctx = _context(tmp_path)
+    ctx.merged_config["io"]["save_outputs"] = True
+    monkeypatch.setattr(data, "write_h5ad", lambda path: writes.append(Path(path)))
+    monkeypatch.setattr(
+        "revise.recon.pipeline.completed_artifact",
+        lambda name, path: {"name": name, "path": str(path)},
+    )
+
+    _pipeline(strategy, evaluate=False).run(ctx)
+
+    assert writes == [tmp_path / "artifacts" / "result.h5ad"]
+    assert _stage(ctx, "evaluate")["reason"] == "policy_disabled"
+
+
 def test_local_refinement_umbrella_runs_all_five_internal_operations_once(tmp_path):
     strategy = RecordingStrategy()
     ctx = _context(tmp_path)

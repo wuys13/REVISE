@@ -703,7 +703,6 @@ def test_application_sc_routes_require_the_labels_used_by_full_runners(
             runtime={
                 "mode": "application",
                 "task": task,
-                "platform": task,
             },
             columns=COLUMNS,
         )
@@ -719,7 +718,7 @@ def test_sc_svc_custom_columns_are_the_full_runner_contract(tmp_path):
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": "application", "task": "sc_svc", "platform": "sc_svc"},
+        runtime={"mode": "application", "task": "sc_svc"},
         columns={
             **COLUMNS,
             "cell_type_col": "custom_level1",
@@ -763,7 +762,6 @@ def test_sr_preflight_accepts_configured_broad_without_subtype_or_literal_level1
         runtime={
             "mode": mode,
             "task": "sc_svc_sr",
-            "platform": "sc_svc_sr" if mode == "application" else "sim2real",
         },
         columns=columns,
     )
@@ -795,9 +793,6 @@ def test_sr_preflight_rejects_missing_configured_broad_column(tmp_path, mode):
             runtime={
                 "mode": mode,
                 "task": "sc_svc_sr",
-                "platform": (
-                    "sc_svc_sr" if mode == "application" else "sim2real"
-                ),
             },
             columns=columns,
         )

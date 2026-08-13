@@ -25,7 +25,7 @@ System map
                |-- solve_ot
                |-- update_expression
                |-- finalize_svc
-               `-- evaluate_if_needed
+               `-- evaluate
 
 ``REVISEPipeline`` owns configuration, route resolution, input preflight,
 deterministic setup, run/provenance lifecycle, and strategy dispatch. The

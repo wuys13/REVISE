@@ -17,6 +17,7 @@ From the repository root:
      --data-root raw_data/Sim2Real-ST \
      --dataset-task segmentation \
      --sample-name P2CRC/cut_part1 \
+     --evaluate true \
      --output-root output/benchmark
 
 The YAML ``route`` is the only family selector and accepts ``segmentation``,
@@ -44,7 +45,10 @@ typed route:
   strength for sp-SVC and sc-SVC-sr routes;
 - ``--sr-refinement-preset confidence_anchor`` selects the controlled graph
   refinement used by ``batch_effect`` and ``spot_size`` runs, while ``none``
-  disables that refinement.
+  disables that refinement;
+- ``--evaluate true`` (the default) evaluates the reconstructed in-memory
+  ``AnnData`` outputs, while ``--evaluate false`` skips metrics without
+  skipping reconstruction or H5AD output.
 
 Omitting the strength creates no CLI override; route defaults remain
 authoritative. Each result reports minimal ``local_refinement`` evidence with
@@ -71,6 +75,8 @@ compatibility metric table is shaped like:
 The same run directory contains ``provenance.json`` and keyed tables below
 ``metrics/``. Treat a metric CSV as completed evidence only when the run
 manifest records a successful evaluation and completed artifact hash.
+The Python entrypoint ``revise.benchmark.run_benchmark(...)`` executes the same
+YAML family and returns its report without printing or raising a CLI exit.
 
 Run the bounded launcher
 ------------------------

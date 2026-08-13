@@ -20,10 +20,12 @@ def test_strength_builds_the_only_local_refinement_override():
         local_refinement_strength=0.35,
         sr_refinement_preset=None,
         route="segmentation",
+        evaluate=True,
     )
 
     assert cli._build_algorithm_overrides(args) == {
-        "local_refinement": {"strength": 0.35}
+        "local_refinement": {"strength": 0.35},
+        "benchmark": {"evaluate": True},
     }
 
 

@@ -54,6 +54,20 @@ def test_segmentation_evaluation_policy_is_engine_authority():
     }
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_evaluation_policy_reads_the_resolved_benchmark_flag(enabled):
+    from types import SimpleNamespace
+
+    from revise.backend.policies import ModeEvaluationPolicy
+
+    ctx = SimpleNamespace(
+        runtime={"mode": "benchmark"},
+        merged_config={"benchmark": {"evaluate": enabled}},
+    )
+
+    assert ModeEvaluationPolicy().should_evaluate(ctx) is enabled
+
+
 def test_sc_cluster_random_state_preserves_the_legacy_algorithm_value():
     from revise.config.authority import ENGINE_DEFAULTS
 

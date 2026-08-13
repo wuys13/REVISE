@@ -389,13 +389,9 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
 
     def args_for(route):
         return SimpleNamespace(
-            platform="sim2real",
             data_root=str(tmp_path / "data"),
             dataset_task=None,
             sample_name="sample",
-            st_file=None,
-            gt_svc_file=None,
-            sc_ref_file=None,
             output_root=str(tmp_path / "output"),
             sample_size=None,
             config=str(ROOT / "configs" / "benchmark" / f"{route}.yaml"),
@@ -403,6 +399,7 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
             seed_scope="run",
             local_refinement_strength=None,
             sr_refinement_preset=None,
+            evaluate=True,
         )
 
     observed = {}
