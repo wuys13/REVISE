@@ -77,6 +77,91 @@ def _subsample_obs(adata, n_obs: int, seed: int):
     return adata[keep, :].copy(), keep
 
 
+def preprocess_data(
+    route: str,
+    st_adata,
+    sc_ref_adata,
+    real_st_adata,
+    conf,
+    *,
+    sample_size: int | None,
+    sample_seed: int,
+    logger,
+):
+    """Dispatch the existing Benchmark input preparation by route family."""
+    if route in {"segmentation", "bin2cell"}:
+        if sample_size is not None:
+            sampled_st, keep = _subsample_obs(st_adata, int(sample_size), sample_seed)
+            common = pd.Index(keep).intersection(real_st_adata.obs_names)
+            st_adata = sampled_st[common, :].copy()
+            real_st_adata = real_st_adata[common, :].copy()
+
+    elif route in {"batch_effect", "spot_size"}:
+        ensure_all_cells_in_spot(
+            st_adata,
+            logger=logger,
+            real_adata=real_st_adata,
+        )
+        if sample_size is not None:
+            st_adata, _ = _subsample_obs(st_adata, int(sample_size), sample_seed)
+            mapping = st_adata.uns.get("all_cells_in_spot", {})
+            keep_cells: List[str] = []
+            for spot in st_adata.obs_names:
+                keep_cells.extend(mapping.get(str(spot), []))
+            if keep_cells:
+                keep_index = pd.Index(np.asarray(keep_cells, dtype=str))
+                if "cell_id" in real_st_adata.obs:
+                    keep_mask = real_st_adata.obs["cell_id"].astype(str).isin(keep_index)
+                    real_st_adata = real_st_adata[keep_mask.to_numpy(), :].copy()
+                else:
+                    real_index = keep_index.intersection(real_st_adata.obs_names)
+                    real_st_adata = real_st_adata[real_index, :].copy()
+                if isinstance(conf.pm_on_cell, pd.DataFrame):
+                    conf.pm_on_cell = conf.pm_on_cell.loc[
+                        keep_index.intersection(conf.pm_on_cell.index)
+                    ].copy()
+
+    elif route in {"gene_panel", "gene_dropout"}:
+        if sample_size is not None:
+            sampled_st, keep = _subsample_obs(st_adata, int(sample_size), sample_seed)
+            common = pd.Index(keep).intersection(real_st_adata.obs_names)
+            st_adata = sampled_st[common, :].copy()
+            real_st_adata = real_st_adata[common, :].copy()
+            if sc_ref_adata.n_obs > int(sample_size):
+                sc_ref_adata, _ = _subsample_obs(
+                    sc_ref_adata,
+                    int(sample_size),
+                    sample_seed,
+                )
+
+        if conf.cell_type_col in sc_ref_adata.obs:
+            counts = sc_ref_adata.obs[conf.cell_type_col].value_counts()
+            valid_ct = counts[counts >= 2].index
+            sc_ref_adata = sc_ref_adata[
+                sc_ref_adata.obs[conf.cell_type_col].isin(valid_ct), :
+            ].copy()
+
+        if conf.cell_type_col in sc_ref_adata.obs:
+            ct_sizes = sc_ref_adata.obs[conf.cell_type_col].value_counts()
+            min_ct_size = int(ct_sizes.min()) if not ct_sizes.empty else int(sc_ref_adata.n_obs)
+        else:
+            min_ct_size = int(sc_ref_adata.n_obs)
+        conf.rec_graph_n_pcs = min(
+            int(conf.rec_graph_n_pcs),
+            max(1, min_ct_size - 1),
+            max(1, sc_ref_adata.n_vars - 1),
+        )
+        logger.info(
+            "[adapter] impute rec_graph_n_pcs adjusted to %s",
+            conf.rec_graph_n_pcs,
+        )
+
+    else:
+        raise ValueError(f"Unsupported benchmark route: {route}")
+
+    return st_adata, sc_ref_adata, real_st_adata
+
+
 def _input_service(ctx) -> REVISEInputService:
     return REVISEInputService.from_context(ctx)
 
@@ -513,17 +598,16 @@ class SpSvcBenchmarkSegStrategy(RunnerBackedStrategy):
         adata_sc = input_service.read_sc_ref_adata(
             _input_path(ctx, "sc_ref")
         )
-
-        # Optional fast-compare mode: sample benchmark cells while keeping
-        # prediction/ground-truth perfectly aligned on obs index.
-        sample_size = io_cfg.get("sample_size")
-        if sample_size is not None:
-            sampled_st, keep = _subsample_obs(adata_st, int(sample_size), _resolve_sample_seed(ctx))
-            keep_index = pd.Index(keep)
-            common = keep_index.intersection(adata_real.obs_names)
-            # Keep prediction and ground-truth obs perfectly aligned.
-            adata_st = sampled_st[common, :].copy()
-            adata_real = adata_real[common, :].copy()
+        adata_st, adata_sc, adata_real = preprocess_data(
+            str(ctx.runtime["confounding"]),
+            adata_st,
+            adata_sc,
+            adata_real,
+            conf,
+            sample_size=io_cfg.get("sample_size"),
+            sample_seed=_resolve_sample_seed(ctx),
+            logger=ctx.logger,
+        )
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st
@@ -595,30 +679,16 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
         adata_sc = input_service.read_sc_ref_adata(
             _input_path(ctx, "sc_ref")
         )
-        ensure_all_cells_in_spot(adata_st, logger=ctx.logger, real_adata=adata_real)
-
-        sample_size = io_cfg.get("sample_size")
-        if sample_size is not None:
-            # SR benchmark uses spot-level ST and cell-level GT with different
-            # obs spaces; align GT via spot->cell mapping instead of obs names.
-            sampled_st, _ = _subsample_obs(adata_st, int(sample_size), _resolve_sample_seed(ctx))
-            adata_st = sampled_st
-            mapping = adata_st.uns.get("all_cells_in_spot", {})
-            keep_cells: List[str] = []
-            for spot in adata_st.obs_names:
-                keep_cells.extend(mapping.get(str(spot), []))
-            if keep_cells:
-                keep_index = pd.Index(np.asarray(keep_cells, dtype=str))
-                if "cell_id" in adata_real.obs:
-                    keep_mask = adata_real.obs["cell_id"].astype(str).isin(keep_index)
-                    adata_real = adata_real[keep_mask.to_numpy(), :].copy()
-                else:
-                    real_index = keep_index.intersection(adata_real.obs_names)
-                    adata_real = adata_real[real_index, :].copy()
-                if isinstance(conf.pm_on_cell, pd.DataFrame):
-                    conf.pm_on_cell = conf.pm_on_cell.loc[
-                        keep_index.intersection(conf.pm_on_cell.index)
-                    ].copy()
+        adata_st, adata_sc, adata_real = preprocess_data(
+            str(ctx.runtime["confounding"]),
+            adata_st,
+            adata_sc,
+            adata_real,
+            conf,
+            sample_size=io_cfg.get("sample_size"),
+            sample_seed=_resolve_sample_seed(ctx),
+            logger=ctx.logger,
+        )
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st
@@ -691,34 +761,16 @@ class ScSvcImputeBenchmarkStrategy(RunnerBackedStrategy):
         adata_sc = input_service.read_sc_ref_adata(
             _input_path(ctx, "sc_ref")
         )
-
-        sample_size = io_cfg.get("sample_size")
-        if sample_size is not None:
-            sampled_st, keep = _subsample_obs(adata_st, int(sample_size), _resolve_sample_seed(ctx))
-            keep_index = pd.Index(keep)
-            common = keep_index.intersection(adata_real.obs_names)
-            adata_st = sampled_st[common, :].copy()
-            adata_real = adata_real[common, :].copy()
-            # Fast benchmark mode: also bound sc reference size for imputation
-            # routes so uncertainty/subcluster steps stay tractable.
-            if adata_sc.n_obs > int(sample_size):
-                adata_sc, _ = _subsample_obs(adata_sc, int(sample_size), _resolve_sample_seed(ctx))
-
-        if columns["cell_type_col"] in adata_sc.obs:
-            counts = adata_sc.obs[columns["cell_type_col"]].value_counts()
-            valid_ct = counts[counts >= 2].index
-            adata_sc = adata_sc[adata_sc.obs[columns["cell_type_col"]].isin(valid_ct), :].copy()
-
-        # Gene-uncertainty builds per-cell-type PCA graphs; when sampled data
-        # is small, cap n_pcs to avoid sklearn arpack dimension errors.
-        if columns["cell_type_col"] in adata_sc.obs:
-            ct_sizes = adata_sc.obs[columns["cell_type_col"]].value_counts()
-            min_ct_size = int(ct_sizes.min()) if not ct_sizes.empty else int(adata_sc.n_obs)
-        else:
-            min_ct_size = int(adata_sc.n_obs)
-        max_valid_pcs = min(int(conf.rec_graph_n_pcs), max(1, min_ct_size - 1), max(1, adata_sc.n_vars - 1))
-        conf.rec_graph_n_pcs = max_valid_pcs
-        ctx.logger.info("[adapter] impute rec_graph_n_pcs adjusted to %s", conf.rec_graph_n_pcs)
+        adata_st, adata_sc, adata_real = preprocess_data(
+            str(ctx.runtime["confounding"]),
+            adata_st,
+            adata_sc,
+            adata_real,
+            conf,
+            sample_size=io_cfg.get("sample_size"),
+            sample_seed=_resolve_sample_seed(ctx),
+            logger=ctx.logger,
+        )
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st

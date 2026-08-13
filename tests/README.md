@@ -27,6 +27,7 @@ environment variables documented in their modules and CI jobs.
 | `application/test_service.py` | `reconstruct.py` | Readable root flow and success-output contract | Application entrypoint edits | Mocked pipeline boundary |
 | `application/test_templates.py` | Application YAML templates | Official route configuration contracts | Template edits | YAML compilation only |
 | `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
+| `backend/test_benchmark_preprocess.py` | `revise/backend/adapters.py` | Benchmark preprocessing dispatch preserves route-family sampling and alignment | Benchmark preprocessing edits | Synthetic AnnData only |
 | `backend/test_local_refinement_conditioning.py` | `revise/backend/ops/assignment.py`, `posterior_conditioning.py` | Strict global posterior axes and fixed local OT cost conditioning | Assignment/local-refinement edits | Synthetic matrices only |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
 | `backend/test_graph_cluster_spatial_score.py` | `revise/backend/` graph code | Graph aggregation, clustering, and scale smoke | Graph/backend edits | Component scale, not full pipeline |
