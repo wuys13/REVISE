@@ -55,8 +55,9 @@ def test_benchmark_template_inventory_bytes_cardinality_and_imputation_contract(
         "graph_preprocess": True,
         "graph_n_pcs": 50,
     }
-    assert requests["gene_panel"]["algorithm"]["impute"] == expected_impute
-    assert requests["gene_dropout"]["algorithm"]["impute"] == expected_impute
+    assert requests["gene_panel"]["algorithm"] == {}
+    assert requests["gene_dropout"]["algorithm"] == {}
+    assert ENGINE_DEFAULTS["impute"] == expected_impute
 
     assert not any(key.startswith("sr_noise_") for key in ENGINE_DEFAULTS["sc"])
     adapter_source = Path("revise/backend/adapters.py").read_text()
