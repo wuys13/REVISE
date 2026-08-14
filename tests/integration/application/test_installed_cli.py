@@ -33,7 +33,12 @@ def _run(command, *, cwd, env):
     )
 
 
-def _write_inputs(st_path: Path, reference_path: Path) -> None:
+def _write_inputs(
+    st_path: Path,
+    reference_path: Path,
+    *,
+    reference_filter: tuple[str, str] | None = None,
+) -> None:
     st_path.parent.mkdir(parents=True, exist_ok=True)
     reference_path.parent.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(17)
@@ -53,6 +58,9 @@ def _write_inputs(st_path: Path, reference_path: Path) -> None:
         ),
         var=pd.DataFrame(index=st.var_names.copy()),
     )
+    if reference_filter is not None:
+        column, value = reference_filter
+        sc_ref.obs[column] = value
     st.write_h5ad(st_path)
     sc_ref.write_h5ad(reference_path)
 
@@ -317,10 +325,18 @@ def test_installed_xenium_template_requires_tacco_extra_without_fallback(install
     _copy_installed_template(installed_cli, "Xenium_T.yaml", config_path)
     document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     document["local_refinement"]["select_cell_type"] = "A"
+    document["preprocessing"]["spatial"]["min_transcript_counts"] = None
+    document["preprocessing"]["spatial"]["min_cell_counts"] = 0
+    document["preprocessing"]["reference"]["min_transcript_counts"] = None
+    document["preprocessing"]["reference"]["min_cell_counts"] = 0
     config_path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
     _write_inputs(
-        root / "raw_data/Real_application/P1CRC_Xenium.h5ad",
-        root / "raw_data/Real_application/adata_sc_all_reanno.h5ad",
+        root / document["inputs"]["st"]["path"],
+        root / document["inputs"]["reference"]["path"],
+        reference_filter=(
+            document["inputs"]["reference"]["filter_column"],
+            document["inputs"]["reference"]["filter_value"],
+        ),
     )
 
     blocker = root / "dependency-blocker"

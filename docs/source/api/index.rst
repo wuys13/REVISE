@@ -29,7 +29,7 @@ Pipeline
 ~~~~~~~~
 
 Application entry point
-~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autosummary::
     :toctree: generated
@@ -56,16 +56,10 @@ and routing authority; application YAML is the external request surface.
 ``revise.config.runner_conf`` contains internal runner contracts used by
 backend adapters and compatibility notebooks.
 
-.. autosummary::
-    :toctree: generated
-    :nosignatures:
-
-    revise.config.runner_conf.ApplicationSpConf
-    revise.config.runner_conf.ApplicationScConf
-    revise.config.runner_conf.ApplicationScSrConf
-    revise.config.runner_conf.BenchmarkSrConf
-    revise.config.runner_conf.BenchmarkSegConf
-    revise.config.runner_conf.BenchmarkImputeConf
+The internal contracts are ``ApplicationSpConf``, ``ApplicationScConf``,
+``ApplicationScSrConf``, ``BenchmarkSrConf``, ``BenchmarkSegConf``, and
+``BenchmarkImputeConf``. They are implementation details rather than public
+API reference entries.
 
 Analysis
 ~~~~~~~~

@@ -83,7 +83,8 @@ EXPECTED = {
     },
     "VisiumHD.yaml": {
         "svc_type": "sp-SVC",
-        "output_name": "P1CRC_HD_sp-SVC",
+        "output_name": "sp_SVC",
+        "output_dir": "output/sp_SVC_case/P1CRC",
         "ot_method": "pot",
         "st_path": "raw_data/Real_application/P1CRC_HD.h5ad",
         "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
