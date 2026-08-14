@@ -198,26 +198,34 @@ def test_pm_allocation_rejects_missing_active_axes(pm, message):
     assert "cell_type" not in svc_obs
 
 
-def test_pm_allocation_rejects_extra_patient_level_rows():
+def test_pm_contract_subsets_patient_level_rows_to_current_case_cells():
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
     pm = pd.DataFrame(
         [[1.0, 0.0], [0.0, 1.0], [0.2, 0.8]],
         index=["c1", "c2", "unrelated-case-cell"],
         columns=["A", "B"],
     )
-    with pytest.raises(ValueError, match="extra"):
-        _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
+    kernel = _kernel(pm=pm)
+
+    result = kernel.assign_cell_types(svc_obs, _quota())
+
+    pd.testing.assert_frame_equal(kernel.pm_on_cell, pm.loc[["c1", "c2"], ["A", "B"]])
+    assert result.set_index("cell_id")["cell_type"].to_dict() == {"c1": "A", "c2": "B"}
 
 
-def test_pm_allocation_rejects_extra_global_classes():
+def test_pm_contract_subsets_global_classes_to_reference_classes():
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
     pm = pd.DataFrame(
         [[1.0, 0.0, 0.3], [0.0, 1.0, 0.7]],
         index=["c1", "c2"],
         columns=["A", "B", "unrelated-reference-class"],
     )
-    with pytest.raises(ValueError, match="extra"):
-        _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
+    kernel = _kernel(pm=pm)
+
+    result = kernel.assign_cell_types(svc_obs, _quota())
+
+    pd.testing.assert_frame_equal(kernel.pm_on_cell, pm.loc[["c1", "c2"], ["A", "B"]])
+    assert result.set_index("cell_id")["cell_type"].to_dict() == {"c1": "A", "c2": "B"}
 
 
 @pytest.mark.parametrize(

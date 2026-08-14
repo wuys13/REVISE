@@ -126,14 +126,6 @@ class REVISEInputService:
             raise ValueError(f"Invalid {context}; values must be finite")
         if np.any(values < 0.0) or np.any(values > 1.0):
             raise ValueError(f"Invalid {context}; values must be within [0, 1]")
-        if not np.allclose(
-            values.sum(axis=1),
-            1.0,
-            rtol=0.0,
-            atol=1e-6,
-        ):
-            raise ValueError(f"Invalid {context}; each row must sum to 1")
-
         frame.index = normalized_index
         frame.columns = normalized_columns
 

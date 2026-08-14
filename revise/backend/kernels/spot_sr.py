@@ -187,17 +187,15 @@ class SpotSrKernel(BaseKernel):
         pm_on_cell = self.pm_on_cell
         svc_cell_ids = SVC_obs["cell_id"].tolist()
         missing_cells = sorted(set(svc_cell_ids) - set(pm_on_cell.index))
-        extra_cells = sorted(set(pm_on_cell.index) - set(svc_cell_ids))
-        if missing_cells or extra_cells:
+        if missing_cells:
             raise ValueError(
-                "pm_on_cell cell ID set must exactly match active SVC cells; "
-                f"missing={missing_cells[:10]}, extra={extra_cells[:10]}"
+                "pm_on_cell is missing active SVC cell IDs; "
+                f"missing={missing_cells[:10]}"
             )
         missing_types = sorted(set(type_list) - set(pm_on_cell.columns))
-        extra_types = sorted(set(pm_on_cell.columns) - set(type_list))
-        if missing_types or extra_types:
+        if missing_types:
             raise ValueError(
-                "pm_on_cell class set must exactly match active classes; "
-                f"missing={missing_types}, extra={extra_types}"
+                "pm_on_cell is missing active classes; "
+                f"missing={missing_types}"
             )
         return pm_on_cell.loc[svc_cell_ids, type_list]
