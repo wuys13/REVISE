@@ -10,7 +10,6 @@ __all__ = [
     "compute_asw",
     "make_cell_type_mean_baseline",
     "shannon_entropy_from_labels",
-    "ScSVCAnalysisService",
     "SpSVCAnalysisService",
 ]
 
@@ -37,8 +36,8 @@ def __getattr__(name):
         from revise.analysis import biological_metrics
 
         return getattr(biological_metrics, name)
-    if name in {"ScSVCAnalysisService", "SpSVCAnalysisService"}:
-        from revise.analysis.services import ScSVCAnalysisService, SpSVCAnalysisService
+    if name == "SpSVCAnalysisService":
+        from revise.analysis.services import SpSVCAnalysisService
 
-        return {"ScSVCAnalysisService": ScSVCAnalysisService, "SpSVCAnalysisService": SpSVCAnalysisService}[name]
+        return SpSVCAnalysisService
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -57,13 +57,27 @@ tacco = ["tacco==0.5.0"]
 pathway = [
   "gseapy",
   "networkx",
-  "omicverse==1.7.5"
+  "omicverse==1.7.5",
+  "torch-geometric",
+  "torch",
+  "setuptools<81",
+  "transformers<5"
 ]
 cci = [
-  "cellphonedb",
-  "omicverse==1.7.5"
+  "cellphonedb>=5,<6",
+  "omicverse==1.7.5",
+  "torch-geometric",
+  "torch",
+  "setuptools<81",
+  "transformers<5"
 ]
-trajectory = ["omicverse==1.7.5"]
+trajectory = [
+  "omicverse==1.7.5",
+  "torch-geometric",
+  "torch",
+  "setuptools<81",
+  "transformers<5"
+]
 spatialdata = [
   "spatialdata>=0.2"
 ]

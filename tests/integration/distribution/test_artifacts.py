@@ -137,6 +137,12 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
     )
     assert "Version: 0.1.0rc1" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
+    for extra in ("pathway", "cci", "trajectory"):
+        assert f'Requires-Dist: torch-geometric; extra == "{extra}"' in metadata
+        assert f'Requires-Dist: torch; extra == "{extra}"' in metadata
+        assert f'Requires-Dist: setuptools<81; extra == "{extra}"' in metadata
+        assert f'Requires-Dist: transformers<5; extra == "{extra}"' in metadata
+    assert 'Requires-Dist: cellphonedb<6,>=5; extra == "cci"' in metadata
     assert any(name.endswith("/LICENSE") for name in wheel_names)
     assert not any(name.startswith("tests/") for name in wheel_names)
     assert not any(name.startswith("constraints/") for name in wheel_names)

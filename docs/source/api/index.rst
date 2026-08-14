@@ -67,20 +67,44 @@ backend adapters and compatibility notebooks.
     revise.config.runner_conf.BenchmarkSegConf
     revise.config.runner_conf.BenchmarkImputeConf
 
-Analysis Services
-~~~~~~~~~~~~~~~~~
+Analysis
+~~~~~~~~
 
-Analysis services consume the unified ``SVC`` result carrier and provide
-notebook-compatible downstream helpers.
+``SpSVCAnalysisService`` retains the existing clustering-metrics facade for a
+unified ``SVC`` result. The unused exported ``ScSVCAnalysisService`` was
+removed as an unreleased breaking cleanup on the ``0.1.0rc1`` development
+line; sc-SVC notebooks continue to use the backend compatibility runner while
+downstream computation moves to capability modules.
 
 .. autosummary::
     :toctree: generated
     :nosignatures:
 
-    revise.analysis.ScSVCAnalysisService
     revise.analysis.SpSVCAnalysisService
     revise.analysis.compute_metric
     revise.analysis.compute_clustering_metrics
+
+Capability APIs
+~~~~~~~~~~~~~~~
+
+Reusable computation is grouped by capability. Plotting, case selection,
+sampling, and artifact persistence remain in the analysis notebooks.
+
+.. autosummary::
+    :toctree: generated
+    :nosignatures:
+
+    revise.analysis.basic.differential_expression.get_degs
+    revise.analysis.basic.unsupervised.compute_leiden_sweep
+    revise.analysis.basic.spatial_autocorrelation.compute_groupwise_spatial_autocorrelation
+    revise.analysis.basic.gene_set_scoring.read_gmt
+    revise.analysis.basic.gene_set_scoring.score_genes
+    revise.analysis.advanced.enrichment.get_enrichment
+    revise.analysis.advanced.enrichment.get_enrichment_local
+    revise.analysis.advanced.aucell.score_gene_set_aucell
+    revise.analysis.advanced.cell_communication.run_cellphonedb_v5
+    revise.analysis.advanced.cell_communication.normalize_cellphonedb_tables
+    revise.analysis.advanced.trajectory.infer_palantir
 
 Strategy contract and registry
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

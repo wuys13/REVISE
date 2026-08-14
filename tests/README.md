@@ -18,7 +18,17 @@ environment variables documented in their modules and CI jobs.
 
 | Test file | Production owner | Detects / corresponding implementation | When used | Proof boundary |
 | --- | --- | --- | --- | --- |
+| `analysis/test_aucell.py` | `revise/analysis/advanced/aucell.py` | AUCell adapter, lazy dependency, and score-column contract | AUCell edits | Synthetic AnnData and fake provider only |
+| `analysis/test_cell_communication.py` | `revise/analysis/advanced/cell_communication.py` | CellPhoneDB call boundary and consumed result-table axes | CCI edits | Fake provider and small tables only |
 | `analysis/test_cli.py` | `revise/analysis/` | Biological-metrics console entry and delegation | Package/analysis edits | Static entry contract only |
+| `analysis/test_differential_expression.py` | `revise/analysis/basic/differential_expression.py` | DEG computation parity and filtering contract | DEG edits | Patched Scanpy and synthetic AnnData only |
+| `analysis/test_enrichment.py` | `revise/analysis/advanced/enrichment.py`, `bio.py` | Local GSEApy enrichment authority plus online legacy compatibility seam | Enrichment edits | Fake provider only |
+| `analysis/test_gene_set_scoring.py` | `revise/analysis/basic/gene_set_scoring.py` | GMT parsing and Scanpy gene-set scoring contract | Gene-set edits | Temporary GMT and synthetic AnnData only |
+| `analysis/test_public_api.py` | `revise/analysis/`, API docs | sc-SVC service removal and sp-SVC service retention | Analysis API edits | Import and static documentation contract only |
+| `analysis/test_sc_svc_legacy_contract.py` | Legacy sc-SVC runner and `bio.py` | Eager DEG, empty selection, normalization sequence, and monkeypatch behavior | Legacy-compatible analysis edits | Synthetic characterization only |
+| `analysis/test_spatial_autocorrelation.py` | `revise/analysis/basic/spatial_autocorrelation.py` | Groupwise Moran/Geary compute semantics | Spatial-analysis edits | Deterministic small fixture only |
+| `analysis/test_trajectory.py` | `revise/analysis/advanced/trajectory.py` | OmicVerse Palantir call sequence and pseudotime result | Trajectory edits | Fake provider only |
+| `analysis/test_unsupervised.py` | `revise/analysis/basic/unsupervised.py` | sp-SVC preprocessing, Leiden sweep, and metrics delegation | Clustering-analysis edits | Deterministic small fixture only |
 | `application/test_cli_fallback.py` | `reconstruct.py` | Removed Application flags are rejected by the root parser | Application CLI edits | Argument parsing only |
 | `application/test_preflight_selection.py` | `revise/io/` | Reference selection input contracts | Application input edits | Synthetic AnnData only |
 | `application/test_preprocess.py` | `revise/application.preprocess` | Application filtering and route-owned pair preparation | Application preprocessing edits | Synthetic AnnData only |

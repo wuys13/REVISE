@@ -48,8 +48,13 @@ def test_optional_extras_match_supported_domain_boundaries():
     assert extras["tacco"] == ["tacco==0.5.0"]
     assert any(item.lower().startswith("gseapy") for item in extras["pathway"])
     assert any(item.lower().startswith("omicverse") for item in extras["pathway"])
-    assert extras["trajectory"] == ["omicverse==1.7.5"]
-    assert any(item.lower().startswith("cellphonedb") for item in extras["cci"])
+    for extra in ("pathway", "cci", "trajectory"):
+        assert "omicverse==1.7.5" in extras[extra]
+        assert "torch-geometric" in extras[extra]
+        assert "torch" in extras[extra]
+        assert "setuptools<81" in extras[extra]
+        assert "transformers<5" in extras[extra]
+    assert "cellphonedb>=5,<6" in extras["cci"]
     assert extras["spatialdata"] == ["spatialdata>=0.2"]
 
 
@@ -58,7 +63,10 @@ def test_base_import_does_not_import_optional_domain_packages():
 import sys
 import revise
 
-blocked = ('tacco', 'gseapy', 'networkx', 'omicverse', 'scvelo', 'spatialdata')
+blocked = (
+    'tacco', 'gseapy', 'networkx', 'omicverse', 'cellphonedb',
+    'torch_geometric', 'scvelo', 'spatialdata'
+)
 loaded = [name for name in blocked if name in sys.modules]
 assert loaded == [], loaded
 """
