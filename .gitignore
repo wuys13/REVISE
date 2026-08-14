@@ -1,7 +1,8 @@
-# data/logs files
-raw_data/Real_application/*
-raw_data/Sim2Real-ST/*
-raw_data/*.zip
+# Local data and generated results
+/raw_data/
+/output/
+/results/
+/results_unified/
 
 *.tar.gz
 
@@ -12,13 +13,16 @@ CLAUDE.md
 SMI/
 /docs/design/
 /docs/plans/
+/.specs/
 /.codegraph/
+/.ruff_cache/
 /assignment-guidance-collaboration.zip
+/test_application_analysis_notebooks/
+/test_sc/
+/test_sc_SVC_case_T_test0812/
+/reproduce/case/result_text_sc_svc.txt
 
 plot/
-results/
-results_unified/
-output/
 REVISE_Cell.pdf
 SMI/*.h5ad
 .claude/
