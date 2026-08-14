@@ -17,3 +17,12 @@ The presence of a notebook proves only that the workflow is preserved in the
 repository. It does not establish that the current source checkout reran a
 displayed result or biologically validated a downstream pattern. Use the
 current CLI and ``provenance.json`` contract for new runs.
+
+Canonical application-analysis set
+----------------------------------
+
+The maintained application-analysis notebooks are
+``Xenium_sc_SVC_T.ipynb``, ``Xenium_sc_SVC_Fibroblast.ipynb``,
+``Xenium_sc_SVC_Monocyte.ipynb``, and ``VisiumHD_sp_SVC.ipynb`` under
+``reproduce/case/``. ``sc_SVC_sr_case_Visium_mouse_brain.ipynb`` remains a
+separate preserved workflow outside that four-notebook set.

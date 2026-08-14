@@ -59,3 +59,9 @@ Paper notebook compatibility
 Historical notebooks may consume copies with older names. Standard sc-SVC
 publishes the configured ``<output-name>_expr.h5ad``/``<output-name>_spatial.h5ad``
 pair as its current public contract.
+
+The canonical downstream analysis notebooks are
+``Xenium_sc_SVC_T.ipynb``, ``Xenium_sc_SVC_Fibroblast.ipynb``,
+``Xenium_sc_SVC_Monocyte.ipynb``, and ``VisiumHD_sp_SVC.ipynb`` under
+``reproduce/case/``. They document reconstruction-to-analysis handoff but do
+not replace the public reconstruction CLI or its provenance contract.

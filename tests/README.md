@@ -74,6 +74,7 @@ environment variables documented in their modules and CI jobs.
 | `repository/test_documentation_contract.py` | README/docs/package metadata | Public claims match code and tests | Documentation/interface edits | Claim consistency only |
 | `repository/test_entrypoint_boundaries.py` | `reconstruct.py`, `reproduce/benchmark_main.*`, and `revise.benchmark` | The root owns the Application CLI and both frontends meet at the shared engine | Entrypoint or package-boundary changes | Entrypoint/path behavior only |
 | `repository/test_import_side_effects.py` | Package imports and optional analysis imports | Host environment stays unchanged; lazy optional imports | Import/dependency edits | Subprocess import behavior |
+| `repository/test_notebook_content_contract.py` | Canonical application notebooks | Curated narratives, code-source digests, download routes, and retained execution snapshots | Application notebook edits | Static notebook-content contract only |
 | `repository/test_optional_dependencies.py` | `pyproject.toml` extras and optional imports | Missing extras fail with install guidance | Dependency edits | Dependency boundary only |
 | `repository/test_repository_layout.py` | Repository root/package ownership | Removed maintenance surfaces and package-owned utilities | Repository cleanup | File/layout assertions |
 | `repository/test_test_layout.py` | `tests/` | Ownership directories and this exhaustive index | Any test move/addition | Organization only |

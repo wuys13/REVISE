@@ -205,6 +205,11 @@ Paper reproduction notebooks
 Curated application notebooks are under ``reproduce/case/``. Their presence
 does not prove that the current package reran the real datasets.
 
+The canonical application-analysis notebooks are
+``Xenium_sc_SVC_T.ipynb``, ``Xenium_sc_SVC_Fibroblast.ipynb``,
+``Xenium_sc_SVC_Monocyte.ipynb``, and ``VisiumHD_sp_SVC.ipynb``. The Visium
+mouse-brain sc-SVC-sr notebook is preserved separately.
+
 Application utilities
 ---------------------
 
