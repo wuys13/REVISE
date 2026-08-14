@@ -166,7 +166,7 @@ def test_local_enrichment_preserves_provider_failure(monkeypatch):
 
 
 def test_bio_get_enrichment_converts_execution_failure_to_legacy_empty_result(
-    monkeypatch, capsys
+    monkeypatch,
 ):
     def fail(*args, **kwargs):
         try:
@@ -177,15 +177,19 @@ def test_bio_get_enrichment_converts_execution_failure_to_legacy_empty_result(
             ) from exc
 
     monkeypatch.setattr(enrichment, "get_enrichment", fail)
+    messages = []
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *args, **kwargs: messages.append(" ".join(map(str, args))),
+    )
 
     result = bio.get_enrichment(["G1"], "genes.gmt")
 
     assert result.empty
     assert result.columns.tolist() == list(enrichment.ENRICHMENT_RESULT_COLUMNS)
-    assert (
+    assert messages == [
         "Skipping enrichment analysis: RuntimeError: provider unavailable"
-        in capsys.readouterr().out
-    )
+    ]
 
 
 def test_bio_get_enrichment_does_not_hide_missing_dependency(monkeypatch):
