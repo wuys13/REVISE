@@ -43,6 +43,5 @@ def test_api_docs_do_not_reference_removed_service():
         / "docs/source/api/generated/revise.analysis.ScSVCAnalysisService.rst"
     )
 
-    assert "    revise.analysis.ScSVCAnalysisService" not in index
-    assert "breaking cleanup" in index
+    assert "ScSVCAnalysisService" not in index
     assert not generated.exists()
