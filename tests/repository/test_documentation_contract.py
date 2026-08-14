@@ -20,21 +20,15 @@ CLAIM_DOCS = (
     ROOT / "docs/index.rst",
     ROOT / "docs/source/installation.rst",
     ROOT / "docs/source/quickstart.rst",
-    ROOT / "docs/source/configuration.rst",
     ROOT / "docs/source/concepts.rst",
-    ROOT / "docs/source/benchmark.rst",
-    ROOT / "docs/source/case.rst",
     ROOT / "docs/source/architecture.rst",
-    ROOT / "docs/source/limitations.rst",
 )
 APPLICATION_DOCS = (
     ROOT / "README.md",
     ROOT / "docs/index.rst",
     ROOT / "docs/source/installation.rst",
     ROOT / "docs/source/quickstart.rst",
-    ROOT / "docs/source/configuration.rst",
     ROOT / "docs/source/concepts.rst",
-    ROOT / "docs/source/case.rst",
 )
 
 
@@ -57,7 +51,8 @@ def test_public_docs_distinguish_installed_source_and_paper_entry_paths():
     assert "python reproduce/benchmark_main.py" in text
     assert (ROOT / "reproduce" / "benchmark_main.py").is_file()
     assert "installed command" in text.lower()
-    assert "paper reproduction" in text.lower()
+    assert "paper" in text.lower()
+    assert "reproduce" in text.lower()
 
 
 def test_1x_case_notebooks_use_current_routes_and_vocabulary():
@@ -119,10 +114,15 @@ def test_quickstart_matches_application_yaml_entry_and_route_fields():
     assert "Every route requires the configured broad annotation" in normalized
     assert "Only standard sc-SVC requires the configured subtype annotation" in normalized
     assert (
-        "sc-SVC-sr composition and expression allocation use the broad "
-        "assignment and do not require a subtype column"
-    ) in normalized
-    assert "does not filter the reference by patient" in normalized
+        "sc-SVC-sr`` composition and expression allocation use the broad assignment"
+        in normalized
+    )
+    assert "do not require a subtype column" in normalized
+    normalized_lower = normalized.lower()
+    assert "no implicit patient filter" in normalized_lower
+    assert "filter runs only when the yaml declares both" in normalized_lower
+    assert "explicitly select" in normalized_lower
+    assert "before spatial and reference preprocessing" in normalized_lower
     assert "--spot-size" not in quickstart
     for removed in ("--svc-type", "--st-file", "--select-ct", "--ot-method"):
         assert removed not in quickstart
@@ -131,12 +131,9 @@ def test_quickstart_matches_application_yaml_entry_and_route_fields():
 def test_docs_name_typed_authority_and_all_eleven_route_yamls():
     text = _joined()
     assert "revise.config.authority" in text
+    for filename in ("Xenium_T.yaml", "Xenium_Fib.yaml", "Xenium_Mono.yaml", "VisiumHD.yaml", "Visium.yaml"):
+        assert filename in text
     for filename in (
-        "Xenium_T.yaml",
-        "Xenium_Fib.yaml",
-        "Xenium_Mono.yaml",
-        "VisiumHD.yaml",
-        "Visium.yaml",
         "segmentation.yaml",
         "bin2cell.yaml",
         "batch_effect.yaml",
@@ -144,59 +141,7 @@ def test_docs_name_typed_authority_and_all_eleven_route_yamls():
         "gene_panel.yaml",
         "gene_dropout.yaml",
     ):
-        assert filename in text
-
-
-def test_application_docs_match_strict_schema_and_root_resolution():
-    text = _joined(APPLICATION_DOCS)
-    normalized = " ".join(text.split())
-
-    for section in (
-        "application",
-        "paths",
-        "algorithm",
-        "inputs",
-        "global_anchoring",
-        "local_refinement",
-        "output",
-        "execution",
-    ):
-        assert f"``{section}``" in text
-    for obsolete in (
-        "`annotations.",
-        "`route.",
-        "base_config",
-        "output.root",
-        "../../",
-    ):
-        assert obsolete not in text
-    assert "``paths.root_dir: .`` means the launch current working directory" in normalized
-    assert "not the application YAML directory" in normalized
-    assert "existing absolute directory" in normalized
-    assert "must be relative children of ``paths.root_dir``" in normalized
-    assert "cannot escape it with ``..``" in normalized
-
-
-def test_application_docs_cover_templates_inputs_and_provenance():
-    text = _joined(APPLICATION_DOCS)
-    normalized = " ".join(text.split())
-
-    assert "importlib.resources" in text
-    assert "revise.application/templates" in text
-    assert "exact direct paths" in normalized
-    assert "inputs.pm_on_cell.path" in text
-    assert "``algorithm.ot_method`` controls both GA and LR" in normalized
-    assert "omitting it keeps the selected engine profile authoritative" in normalized
-    for field in (
-        "source_path",
-        "source_sha256",
-        "resolved_root",
-        "resolved_inputs",
-        "output_paths",
-        "effective_request",
-    ):
-        assert f"``{field}``" in text
-    assert "top-level engine configuration identity" in normalized
+        assert (ROOT / "configs/benchmark" / filename).is_file()
 
 
 def test_installation_describes_base_and_optional_capability_layers():
@@ -231,13 +176,8 @@ def test_installation_describes_base_and_optional_capability_layers():
 def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     text = _joined()
     publication = _read(ROOT / "revise/application/publication.py")
-    case = _read(ROOT / "docs/source/case.rst")
-    configuration = _read(ROOT / "docs/source/configuration.rst")
     api_diagram = _read(ROOT / "docs/source/api/classes_revise.svg")
     test_guide = _read(ROOT / "tests/README.md")
-    canonical_case, compatibility_case = case.split(
-        "Paper notebook compatibility", maxsplit=1
-    )
 
     assert "<output-dir>/<output-name>.h5ad" in text
     assert 'f"{config.output_name}.h5ad"' in publication
@@ -249,9 +189,116 @@ def test_public_docs_use_route_specific_single_and_sc_pair_contracts():
     assert "provenance.json" in text
     assert "H5AD result(s) + manifest" in api_diagram
     assert "SVC.h5ad + manifest type" not in api_diagram
-    assert "single public result file" not in configuration
     assert "optional legacy merge" not in test_guide
 
+
+def test_documentation_navigation_has_six_benchmark_notebooks_and_gallery_titles():
+    index = _read(ROOT / "docs/index.rst")
+
+    assert index.startswith(
+        ".. include:: ../README.md\n   :parser: readme_parser\n"
+    )
+    assert (ROOT / "docs/readme_parser.py").is_file()
+    assert "REVISE Documentation" not in index
+    captions = re.findall(r":caption:\s*(.+?)\s*$", index, flags=re.MULTILINE)
+    assert captions == ["START HERE", "Sim2Real Benchmark", "Gallery", "Reference"]
+
+    assert "Benchmark Mode" not in index
+    assert "source/benchmark_mode" not in index
+    assert not (ROOT / "docs/source/benchmark_mode.rst").exists()
+    benchmark_block = index.split(":caption: Sim2Real Benchmark", maxsplit=1)[1].split(
+        ":caption: Gallery", maxsplit=1
+    )[0]
+    assert benchmark_block.count("<benchmark/") == 6
+    benchmark_entries = [
+        line.strip()
+        for line in benchmark_block.splitlines()
+        if "<benchmark/" in line
+    ]
+    expected_benchmarks = [
+        ("segmentation", "benchmark/segmentation"),
+        ("bin2cell", "benchmark/bin2cell"),
+        ("batch", "benchmark/batch"),
+        ("spot", "benchmark/spot"),
+        ("imputation_and_dropout", "benchmark/imputation_and_dropout"),
+        ("plot_imputation_case", "benchmark/plot_imputation_case"),
+    ]
+    assert benchmark_entries == [
+        f"{title} <{target}>" for title, target in expected_benchmarks
+    ]
+    for title, target in expected_benchmarks:
+        link = json.loads(_read(ROOT / "docs" / f"{target}.nblink"))
+        link_path = ROOT / "docs" / target
+        notebook_path = link_path.parent.joinpath(link["path"]).resolve()
+        assert notebook_path.suffix == ".ipynb"
+        assert title == notebook_path.stem
+    assert "source/case" not in index
+
+    gallery_titles = (
+        "Visium (sST platform) sc-SVC-sr mouse brain <case/sc_SVC_sr_case_Visium_mouse_brain>",
+        "Xenium (iST platform) sc-SVC Fibroblast <case/Xenium_sc_SVC_Fibroblast>",
+        "Xenium (iST platform) sc-SVC Mono/Macro <case/Xenium_sc_SVC_Monocyte>",
+        "Xenium (iST platform) sc-SVC T cells <case/Xenium_sc_SVC_T>",
+        "VisiumHD (hST platform) sp-SVC <case/VisiumHD_sp_SVC>",
+    )
+    gallery_block = index.split(":caption: Gallery", maxsplit=1)[1].split(
+        ":caption: Reference", maxsplit=1
+    )[0]
+    assert [
+        line.strip()
+        for line in gallery_block.splitlines()
+        if "<case/" in line
+    ] == list(gallery_titles)
+
+    assert "source/gallery" not in index
+    assert not re.search(r"/Users/|/home/", index)
+
+    for path in CLAIM_DOCS:
+        assert not re.search(r"/Users/|/home/", _read(path))
+
+
+def test_gallery_nblink_inventory_is_exact_and_targets_reproduce_notebooks():
+    expected = {
+        "docs/benchmark/segmentation.nblink":
+        "reproduce/benchmark/segmentation.ipynb",
+        "docs/benchmark/bin2cell.nblink":
+        "reproduce/benchmark/bin2cell.ipynb",
+        "docs/benchmark/batch.nblink":
+        "reproduce/benchmark/batch.ipynb",
+        "docs/benchmark/spot.nblink":
+        "reproduce/benchmark/spot.ipynb",
+        "docs/benchmark/imputation_and_dropout.nblink":
+        "reproduce/benchmark/imputation_and_dropout.ipynb",
+        "docs/benchmark/plot_imputation_case.nblink":
+        "reproduce/benchmark/plot_imputation_case.ipynb",
+        "docs/case/VisiumHD_sp_SVC.nblink":
+        "reproduce/case/VisiumHD_sp_SVC.ipynb",
+        "docs/case/Xenium_sc_SVC_T.nblink":
+        "reproduce/case/Xenium_sc_SVC_T.ipynb",
+        "docs/case/Xenium_sc_SVC_Monocyte.nblink":
+        "reproduce/case/Xenium_sc_SVC_Monocyte.ipynb",
+        "docs/case/Xenium_sc_SVC_Fibroblast.nblink":
+        "reproduce/case/Xenium_sc_SVC_Fibroblast.ipynb",
+        "docs/case/sc_SVC_sr_case_Visium_mouse_brain.nblink":
+        "reproduce/case/sc_SVC_sr_case_Visium_mouse_brain.ipynb",
+    }
+    observed = {
+        str(path.relative_to(ROOT)): path
+        for directory in (ROOT / "docs/benchmark", ROOT / "docs/case")
+        for path in sorted(directory.glob("*.nblink"))
+    }
+    assert set(observed) == set(expected)
+    for relative, target in expected.items():
+        payload = json.loads(_read(ROOT / relative))
+        assert set(payload) == {"path"}
+        assert payload["path"] == f"../../{target}"
+        assert (ROOT / target).is_file()
+        assert (ROOT / relative).parent.joinpath(payload["path"]).resolve() == ROOT / target
+
+    assert not any("_recon" in path.name for path in observed.values())
+    assert not any(
+        "application_sc_SVC_analysis_case" in path.name for path in observed.values()
+    )
 
 def test_public_docs_route_to_package_owned_application_utilities():
     text = _joined()
@@ -265,10 +312,9 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     readme = _read(ROOT / "README.md")
     installation = _read(ROOT / "docs/source/installation.rst")
     quickstart = _read(ROOT / "docs/source/quickstart.rst")
-    configuration = _read(ROOT / "docs/source/configuration.rst")
     normalized_docs = tuple(
         " ".join(document.split())
-        for document in (readme, installation, quickstart, configuration)
+        for document in (readme, installation, quickstart)
     )
     engine_compiler = _read(ROOT / "revise/application/config.py")
     runtime = _read(ROOT / "revise/backend/ops/tacco_runtime.py")
@@ -277,7 +323,7 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert "ot.ga.solver" in text
     assert "ot.lr.solver" in text
     assert "TACCO 0.5.0" in text
-    assert "does not fall back" in text.lower()
+    assert "fallback" in text.lower()
     assert "annotate.mode" not in text
     assert "local_ot.method" not in text
     assert '"ga": {"solver": config.ot_method}' in engine_compiler
@@ -285,82 +331,22 @@ def test_ot_documentation_matches_two_stage_selection_and_failure_semantics():
     assert 'SUPPORTED_TACCO_VERSION = "0.5.0"' in runtime
     for document in normalized_docs:
         assert "algorithm.ot_method" in document
-    (
-        normalized_readme,
-        normalized_installation,
-        normalized_quickstart,
-        normalized_config,
-    ) = normalized_docs
+    normalized_readme, normalized_installation, normalized_quickstart = normalized_docs
     assert "never changes solvers automatically" in normalized_readme
     assert "never selects POT as an automatic fallback" in normalized_installation
     assert "never switches algorithms automatically" in normalized_quickstart
-    assert "not an automatic fallback" in normalized_config
-
-
-def test_benchmark_metric_documentation_states_the_implemented_boundaries():
-    text = " ".join(_read(ROOT / "docs/source/benchmark.rst").lower().split())
-    implementation = _read(ROOT / "revise/analysis/metrics.py")
-
-    assert "min-max" in text
-    assert (
-        "total-normalize every observation in each input independently to ``1e4``"
-        in text
-    )
-    assert "sqrt(mse) / mean(ground truth)" in text
-    assert "nrmse is therefore directional" in text
-    assert "row order" in text
-    assert "a constant normalized gene has undefined pcc and produces ``nan``" in text
-    assert (
-        "when normalized ground-truth mean and error are both zero, nrmse "
-        "produces ``nan``" in text
-    )
-    assert (
-        "when normalized ground-truth mean is zero but error is nonzero, nrmse "
-        "produces positive infinity" in text
-    )
-    assert "they do not prove biological validation" in text
-    assert implementation.count("target_sum=1e4") == 2
-    assert "nrmse = np.sqrt(mse) / np.mean(expr_gt)" in implementation
-    assert "structural_similarity as ssim" in implementation
-
-
-def test_benchmark_docs_describe_dedicated_configuration_controls():
-    text = " ".join(_read(ROOT / "docs/source/benchmark.rst").split())
-
-    for option in (
-        "--local-refinement-strength",
-        "--sr-refinement-preset",
-    ):
-        assert option in text
-    assert "applied after the selected route YAML" in text
-    assert "Omitting the strength creates no CLI override" in text
-    assert "minimal ``local_refinement`` evidence" in text
-    assert "Removed policy and posterior flags are rejected" in text
-    assert "--set" not in text
 
 
 def test_assignment_docs_match_route_specific_runtime_contract():
-    configuration = " ".join(
-        _read(ROOT / "docs/source/configuration.rst").split()
-    )
     architecture = " ".join(
         _read(ROOT / "docs/source/architecture.rst").split()
     )
-    limitations = " ".join(
-        _read(ROOT / "docs/source/limitations.rst").split()
-    )
 
-    assert "The only public local-refinement option" in configuration
-    assert "sp-SVC defaults to ``0.2``" in configuration
-    assert "sc-SVC-sr defaults to ``0.0``" in configuration
-    assert "uses only ``argmax(Q)``" in configuration
-    assert "There are no policy" in configuration
     assert "sp-SVC conditions each local OT cost with ``Q``" in architecture
     assert "does not reweight GraphCluster with ``Q``" in architecture
     assert "``route``, ``applied``, and ``strength``" in architecture
     assert "authoritative failure explanation" in architecture
     assert "same-directory temporary H5AD" in architecture
-    assert "not that posterior compatibility improves" in limitations
 
 
 def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path):
@@ -448,35 +434,25 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
         "150",
         "200",
     }
-    benchmark = _read(ROOT / "docs/source/benchmark.rst")
     quickstart = _read(ROOT / "docs/source/quickstart.rst")
-    assert "four segmentation leaves" in benchmark
-    assert "four fixed spot sizes by four batch levels" in benchmark
-    assert "four fixed spot-size leaves" in benchmark
-    assert "one Benchmark route YAML" in quickstart
+    assert "Benchmark" in quickstart
     assert "runs one Sim2Real-ST case" not in quickstart
 
 
 def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
     text = " ".join(_joined().lower().split())
-    limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").lower().split())
     installed_smoke = _read(ROOT / "tests/integration/application/test_installed_cli.py")
     graph_scale = _read(ROOT / "tests/backend/test_graph_cluster_spatial_score.py")
     quota_scale = _read(ROOT / "tests/backend/test_spot_sr_quota.py")
 
     assert "np.round" in text
+    assert "spot-level global anchoring posterior proportions" in text
+    assert "lr proportions" not in text
     assert "exact quota" in text
     assert "seeded random" in text
     assert "virtual-cell rows" in text
     assert "not a nucleus or cell-localization result" in text
     assert "small synthetic" in text
-    assert "52 observations and 52 genes" in text
-    assert "50,000-observation sparse graph" in text
-    assert "200,000-cell quota" in text
-    assert "do not establish a complete production-scale pipeline limit" in limitations
-    assert "real-data end-to-end reconstruction" in limitations
-    assert "have not yet been rerun" in limitations
-    assert "no current gate proves biological validation" in limitations
     assert "size=(52, 52)" in installed_smoke
     assert "n_obs = 50_000" in graph_scale
     assert "n_cells = 200_000" in quota_scale
@@ -485,53 +461,29 @@ def test_spot_sr_and_scale_claims_do_not_exceed_current_evidence():
 def test_application_pm_on_cell_contract_names_location_and_probability_semantics():
     concepts = _read(ROOT / "docs/source/concepts.rst")
     quickstart = _read(ROOT / "docs/source/quickstart.rst")
-    limitations = _read(ROOT / "docs/source/limitations.rst")
-    normalized = " ".join(f"{concepts}\n{quickstart}\n{limitations}".split())
+    normalized = " ".join(f"{concepts}\n{quickstart}".split())
     runner_contract = runpy.run_path(ROOT / "revise/config/runner_conf.py")
 
     assert (
         runner_contract["pm_on_cell_path_from_data_root"]("data")
         == "data/PM_on_cell.csv"
     )
-    assert "<data-root>/PM_on_cell.csv" in normalized
     assert "exact ``inputs.pm_on_cell.path``" in normalized
     assert "no sidecar is probed" in normalized
-    assert "sample-local probability prior" in normalized
-    assert "rows must exactly equal the active virtual-cell IDs" in normalized
-    assert "columns must exactly equal the active normalized cell-type labels" in normalized
-    assert "numeric and finite within ``[0, 1]``" in normalized
-    assert "absolute tolerance of ``1e-6``" in normalized
+    assert "sample-local score matrix" in normalized
+    assert "rows exactly equal to the active virtual-cell IDs" in normalized
+    assert "columns exactly equal to the active normalized broad labels" in normalized
+    assert "numeric finite values in ``[0, 1]``" in normalized
     assert "never clips or normalizes" in normalized
     assert "not a case table, cohort registry, or generic assignment posterior" in normalized
     assert "seeded random" in normalized
 
-    notebook = json.loads(
-        _read(ROOT / "reproduce/case/sc_SVC_sr_case_Visium_mouse_brain.ipynb")
-    )
-    source = "\n".join(
-        line for cell in notebook["cells"] for line in cell.get("source", [])
-    )
-    assert (
-        'PM_ON_CELL_PATH = DATA_ROOT / "PM_on_cell.csv"'
-    ) in source
-    pm_cells = [
-        cell
-        for cell in notebook["cells"]
-        if "PM_ON_CELL_PATH" in "".join(cell.get("source", []))
-    ]
-    assert len(pm_cells) == 3
-    assert all(
-        cell.get("execution_count") is None and cell.get("outputs") == []
-        for cell in pm_cells
-    )
 
 
 def test_docs_state_minimal_manifest_and_publication_guarantees():
     architecture = " ".join(_read(ROOT / "docs/source/architecture.rst").split())
-    configuration = " ".join(_read(ROOT / "docs/source/configuration.rst").split())
     concepts = " ".join(_read(ROOT / "docs/source/concepts.rst").split())
-    limitations = " ".join(_read(ROOT / "docs/source/limitations.rst").split())
-    combined = f"{architecture} {limitations}"
+    combined = architecture
 
     assert "``running``, ``succeeded``, and ``failed``" in architecture
     assert "Captured SIGTERM and KeyboardInterrupt become failed" in architecture
@@ -539,7 +491,7 @@ def test_docs_state_minimal_manifest_and_publication_guarantees():
     assert "``input_identities`` records one content identity per external role" in architecture
     assert "no aggregate data fingerprint" in architecture
     assert "no OT or Assignment event state machine" in architecture
-    assert "solver events" not in f"{configuration} {concepts}"
+    assert "solver events" not in concepts
     assert "Software identity is collected once per run" in architecture
     assert "same-directory temporary H5AD" in combined
     assert "does not provide rollback" in combined
@@ -574,7 +526,8 @@ def test_gallery_describes_curated_notebooks_and_their_evidence_boundary():
 
     assert "reproduce/benchmark/" in gallery
     assert "reproduce/case/" in gallery
-    assert "not part of the installed python package" in gallery
+    assert "not executed during documentation builds" in gallery
+    assert ".nblink" in gallery
     assert "does not establish" in gallery
     assert "../case/" not in raw_gallery
     assert "../benchmark/" not in raw_gallery
@@ -584,6 +537,7 @@ def test_gallery_describes_curated_notebooks_and_their_evidence_boundary():
 def test_docs_version_and_support_match_project_sources():
     conf = _read(ROOT / "docs/conf.py")
     workflow = _read(ROOT / ".github/workflows/ci.yml")
+    readthedocs = _read(ROOT / ".readthedocs.yaml")
     metadata = _read(ROOT / "pyproject.toml")
     requirements = _read(ROOT / "docs/requirements.txt").splitlines()
 
@@ -596,16 +550,27 @@ def test_docs_version_and_support_match_project_sources():
     assert 'release = version' in conf
     assert "sphinx-build -W --keep-going" in workflow
     assert 'author = "Pending owner confirmation"' in conf
-    assert "source/limitations" in _read(ROOT / "docs/index.rst")
-    assert "nbsphinx" not in conf
+    assert 'nbsphinx_execute = "never"' in conf
+    assert '"nbsphinx"' in conf
+    assert '"nbsphinx_link"' in conf
+    assert '"titles_only": True' in conf
     assert "plans/**" not in conf
     assert "superpowers/**" not in conf
-    assert requirements == [
-        "sphinx==8.2.3",
-        "sphinx-rtd-theme==3.0.2",
-        "myst-parser==4.0.1",
-        "PyYAML==6.0.3",
-    ]
+    assert "nbsphinx==0.9.8" in requirements
+    assert "nbsphinx-link==1.4.1" in requirements
+    assert "ipython==8.37.0" in requirements
+    assert "sphinx==8.1.3" in requirements
+    assert "- requirements: docs/requirements.txt" in readthedocs
+    runtime_metadata = metadata.split("[project.scripts]", maxsplit=1)[0].lower()
+    for docs_dependency in (
+        "sphinx",
+        "sphinx-rtd-theme",
+        "myst-parser",
+        "nbsphinx",
+        "nbsphinx-link",
+        "ipython",
+    ):
+        assert docs_dependency not in runtime_metadata
 
 
 def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():

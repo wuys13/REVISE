@@ -1,9 +1,9 @@
 # REVISE
 
 <p align="center">
-  <img src="./logo/REVISE.png" alt="REVISE logo" height="240" />
-  <img src="./logo/Sim2Real-ST.png" alt="Sim2Real-ST logo" height="240" />
-  <img src="./logo/SVC.png" alt="SVC logo" height="240" />
+  <img src="./logo/REVISE.png" alt="REVISE logo" width="30%" />
+  <img src="./logo/Sim2Real-ST.png" alt="Sim2Real-ST logo" width="30%" />
+  <img src="./logo/SVC.png" alt="SVC logo" width="30%" />
 </p>
 
 [![PyPI](https://img.shields.io/pypi/v/revise-svc.svg)](https://pypi.org/project/revise-svc/)
@@ -90,7 +90,7 @@ revise-reconstruct --config configs/application/VisiumHD.yaml
 The three routes publish:
 
 ```text
-output/P1CRC_HD_sp-SVC.h5ad
+output/sp_SVC_case/P1CRC/sp_SVC.h5ad
 output/visium_mouse_brain_revise/REVISEVisiumMouseBrain_sc-SVC-sr.h5ad
 ```
 
@@ -148,10 +148,10 @@ that root and cannot escape it with `..`. Package code in
   index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
   `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
   scale as `obsm["spatial"]`. Missing centers fall back to the spot center. The
-  optional probability prior can be provided with the exact
+  optional score matrix can be provided with the exact
   `inputs.pm_on_cell.path`. Its axes must exactly equal the active virtual-cell
-  IDs and normalized cell types; values must be finite probabilities whose rows
-  sum to one. REVISE reorders exact axes but does not clip or normalize PM.
+  IDs and normalized cell types; values must be finite and within `[0, 1]`.
+  REVISE reorders exact axes but does not clip or normalize PM.
   Without that field, coordinates are retained while cell types are assigned
   to the existing rows by a seeded random permutation of each spot's inferred
   quota.

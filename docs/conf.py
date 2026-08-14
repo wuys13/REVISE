@@ -15,6 +15,8 @@ DOCS_SOURCE = Path(__file__).resolve().parent
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if str(DOCS_SOURCE) not in sys.path:
+    sys.path.insert(0, str(DOCS_SOURCE))
 
 
 # -- Project information -----------------------------------------------------
@@ -36,18 +38,34 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.viewcode",
     "myst_parser",
+    "nbsphinx",
+    "nbsphinx_link",
 ]
+
+# Reproduction notebooks are historical snapshots. Keep documentation builds
+# deterministic and link every notebook page to the current workflow.
+nbsphinx_execute = "never"
+nbsphinx_prolog = r"""
+.. note::
+
+   **Historical static snapshot.** This notebook is preserved for its
+   paper-facing analysis and is not executed during documentation builds. See
+   :doc:`Quick Start </source/quickstart>` for the current workflow and input
+   contract.
+"""
 
 templates_path = ["source/_templates"] if (DOCS_SOURCE / "source" / "_templates").exists() else []
 exclude_patterns: list[str] = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
-    # Ignore stale local copies from the pre-unified API layout. Current
-    # autosummary pages are generated from source/api/index.rst during build.
+    # Ignore stale local copies from the old internal API reference. Current
+    # public autosummary pages are generated from source/api/index.rst.
     "source/api/generated/revise.application.*",
-    "source/api/generated/revise.benchmark.*",
-    "source/api/generated/revise.conf.*",
+    "source/api/generated/revise.analysis.*Service.rst",
+    "source/api/generated/revise.backend.*",
+    "source/api/generated/revise.config.*",
+    "source/api/generated/revise.recon.*",
 ]
 
 autodoc_mock_imports = [
@@ -98,7 +116,7 @@ napoleon_include_private_with_doc = True
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = "sphinx_rtd_theme"
-html_static_path = ["source/_static"] if (DOCS_SOURCE / "source" / "_static").exists() else []
+html_static_path = ["source/_static", "../logo"]
 html_css_files = ["revise.css"]
 html_title = "REVISE documentation"
 
@@ -112,8 +130,8 @@ html_theme_options = {
     "navigation_depth": 4,
     # Keep prev/next at bottom to reduce header movement
     "prev_next_buttons_location": "bottom",
-    # Show only document titles in the sidebar (hides per-page headings)
-    "titles_only": False,
+    # Keep the sidebar focused on runnable pages and notebook entries.
+    "titles_only": True,
 }
 
 

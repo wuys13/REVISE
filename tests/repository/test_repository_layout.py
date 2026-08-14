@@ -85,7 +85,6 @@ def test_public_notebook_indexes_use_only_canonical_application_names():
         ROOT / "reproduce/README.md",
         ROOT / "docs/source/gallery.rst",
         ROOT / "docs/source/quickstart.rst",
-        ROOT / "docs/source/case.rst",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in indexes)
 

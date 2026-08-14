@@ -1,136 +1,96 @@
-API
-===
+Python API
+==========
 
-The stable public Application Python entry point is ``run_application``. It
-accepts the same YAML contract as the CLI. ``REVISEPipeline`` remains the
-engine-level interface; Benchmark callers select one confounding family with
-``cf``. The package-owned router then resolves the profile and strategy.
+Use the workflow-level functions for new code. They preserve the same YAML
+contracts as the command-line entry points and keep route-specific preparation
+inside the package.
 
-Start with :doc:`../quickstart` for runnable examples and :doc:`../architecture`
-for the full lifecycle. This page is the reference surface for classes and
-extension points.
-
-.. figure:: classes_revise.svg
-   :alt: REVISE API architecture
-   :align: center
-
-   Current API architecture.
+Application
+-----------
 
 .. code-block:: python
 
-    from reconstruct import run_application
+   from reconstruct import run_application
 
-    result = run_application("configs/application/VisiumHD.yaml")
+   result = run_application("configs/application/VisiumHD.yaml")
 
-``sp-SVC`` and ``sc-SVC-sr`` return one ``AnnData``. ``sc-SVC`` returns the
-fixed ``(spatial, expression)`` pair, and a dry run returns ``None``.
-
-Pipeline
-~~~~~~~~
-
-Application entry point
-~~~~~~~~~~~~~~~~~~~~~~~
+``run_application(config_path)`` compiles one Application YAML, loads its two
+inputs, runs the explicit preprocessing sequence, reconstructs, publishes, and
+returns the same in-memory ``AnnData`` object(s) that it writes to H5AD; it does
+not reload them from disk. ``sp-SVC`` and ``sc-SVC-sr`` return one ``AnnData``.
+Standard ``sc-SVC`` returns ``(spatial_adata, expression_adata)``.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    reconstruct.run_application
+   reconstruct.run_application
 
-The engine pipeline remains available for Benchmark and advanced integrations:
+Sim2Real Benchmark
+------------------
 
-.. autosummary::
-    :toctree: generated
-    :nosignatures:
+.. code-block:: python
 
-    revise.framework.REVISEPipeline
-    revise.recon.context.PipelineContext
-    revise.recon.pipeline.UnifiedReconstructionPipeline
-    revise.svc.SVC
+   from revise.benchmark import run_benchmark
 
-Configuration
-~~~~~~~~~~~~~
+   report = run_benchmark(
+       "configs/benchmark/segmentation.yaml",
+       "raw_data/Sim2Real-ST",
+       "P2CRC/cut_part1",
+       "output/benchmark",
+       dataset_task="segmentation",
+       evaluate=True,
+   )
 
-``revise.config.authority`` is the package-owned typed engine configuration
-and routing authority; application YAML is the external request surface.
-``revise.config.runner_conf`` contains internal runner contracts used by
-backend adapters and compatibility notebooks.
-
-The internal contracts are ``ApplicationSpConf``, ``ApplicationScConf``,
-``ApplicationScSrConf``, ``BenchmarkSrConf``, ``BenchmarkSegConf``, and
-``BenchmarkImputeConf``. They are implementation details rather than public
-API reference entries.
-
-Analysis
-~~~~~~~~
-
-``SpSVCAnalysisService`` retains the existing clustering-metrics facade for a
-unified ``SVC`` result. The unused exported ``ScSVCAnalysisService`` was
-removed as an unreleased breaking cleanup on the ``0.1.0rc1`` development
-line; sc-SVC notebooks continue to use the backend compatibility runner while
-downstream computation moves to capability modules.
+``run_benchmark`` runs every leaf declared by one of the six Benchmark YAML
+routes and returns a report mapping. Inspect ``report["ok"]``,
+``total_runs``, ``passed_runs``, and each member of ``results``; do not infer
+suite success from one output directory. A route/YAML error fails before the
+report is created, while a leaf execution error is represented in its result.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.analysis.SpSVCAnalysisService
-    revise.analysis.compute_metric
-    revise.analysis.compute_clustering_metrics
+   revise.benchmark.run_benchmark
 
-Capability APIs
-~~~~~~~~~~~~~~~
+Advanced engine objects
+-----------------------
 
-Reusable computation is grouped by capability. Plotting, case selection,
-sampling, and artifact persistence remain in the analysis notebooks.
+``REVISEPipeline`` is the shared engine interface used by both workflow
+functions. It resolves one Application ``svc_type`` or Benchmark ``cf`` and
+returns the canonical ``SVC`` carrier. Direct callers are responsible for the
+correct route-specific IO and algorithm overrides; this is not a replacement
+for the simpler Application YAML interface.
 
-.. autosummary::
-    :toctree: generated
-    :nosignatures:
-
-    revise.analysis.basic.differential_expression.get_degs
-    revise.analysis.basic.unsupervised.compute_leiden_sweep
-    revise.analysis.basic.spatial_autocorrelation.compute_groupwise_spatial_autocorrelation
-    revise.analysis.basic.gene_set_scoring.read_gmt
-    revise.analysis.basic.gene_set_scoring.score_genes
-    revise.analysis.advanced.enrichment.get_enrichment
-    revise.analysis.advanced.enrichment.get_enrichment_local
-    revise.analysis.advanced.aucell.score_gene_set_aucell
-    revise.analysis.advanced.cell_communication.run_cellphonedb_v5
-    revise.analysis.advanced.cell_communication.normalize_cellphonedb_tables
-    revise.analysis.advanced.trajectory.infer_palantir
-
-Strategy contract and registry
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-These classes are the extension points used by the unified backend.
+``SVC`` holds the expression/spatial carriers, assignment information,
+provenance, quality metrics, and named artifacts produced inside the unified
+engine.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.backend.registry.StrategyRegistry
-    revise.backend.contracts.LocalRefinementStrategy
+   revise.framework.REVISEPipeline
+   revise.svc.SVC
 
-Backend Compatibility Runners
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Metrics
+-------
 
-These classes are kept for notebooks, parity checks, and low-level debugging.
-New Application code should import ``run_application`` from ``reconstruct``.
-Benchmark and low-level integration code may use ``REVISEPipeline`` or the
-benchmark entrypoint.
-Direct sp-SVC and sc-SVC-sr runner callers receive the resolved
-``local_refinement_strength`` value. Standard sc-SVC and imputation callers do
-not provide it. Assignment ``Q`` is validated at the global-assignment boundary
-and is not synthesized or repaired inside a runner.
+``compute_metric`` produces the Benchmark-compatible per-gene ``PCC``,
+``SSIM``, ``MSE``, and ``NRMSE`` table. The caller must align observations;
+the function aligns genes but does not join cells by identifier.
+``compute_clustering_metrics`` returns ``(ARI, NMI)`` from two columns in
+``adata.obs``.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.backend.runners.sp_svc_application.SpSVC
-    revise.backend.runners.sc_svc_application.ScSVC
-    revise.backend.runners.sc_svc_sr_application.ScSVCSr
-    revise.backend.runners.sp_svc_benchmark.SpSVC
-    revise.backend.runners.sc_svc_sr_benchmark.ScSVCSr
-    revise.backend.runners.sc_svc_impute_benchmark.ScSVCImpute
+   revise.analysis.compute_metric
+   revise.analysis.compute_clustering_metrics
+
+Internal runner configuration dataclasses, backend runner classes, pipeline
+contexts, and compatibility output switches are implementation surfaces. They
+remain importable where required by repository notebooks and tests, but they
+are not recommended entry points for new users.

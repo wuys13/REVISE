@@ -903,7 +903,7 @@ def test_active_docs_do_not_advertise_ot_solver_plugins_or_route_markers():
     repo_root = Path(__file__).parents[2]
     active_sources = [
         repo_root / "docs" / "source" / "architecture.rst",
-        repo_root / "docs" / "source" / "configuration.rst",
+        repo_root / "docs" / "source" / "quickstart.rst",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in active_sources)
 

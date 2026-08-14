@@ -1,78 +1,42 @@
-REVISE Documentation
-====================
-
-REVISE reconstructs Spatially-inferred Virtual Cells (SVCs) from spatial
-transcriptomics data and a matched single-cell reference. It provides two
-public workflows: Sim2Real-ST benchmark reproduction and SVC reconstruction
-for real-data applications.
-
-The paper data and reproduced results are published at
-``https://zenodo.org/records/17705737``. Curated notebooks are tracked under
-``reproduce/``; installation does not download research data.
-
-Start here
-----------
-
-- :doc:`source/installation` describes the base package and optional analysis
-  capabilities.
-- :doc:`source/quickstart` shows the Benchmark and Application entry points.
-- :doc:`source/concepts` defines sp-SVC, sc-SVC, inputs, and evidence limits.
-- :doc:`source/configuration` documents detailed runtime and OT configuration.
-- :doc:`source/benchmark` records the implemented metric formulas and their
-  proof limits.
-- :doc:`source/limitations` states the current data, scale, and scientific
-  evidence boundaries.
-
-Public result contract
-----------------------
-
-sp-SVC and sc-SVC-sr publish:
-
-.. code-block:: text
-
-   <output-dir>/<output-name>.h5ad
-
-Standard sc-SVC publishes its paired carriers:
-
-.. code-block:: text
-
-   <output-dir>/<output-name>_spatial.h5ad
-   <output-dir>/<output-name>_expr.h5ad
-
-Each result links to the run's ``provenance.json``. The manifest records the
-logical output name and role together with the application request, internal
-route, engine configuration, stages, inputs, and artifacts.
+.. include:: ../README.md
+   :parser: readme_parser
 
 .. toctree::
-   :caption: Start Here
+   :caption: START HERE
    :maxdepth: 2
    :hidden:
 
    source/concepts
    source/quickstart
    source/installation
-   source/limitations
 
 .. toctree::
-   :caption: Run REVISE
-   :maxdepth: 2
+   :caption: Sim2Real Benchmark
+   :maxdepth: 1
    :hidden:
 
-   Reconstruction routes <source/case>
-   Benchmark reproduction <source/benchmark>
-   source/configuration
+   segmentation <benchmark/segmentation>
+   bin2cell <benchmark/bin2cell>
+   batch <benchmark/batch>
+   spot <benchmark/spot>
+   imputation_and_dropout <benchmark/imputation_and_dropout>
+   plot_imputation_case <benchmark/plot_imputation_case>
 
 .. toctree::
-   :caption: Reproduction
-   :maxdepth: 2
+   :caption: Gallery
+   :maxdepth: 1
    :hidden:
 
-   Curated notebooks <source/gallery>
+   Visium (sST platform) sc-SVC-sr mouse brain <case/sc_SVC_sr_case_Visium_mouse_brain>
+   Xenium (iST platform) sc-SVC Fibroblast <case/Xenium_sc_SVC_Fibroblast>
+   Xenium (iST platform) sc-SVC Mono/Macro <case/Xenium_sc_SVC_Monocyte>
+   Xenium (iST platform) sc-SVC T cells <case/Xenium_sc_SVC_T>
+   VisiumHD (hST platform) sp-SVC <case/VisiumHD_sp_SVC>
 
 .. toctree::
    :caption: Reference
    :maxdepth: 2
    :hidden:
 
-   source/architecture
-   source/api/index
+   Architecture <source/architecture>
+   Python API <source/api/index>

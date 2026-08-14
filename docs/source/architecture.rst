@@ -1,144 +1,148 @@
 Architecture
 ============
 
-REVISE has one public orchestration API and one fixed reconstruction lifecycle.
-Profiles and the router select one reconstruction strategy; the configuration
-selects OT solvers for GA and LR.
+REVISE is unified at the reconstruction engine and bottom-level optimal
+transport implementation. Application and Benchmark keep separate,
+task-appropriate request and preprocessing layers; both converge on the same
+``REVISEPipeline`` and fixed reconstruction lifecycle.
 
-System map
-----------
+User-facing flow
+----------------
 
 .. code-block:: text
 
-   reconstruct.py / revise-reconstruct
-       `-- reconstruct.run_application
-           `-- REVISEPipeline.run(svc_type=..., cf=None)
-           |-- load and validate merged configuration
-           |-- receive preloaded Application AnnData inputs
-           |-- create canonical run envelope
-           `-- UnifiedReconstructionPipeline
-               |-- validate_inputs
-               |-- global_anchoring
-               |-- prepare_local_units
-               |-- build_graph
-               |-- build_ot_problem
-               |-- solve_ot
-               |-- update_expression
-               |-- finalize_svc
-               `-- evaluate
+   Application YAML
+       -> reconstruct.run_application
+       -> load -> filter -> preprocess -> reconstruct -> publish
+                              |
+                              v
+                         REVISEPipeline
+                              ^
+                              |
+   Benchmark YAML + CLI
+       -> revise.benchmark.run_benchmark
+       -> expand route cases -> route-specific preparation
 
-``REVISEPipeline`` owns configuration, route resolution, input preflight,
-deterministic setup, run/provenance lifecycle, and strategy dispatch. The
-unified pipeline owns stage order. Strategies change stage internals without
-creating a second lifecycle.
+                         REVISEPipeline
+                              |
+                              v
+                UnifiedReconstructionPipeline
+       validate -> Global Anchoring -> Local Refinement -> finalize
+                                                    -> evaluate (Benchmark only)
+                              |
+                              v
+                 route strategy -> shared OTKernel
 
-``reconstruct.py`` owns the public argument parser, YAML compilation, and the
-visible load/preprocess/reconstruct orchestration. The package
-``revise.application.config`` compiles the validated Application request into
-engine configuration, while ``revise.application.publication`` owns H5AD
-publication. Application and Benchmark meet at ``REVISEPipeline.run``; the
-engine router resolves the profile/task/strategy for the selector supplied by
-each frontend.
+For new Application data, ``reconstruct.py`` deliberately keeps preprocessing
+visible. It compiles the YAML, loads spatial and reference ``AnnData``, applies
+an explicit reference filter when requested, preprocesses both inputs, prepares
+the standard ``sc-SVC`` pair or normalizes reference labels, and only then
+calls the shared engine. Benchmark preprocessing remains route-specific
+because its six confounding families have different case layouts and
+ground-truth roles.
 
-Configuration and routing
--------------------------
+Routing and lifecycle
+---------------------
 
-``revise.config.authority`` contains:
+``revise.config.authority`` owns engine defaults and the typed route mapping.
+Application selects one ``application.svc_type``; Benchmark selects one YAML
+``route``. The frontends translate only their validated request into runtime,
+IO, and algorithm values. Users do not pass the internal engine authority as a
+run configuration.
 
-- ``ENGINE_DEFAULTS`` for runtime, IO, columns, preprocessing, graph, OT, and route
-  behavior;
-- typed ``ROUTES`` mappings from Application SVC type or Benchmark confounding
-  selector to its profile metadata, strategy, and overrides;
-- ``LOCKED_KEYS`` for governed low-level values.
+``REVISEPipeline.run`` resolves the route, merges package defaults and the
+validated frontend values, creates the run directory and manifest, sets the
+run seed, and dispatches one strategy. ``UnifiedReconstructionPipeline`` then
+keeps the stage order fixed:
 
-GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
-preserve the same two-stage selection even when a legacy runner has a different
-internal call shape.
+1. validate inputs;
+2. Global Anchoring;
+3. Local Refinement: prepare local units, build the graph and OT problem,
+   solve OT, and update expression;
+4. finalize the ``SVC``;
+5. evaluate when an enabled Benchmark request has aligned ground truth.
 
-Application and Benchmark keep separate request/case preparation. They meet at
-one engine execution Seam: Application supplies ``svc_type`` and no ``cf``;
-Benchmark supplies ``cf`` and no ``svc_type``. If both are supplied,
-``svc_type`` wins with a warning. Application provenance records
-``application_route`` and never records Benchmark ``confounding`` semantics.
+Strategies may implement the work inside a stage differently for
+``sp-SVC``, ``sc-SVC``, ``sc-SVC-sr``, and the six Benchmark families. They do
+not create a second lifecycle.
 
-Assignment boundary
--------------------
+One OT implementation
+---------------------
 
-Global anchoring produces one validated posterior ``Q`` and its ``argmax(Q)``
-labels. Downstream ownership is explicit per route:
+POT and TACCO share ``revise.backend.kernels.ot.OTKernel`` as the bottom-level
+facade:
+
+.. code-block:: text
+
+   Global Anchoring
+       GlobalAnchoringKernel -> OTKernel.annotate -> POT or TACCO
+
+   Local Refinement
+       standard sc-SVC: LocalAnchoringKernel -> OTKernel.annotate
+       other local routes: route runner -> OTKernel.couple
+                                      -> POT or TACCO
+
+The Local Refinement stage does not construct or call a
+``GlobalAnchoringKernel``. Standard ``sc-SVC`` may use its distinct
+``LocalAnchoringKernel`` for local subtype annotation; the other local routes
+use the shared coupling operation directly.
+
+An Application ``algorithm.ot_method`` sets both ``ot.ga.solver`` and
+``ot.lr.solver``. The selected implementation must be installed and satisfy
+its contract. TACCO and POT are never substituted for one another on failure.
+
+Assignment ownership
+--------------------
+
+Global Anchoring produces a validated posterior ``Q`` and ``argmax(Q)`` broad
+labels. Each route owns how that result enters Local Refinement:
 
 - sp-SVC conditions each local OT cost with ``Q``;
-- sc-SVC-sr projects spot-level ``Q`` to virtual cells, then conditions local
-  OT cost;
-- standard sc-SVC uses only ``argmax(Q)`` to split broad cohorts and does not
+- sc-SVC-sr first projects spot-level ``Q`` to virtual cells, then conditions
+  the local OT cost;
+- standard sc-SVC uses only ``argmax(Q)`` to choose broad cohorts and does not
   reweight GraphCluster with ``Q``;
-- imputation does not expose assignment-based local refinement.
+- gene-panel and gene-dropout imputation do not expose assignment-conditioned
+  Local Refinement.
 
-There is no optional policy or fallback state machine. ``Q`` must already have
-the expected observation/category axes, finite non-negative values, and
-positive row mass. sc-SVC-sr composition and closed-form expression allocation
-remain mandatory algorithm steps independent of local OT conditioning.
+There is no user-selectable fallback or policy state machine around this
+boundary. TACCO and POT share one Global Assignment contract: a wholly-NaN
+posterior row is published as ``Unknown`` with NaN confidence, while every
+assigned row must satisfy the required axes, finite numeric values and argmax
+label. Consumers that numerically condition on ``Q`` require a complete finite
+posterior; routes that use only labels may retain the unassigned observation.
 
-Run evidence
-------------
+Results and publication
+-----------------------
 
-A full run allocates a unique canonical directory beneath the route-specific
-output tree. It contains at least the merged configuration, logs, and
-``provenance.json``; successful stages may add hashed artifacts and benchmark
-metric tables. The exact directory leaf is unique and should be discovered
-through the public result link or manifest rather than reconstructed from a
-hard-coded timestamp pattern.
+The engine returns a canonical ``SVC`` carrier containing expression/spatial
+objects, assignment information, artifacts, metrics, and provenance. The
+Application publication callback exposes only the route's promised objects:
 
-The canonical CLI publishes stable-facing application results. sp-SVC and
-sc-SVC-sr use:
+- ``sp-SVC`` and ``sc-SVC-sr`` publish one H5AD and return one ``AnnData``;
+- standard ``sc-SVC`` publishes and returns the fixed ``(spatial,
+  expression)`` pair.
 
-.. code-block:: text
+The entry point writes same-directory temporary H5AD files before replacing
+the public targets. Paired outputs are not reader-atomic or crash-atomic, and
+replacement does not provide rollback. The caller must guarantee one writer
+per stable public target; violating that precondition is undefined.
 
-   <output-dir>/<output-name>.h5ad
+Run evidence and failure
+------------------------
 
-Standard sc-SVC publishes ``<output-name>_spatial.h5ad`` and
-``<output-name>_expr.h5ad`` in the configured output directory. The manifest records each public result role
-and the internal route separately. Strategy artifacts remain in the canonical
-run but are not additional public output contracts.
-
-For both the single-file and paired 1.x outputs, the entrypoint writes all
-same-directory temporary H5AD files before replacing public targets. The pair
-is not reader-atomic or crash-atomic, and replacement does not provide rollback
-after a process failure. The caller must guarantee one writer per stable public
-target; violating that precondition is undefined.
-
-``provenance.json.local_refinement`` is the minimal route-level evidence:
-``route``, ``applied``, and ``strength``. For standard sc-SVC and imputation,
-``strength`` is ``null`` because those routes do not accept the option.
-``sr_allocation`` remains adjacent durable evidence for mandatory SR
-allocation.
-
-Failure model
--------------
-
-Run status is limited to ``running``, ``succeeded``, and ``failed``. Captured
-SIGTERM and KeyboardInterrupt become failed with their error evidence, as do
-captured stage exceptions; later stages are skipped because of upstream
-failure. Dry-run marks non-validation stages skipped. An uncatchable
-termination leaves the last manifest running, which is evidence that the run
-did not complete—not permission to infer success.
+Every canonical run writes ``merged_config.json`` and ``provenance.json``.
+The manifest status is one of ``running``, ``succeeded``, and ``failed``.
+Captured SIGTERM and KeyboardInterrupt become failed with error evidence;
+ordinary stage exceptions are recorded and re-raised. An uncatchable
+termination leaves the last manifest running, which is incomplete evidence,
+not success.
 
 ``input_identities`` records one content identity per external role; there is
 no aggregate data fingerprint. Software identity is collected once per run.
-The manifest retains the resolved ``ot_config`` and minimal
-``local_refinement`` evidence, but has no OT or Assignment event state machine.
+The manifest keeps resolved OT configuration and minimal Local Refinement
+evidence: ``route``, ``applied``, and ``strength``. It has no OT or Assignment
+event state machine. A stage error in the manifest is the authoritative
+failure explanation.
 
-The ``local_refinement.applied`` flag changes to true only after at least one
-route-owned local refinement unit completes successfully. It is independent of
-posterior conditioning and its strength: a completed local OT refinement with
-strength zero is still applied. Failure and interruption continue through the
-normal stage error path; stage/run errors remain the authoritative failure
-explanation.
-
-Extension boundary
-------------------
-
-Add a new route by extending the existing profile, router, and strategy registry and
-their focused tests. Do not create another orchestration entrypoint or output
-alias layer. Candidate evidence is intentionally limited to tested routes and
-scales; see :doc:`limitations`.
+For public fields and signatures, see :doc:`api/index`.
