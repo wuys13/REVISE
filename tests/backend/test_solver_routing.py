@@ -6,6 +6,7 @@ import importlib.metadata
 import logging
 import sys
 import types
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -177,6 +178,72 @@ def test_local_empty_support_returns_zero_coupling():
     np.testing.assert_array_equal(coupling, np.zeros((2, 2)))
 
 
+def test_local_tacco_numerical_warning_continues_to_marginal_validation(
+    monkeypatch,
+):
+    module = _fake_tacco(monkeypatch)
+
+    def solve(*_args, **_kwargs):
+        warnings.warn("Numerical errors at iteration 836")
+        return np.array([[0.5, 0.0], [0.0, 0.5]])
+
+    module.utils.solve_OT = solve
+
+    with pytest.warns(UserWarning, match="Numerical errors at iteration 836"):
+        coupling = OTKernel.couple(
+            [0.5, 0.5],
+            [0.5, 0.5],
+            [[0.0, 1.0], [1.0, 0.0]],
+            method="tacco",
+        )
+
+    np.testing.assert_allclose(coupling, [[0.5, 0.0], [0.0, 0.5]])
+
+
+def test_local_tacco_runtime_warning_continues_to_marginal_validation(
+    monkeypatch,
+):
+    module = _fake_tacco(monkeypatch)
+
+    def solve(*_args, **_kwargs):
+        warnings.warn("overflow encountered in divide", RuntimeWarning)
+        return np.array([[0.5, 0.0], [0.0, 0.5]])
+
+    module.utils.solve_OT = solve
+
+    with pytest.warns(RuntimeWarning, match="overflow encountered in divide"):
+        coupling = OTKernel.couple(
+            [0.5, 0.5],
+            [0.5, 0.5],
+            [[0.0, 1.0], [1.0, 0.0]],
+            method="tacco",
+        )
+
+    np.testing.assert_allclose(coupling, [[0.5, 0.0], [0.0, 0.5]])
+
+
+def test_local_tacco_raw_coupling_bypasses_marginal_validation(
+    monkeypatch,
+):
+    module = _fake_tacco(monkeypatch)
+
+    def solve(*_args, **_kwargs):
+        warnings.warn("Numerical errors at iteration 836")
+        return np.array([[0.5, 0.0], [0.0, 0.0]])
+
+    module.utils.solve_OT = solve
+
+    with pytest.warns(UserWarning, match="Numerical errors at iteration 836"):
+        coupling = OTKernel.couple(
+            [0.5, 0.5],
+            [0.5, 0.5],
+            [[0.0, 1.0], [1.0, 0.0]],
+            method="tacco",
+        )
+
+    np.testing.assert_allclose(coupling, [[0.5, 0.0], [0.0, 0.0]])
+
+
 def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
     apply_graph_aggregation = _load_runner_method(
         "revise/backend/runners/sc_svc_sr_benchmark.py",
@@ -202,9 +269,10 @@ def test_sr_benchmark_singleton_short_circuits_before_assignment_validation():
 def test_sp_benchmark_validates_ga_before_insufficient_units_short_circuit():
     assignment_loaded = {"value": False}
 
-    def load_assignment(_adata, *, key, expected_categories):
+    def load_assignment(_adata, *, key, expected_categories, unknown_key):
         assert key == "major_type"
         assert expected_categories.equals(pd.Index(["A"]))
+        assert unknown_key == "Unknown"
         assignment_loaded["value"] = True
 
     local_refinement = _load_runner_method(
@@ -235,6 +303,7 @@ def test_sp_benchmark_validates_ga_before_insufficient_units_short_circuit():
         ),
         config=SimpleNamespace(
             cell_type_col="major_type",
+            unknown_key="Unknown",
             local_refinement_strength=0.2,
         ),
         logger=SimpleNamespace(
@@ -491,6 +560,12 @@ def test_refinement_callback_is_independent_of_strength(
 
     assert hasattr(ctx.runner_config, "local_refinement_applied_callback") is callback_expected
     assert ctx.local_refinement_record["applied"] is False
+
+
+def test_unknown_nan_contract_is_not_routed_by_strategy():
+    from revise.backend.adapters import RunnerBackedStrategy
+
+    assert not hasattr(RunnerBackedStrategy, "_allow_all_nan_unknown")
 
 
 def test_ci_has_mandatory_exact_tacco_smoke_job():

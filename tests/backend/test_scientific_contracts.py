@@ -248,6 +248,132 @@ def test_global_assignment_validator_does_not_mutate_inputs_or_share_outputs():
     pd.testing.assert_frame_equal(posterior, original_posterior)
 
 
+def test_global_assignment_preserves_all_nan_rows_as_unknown():
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        [[0.75, 0.25], [np.nan, np.nan]],
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = pd.Series(
+        pd.Categorical(["A", np.nan], categories=["A", "B"]),
+        index=posterior.index,
+    )
+    original_labels = labels.copy(deep=True)
+    original_posterior = posterior.copy(deep=True)
+
+    validated = assignment.validate_global_assignment(
+        _global_assignment(labels, posterior),
+        expected_observations=posterior.index,
+        expected_categories=posterior.columns,
+        unknown_key="Unknown",
+    )
+
+    assert validated.labels.dtype == object
+    assert validated.labels.tolist() == ["A", "Unknown"]
+    pd.testing.assert_frame_equal(validated.posterior, posterior)
+    pd.testing.assert_series_equal(labels, original_labels)
+    pd.testing.assert_frame_equal(posterior, original_posterior)
+    assert validated.posterior is not posterior
+    assert validated.labels is not labels
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ([[0.75, 0.25], [np.nan, 0.0]], "finite"),
+        ([[0.75, 0.25], [np.inf, np.inf]], "finite"),
+        ([[0.75, 0.25], [-0.1, 1.1]], "non-negative"),
+        ([[0.75, 0.25], [0.0, 0.0]], "positive mass"),
+    ],
+)
+def test_global_assignment_rejects_non_wholly_nan_invalid_rows(
+    values,
+    message,
+):
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        values,
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = pd.Series(["A", "A"], index=posterior.index, dtype=object)
+
+    with pytest.raises(assignment.GlobalAssignmentContractError, match=message):
+        assignment.validate_global_assignment(
+            _global_assignment(labels, posterior),
+            expected_observations=posterior.index,
+            expected_categories=posterior.columns,
+            unknown_key="Unknown",
+        )
+
+
+def test_global_assignment_keeps_finite_row_argmax_strict():
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        [[0.75, 0.25], [np.nan, np.nan]],
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = pd.Series(["B", np.nan], index=posterior.index, dtype=object)
+
+    with pytest.raises(assignment.GlobalAssignmentContractError, match="argmax"):
+        assignment.validate_global_assignment(
+            _global_assignment(labels, posterior),
+            expected_observations=posterior.index,
+            expected_categories=posterior.columns,
+            unknown_key="Unknown",
+        )
+
+
+def test_global_assignment_rejects_assigned_label_for_all_nan_row():
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        [[0.75, 0.25], [np.nan, np.nan]],
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = pd.Series(["A", "B"], index=posterior.index, dtype=object)
+
+    with pytest.raises(
+        assignment.GlobalAssignmentContractError,
+        match="null or unknown",
+    ):
+        assignment.validate_global_assignment(
+            _global_assignment(labels, posterior),
+            expected_observations=posterior.index,
+            expected_categories=posterior.columns,
+            unknown_key="Unknown",
+        )
+
+
+def test_global_assignment_complete_consumer_rejects_unassigned_row():
+    from revise.backend.ops import assignment
+
+    posterior = pd.DataFrame(
+        [[0.75, 0.25], [np.nan, np.nan]],
+        index=["spot-1", "spot-2"],
+        columns=["A", "B"],
+    )
+    labels = pd.Series(["A", "Unknown"], index=posterior.index, dtype=object)
+
+    with pytest.raises(
+        assignment.GlobalAssignmentContractError,
+        match="finite for this consumer",
+    ):
+        assignment.validate_global_assignment(
+            _global_assignment(labels, posterior),
+            expected_observations=posterior.index,
+            expected_categories=posterior.columns,
+            unknown_key="Unknown",
+            require_complete_posterior=True,
+        )
+
+
 def _load_functions(relative_path, names, namespace):
     path = REPO_ROOT / relative_path
     tree = ast.parse(path.read_text())
@@ -480,6 +606,24 @@ def test_reference_allocation_rejects_ambiguous_category_axes(
         posterior_reference_allocation(np.array([[5.0]]), posterior, reference)
 
     assert message in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("posterior", "message"),
+    [
+        (pd.DataFrame([[np.nan, np.nan]], columns=["A", "B"]), "finite"),
+        (pd.DataFrame([[-0.1, 1.1]], columns=["A", "B"]), "non-negative"),
+        (pd.DataFrame([[0.0, 0.0]], columns=["A", "B"]), "positive mass"),
+    ],
+)
+def test_reference_allocation_rejects_invalid_numeric_posterior(
+    posterior,
+    message,
+):
+    reference = pd.DataFrame([[1.0], [2.0]], index=["A", "B"])
+
+    with pytest.raises(ValueError, match=message):
+        posterior_reference_allocation(np.array([[5.0]]), posterior, reference)
 
 
 @pytest.mark.parametrize("storage", ["dense", "sparse"])

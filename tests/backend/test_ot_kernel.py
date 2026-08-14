@@ -39,9 +39,9 @@ def test_ot_kernel_tacco_annotation_uses_fresh_full_inputs_and_only_publishes_as
     )
     captured = {}
     expected = pd.DataFrame(
-        [[3.0, 7.0], [6.0, 4.0]],
+        [[7.0, 3.0], [4.0, 6.0]],
         index=target.obs_names,
-        columns=["A", "B"],
+        columns=["B", "A"],
     )
 
     def annotate(
@@ -94,7 +94,7 @@ def test_ot_kernel_tacco_annotation_uses_fresh_full_inputs_and_only_publishes_as
     assert captured["target_var"].equals(target.var_names)
     assert captured["reference_obs"].equals(reference.obs_names)
     assert captured["reference_var"].equals(reference.var_names)
-    assert captured["reference_categories"] == ["A", "B"]
+    assert captured["reference_categories"] == ["B", "A"]
     assert captured["annotation_key"] == "Level1"
     assert captured["result_key"] != "Level1"
     assert captured["return_reference"] is True
@@ -106,6 +106,7 @@ def test_ot_kernel_tacco_annotation_uses_fresh_full_inputs_and_only_publishes_as
     np.testing.assert_array_equal(result.obsm["spatial"], target.obsm["spatial"])
     assert "internal" not in result.obsm
     assert "pollution" not in reference.uns
+    assert list(reference.obs["Level1"].cat.categories) == ["A", "B"]
     pd.testing.assert_frame_equal(result.obsm["Level1"], expected)
     assert result.obs["Level1"].tolist() == ["B", "A"]
     assert result.obs["Confidence"].tolist() == [7.0, 6.0]

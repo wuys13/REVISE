@@ -67,10 +67,18 @@ def validate_global_assignment(
     *,
     expected_observations: Iterable[Any],
     expected_categories: Iterable[Any],
+    unknown_key: Any = "Unknown",
     require_category_order: bool = True,
     require_row_normalization: bool = True,
+    require_complete_posterior: bool = False,
 ) -> GlobalAssignment:
-    """Validate a GA posterior without reordering, normalizing, or repairing it."""
+    """Validate the shared GA contract without changing posterior values.
+
+    A wholly-NaN row is the unified representation of an unassigned
+    observation.  Its label is published as ``unknown_key`` and its posterior
+    remains wholly NaN.  All other rows retain the finite, non-negative,
+    positive-mass and argmax-label contract.
+    """
     if not isinstance(assignment, GlobalAssignment):
         raise GlobalAssignmentContractError(
             "assignment must be a GlobalAssignment"
@@ -105,13 +113,17 @@ def validate_global_assignment(
         raise GlobalAssignmentContractError(
             "posterior values must be numeric"
         ) from exc
-    if not np.all(np.isfinite(values)):
+
+    all_nan_rows = np.isnan(values).all(axis=1)
+    assigned_rows = ~all_nan_rows
+    if np.any(~np.isfinite(values[assigned_rows])):
         raise GlobalAssignmentContractError("posterior values must be finite")
-    if np.any(values < 0):
+    assigned_values = values[assigned_rows]
+    if np.any(assigned_values < 0):
         raise GlobalAssignmentContractError(
             "posterior values must be non-negative"
         )
-    row_mass = values.sum(axis=1)
+    row_mass = assigned_values.sum(axis=1)
     if np.any(row_mass <= 0):
         raise GlobalAssignmentContractError(
             "posterior rows must have positive mass"
@@ -122,11 +134,38 @@ def validate_global_assignment(
         raise GlobalAssignmentContractError(
             "posterior rows must be row-normalized within atol=1e-6"
         )
+    if require_complete_posterior and np.any(all_nan_rows):
+        raise GlobalAssignmentContractError(
+            "posterior values must be finite for this consumer"
+        )
 
-    if assignment.labels.isna().any():
+    labels = assignment.labels.copy(deep=True)
+    if np.any(all_nan_rows):
+        if pd.isna(unknown_key):
+            raise GlobalAssignmentContractError("unknown_key must not be null")
+        label_values = labels.to_numpy(dtype=object, copy=True)
+        invalid_unassigned_labels = [
+            value
+            for value in label_values[all_nan_rows]
+            if not (pd.isna(value) or value == unknown_key)
+        ]
+        if invalid_unassigned_labels:
+            raise GlobalAssignmentContractError(
+                "wholly-NaN posterior rows must use a null or unknown label"
+            )
+        label_values[all_nan_rows] = unknown_key
+        labels = pd.Series(
+            label_values,
+            index=assignment.labels.index.copy(),
+            name=assignment.labels.name,
+            dtype=object,
+        )
+
+    if labels.iloc[np.flatnonzero(assigned_rows)].isna().any():
         raise GlobalAssignmentContractError("labels must not contain null values")
-    expected_labels = assignment.posterior.idxmax(axis=1)
-    if not pd.Index(assignment.labels.to_numpy()).equals(
+    expected_labels = assignment.posterior.iloc[assigned_rows].idxmax(axis=1)
+    actual_labels = labels.iloc[np.flatnonzero(assigned_rows)]
+    if not pd.Index(actual_labels.to_numpy()).equals(
         pd.Index(expected_labels.to_numpy())
     ):
         raise GlobalAssignmentContractError(
@@ -134,6 +173,6 @@ def validate_global_assignment(
         )
 
     return GlobalAssignment(
-        labels=assignment.labels.copy(deep=True),
+        labels=labels,
         posterior=assignment.posterior.copy(deep=True),
     )

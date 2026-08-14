@@ -146,12 +146,19 @@ def test_route_validates_each_complete_assignment_once_before_group_subsetting(
     real_validate = sr_allocation.validate_global_assignment
     validated_observation_counts = []
 
-    def validate_once(assignment, *, expected_observations, expected_categories):
+    def validate_once(
+        assignment,
+        *,
+        expected_observations,
+        expected_categories,
+        unknown_key="Unknown",
+    ):
         validated_observation_counts.append(len(expected_observations))
         return real_validate(
             assignment,
             expected_observations=expected_observations,
             expected_categories=expected_categories,
+            unknown_key=unknown_key,
         )
 
     monkeypatch.setattr(
@@ -298,6 +305,7 @@ def _runner_config(*, graph_enabled=True, strength=0.0, seed=17):
         svc_completeness=True,
         sr_assignment_seed=seed,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         local_refinement_strength=strength,
         rec_graph_agg_enabled=graph_enabled,
         rec_graph_agg_low_conf_only=False,

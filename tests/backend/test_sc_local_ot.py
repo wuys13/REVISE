@@ -364,6 +364,7 @@ def test_application_sc_pot_local_annotation_uses_annotation_contract(monkeypatc
         "pot_num_iter_max": 5000,
         "multi_center": None,
         "lamb": None,
+        "unknown_key": "Unknown",
     }
     assert result.obs["Level2"].tolist() == ["A", "A"]
 

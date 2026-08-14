@@ -367,25 +367,6 @@ def _couple(
                 target_norm,
                 active_cost,
             )
-        numerical_warnings = [
-            str(item.message)
-            for item in caught_warnings
-            if "Numerical errors at iteration" in str(item.message)
-        ]
-        if numerical_warnings:
-            raise ValueError(
-                f"TACCO local OT failed: {numerical_warnings[0]}"
-            )
-        runtime_warnings = [
-            item
-            for item in caught_warnings
-            if issubclass(item.category, RuntimeWarning)
-        ]
-        if runtime_warnings:
-            raise ValueError(
-                "TACCO local OT failed with RuntimeWarning: "
-                f"{runtime_warnings[0].message}"
-            )
         for item in caught_warnings:
             warnings.warn(item.message, item.category, stacklevel=2)
 
@@ -414,91 +395,6 @@ def _couple(
             raise ValueError(
                 "POT local OT coupling must have positive transported column mass "
                 "for every positive target marginal"
-            )
-
-    if normalized_method == "tacco":
-        errors = _tacco_marginal_errors(
-            active_coupling,
-            source_norm,
-            target_norm,
-        )
-        initial_errors = errors.copy()
-        source_failed = (
-            errors["source_l1"] > 1e-2 or errors["source_max"] > 5e-3
-        )
-        target_passed = (
-            errors["target_l1"] <= 1e-6 and errors["target_max"] <= 1e-6
-        )
-        continuation_failure = None
-        continuation_candidate = bool(
-            errors["total"] <= 1e-6 and source_failed and target_passed
-        )
-        if continuation_candidate and continuation_failure is None:
-            if not _tacco_hard_support_is_feasible(
-                source_norm,
-                target_norm,
-                active_support,
-            ):
-                raise ValueError(
-                    "TACCO hard-support balanced OT is infeasible for the "
-                    "normalized marginals: "
-                    f"source_l1={errors['source_l1']:.6g}, "
-                    f"source_max_abs={errors['source_max']:.6g}, "
-                    f"support_edges={int(active_support.sum())}/"
-                    f"{active_support.size}"
-                )
-            continued, cycles, continuation_failure = (
-                _continue_tacco_marginal_scaling(
-                    active_coupling,
-                    source_norm,
-                    target_norm,
-                    active_support,
-                )
-            )
-            if continued is not None:
-                active_coupling = continued
-                errors = _tacco_marginal_errors(
-                    active_coupling,
-                    source_norm,
-                    target_norm,
-                )
-                warnings.warn(
-                    "TACCO default coupling required "
-                    f"{cycles} additional marginal-scaling cycles: "
-                    f"source_l1={initial_errors['source_l1']:.6g}->"
-                    f"{errors['source_l1']:.6g}, "
-                    f"source_max={initial_errors['source_max']:.6g}->"
-                    f"{errors['source_max']:.6g}, "
-                    f"target_l1={errors['target_l1']:.6g}, "
-                    f"support_edges={int(active_support.sum())}/"
-                    f"{active_support.size}",
-                    _TACCOMarginalContinuationWarning,
-                    stacklevel=2,
-                )
-
-        support_count = f"{int(active_support.sum())}/{active_support.size}"
-        if errors["total"] > 1e-6:
-            raise ValueError(
-                "TACCO coupling total-mass validation failed: "
-                f"error={errors['total']:.6g} > 1e-6, "
-                f"source_max_abs={errors['source_max']:.6g}, "
-                f"target_max_abs={errors['target_max']:.6g}, "
-                f"support_edges={support_count}"
-            )
-        if errors["source_l1"] > 1e-2 or errors["source_max"] > 5e-3:
-            raise ValueError(
-                "TACCO source marginal validation failed: "
-                f"l1={errors['source_l1']:.6g}, "
-                f"max_abs={errors['source_max']:.6g}, "
-                f"support_edges={support_count}, "
-                f"continuation={continuation_failure or 'not_attempted'}"
-            )
-        if errors["target_l1"] > 1e-6 or errors["target_max"] > 1e-6:
-            raise ValueError(
-                "TACCO target marginal validation failed: "
-                f"l1={errors['target_l1']:.6g}, "
-                f"max_abs={errors['target_max']:.6g}, "
-                f"support_edges={support_count}"
             )
 
     coupling = np.zeros(full_shape, dtype=active_coupling.dtype)
@@ -557,6 +453,7 @@ def _annotate(
     pot_num_iter_max: int = 5000,
     multi_center: int | None = None,
     lamb: float | None = None,
+    unknown_key: Any = "Unknown",
 ) -> AnnData:
     """Annotate a complete target from a complete reference through POT or TACCO."""
     normalized_method = str(method).strip().lower()
@@ -646,6 +543,7 @@ def _annotate(
             GlobalAssignment(labels=posterior.idxmax(axis=1), posterior=posterior),
             expected_observations=target.obs_names,
             expected_categories=expected_categories,
+            unknown_key=unknown_key,
         )
         return _publish_annotation(
             target,
@@ -669,6 +567,13 @@ def _annotate(
         tacco = require_tacco()
         target_input = target.copy()
         reference_input = reference.copy()
+        reference_labels = reference_input.obs[annotation_key]
+        expected_categories = list(_reference_categories(reference_labels))
+        reference_input.obs[annotation_key] = pd.Categorical(
+            reference_labels,
+            categories=expected_categories,
+            ordered=getattr(reference_labels.dtype, "ordered", False),
+        )
         result_key = f"__revise_tacco_{uuid.uuid4().hex}"
         tacco_kwargs = {}
         if multi_center is not None:
@@ -711,8 +616,9 @@ def _annotate(
         assignment = validate_global_assignment(
             GlobalAssignment(labels=labels, posterior=posterior),
             expected_observations=target.obs_names,
-            expected_categories=_reference_categories(reference.obs[annotation_key]),
-            require_category_order=False,
+            expected_categories=expected_categories,
+            unknown_key=unknown_key,
+            require_category_order=True,
             require_row_normalization=False,
         )
         return _publish_annotation(

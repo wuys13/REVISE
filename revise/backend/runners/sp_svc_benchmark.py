@@ -52,6 +52,7 @@ class SpSVC(BenchmarkSVC):
             self.st_adata,
             key=self.config.cell_type_col,
             expected_categories=assignment_categories,
+            unknown_key=self.config.unknown_key,
         )
         conditioning_strength = self.config.local_refinement_strength
         refinement_applied = False

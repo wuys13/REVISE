@@ -21,8 +21,9 @@ def global_assignment_from_adata(
     *,
     key: str,
     expected_categories: pd.Index,
+    unknown_key: object = "Unknown",
 ) -> GlobalAssignment:
-    """Load and strictly validate the GA labels and posterior from AnnData."""
+    """Load and validate the GA labels and posterior from AnnData."""
     if key not in adata.obs:
         raise GlobalAssignmentContractError(f"missing obs[{key}] GA labels")
     if key not in adata.obsm:
@@ -35,6 +36,7 @@ def global_assignment_from_adata(
         ),
         expected_observations=adata.obs_names,
         expected_categories=expected_categories,
+        unknown_key=unknown_key,
     )
 
 

@@ -265,6 +265,7 @@ def _sp_argmax_runner(module):
     runner.config = SimpleNamespace(
         plot_flag=False,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_method="pca",
         rec_graph_alpha=0.0,
         rec_graph_exp_neighbor_num=1,
@@ -420,7 +421,10 @@ def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):
     runner = module.ScSVCSr.__new__(module.ScSVCSr)
     runner.st_adata = st
     runner.sc_ref_adata = reference
-    runner.config = SimpleNamespace(cell_type_col="major_type")
+    runner.config = SimpleNamespace(
+        cell_type_col="major_type",
+        unknown_key="Unknown",
+    )
     runner.spot_sr = SimpleNamespace(run=lambda _runner: None)
     runner.logger = logging.getLogger("test-sr-custom-column")
 
@@ -463,6 +467,7 @@ def test_sr_benchmark_custom_broad_column_drives_mandatory_allocation(
     runner.sc_ref_adata = reference
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_agg_enabled=False,
         local_refinement_strength=0.0,
     )
@@ -520,6 +525,7 @@ def test_sr_benchmark_reference_uses_configured_broad_column_without_clusters(
     runner.sc_ref_adata = reference
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_agg_enabled=False,
         local_refinement_strength=0.0,
     )
@@ -582,6 +588,7 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
         svc_completeness=True,
         sr_assignment_seed=17,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         local_refinement_strength=0.0,
         rec_match_spot_sum=True,
     )

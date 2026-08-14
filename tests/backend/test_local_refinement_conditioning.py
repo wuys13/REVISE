@@ -61,6 +61,34 @@ def test_zero_strength_returns_original_cost_without_reading_payloads():
     ) is cost
 
 
+def test_unassigned_posterior_is_used_only_when_conditioning_is_enabled():
+    posterior = pd.DataFrame(
+        [[1.0, 0.0], [np.nan, np.nan]],
+        index=["o1", "o2"],
+        columns=["A", "B"],
+    )
+    assignment = GlobalAssignment(
+        labels=pd.Series(["A", "Unassigned"], index=posterior.index),
+        posterior=posterior,
+    )
+    cost = np.ones((2, 1))
+    support = np.array([[0], [1]])
+
+    assert condition_local_ot_cost(
+        cost,
+        assignment,
+        support,
+        strength=0.0,
+    ) is cost
+    with pytest.raises(GlobalAssignmentContractError, match="finite for this consumer"):
+        condition_local_ot_cost(
+            cost,
+            assignment,
+            support,
+            strength=0.2,
+        )
+
+
 def test_partial_support_conditions_only_valid_edges_and_restores_hard_support():
     assignment = _assignment([[1.0, 0.0], [0.0, 1.0]])
     cost = np.array([[0.5, 7.0], [8.0, 1.5]])

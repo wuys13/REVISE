@@ -52,4 +52,8 @@ class GlobalAnchoringKernel(BaseKernel):
             pot_num_iter_max=5000,
             multi_center=tacco_kwargs.get("multi_center"),
             lamb=tacco_kwargs.get("lamb"),
+            unknown_key=kwargs.get(
+                "unknown_key",
+                getattr(self.config, "unknown_key", "Unknown"),
+            ),
         )

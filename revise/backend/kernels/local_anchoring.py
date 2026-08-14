@@ -45,4 +45,5 @@ class LocalAnchoringKernel(BaseKernel):
             pot_num_iter_max=5000,
             multi_center=multi_center,
             lamb=lamb,
+            unknown_key=self.unknown_key,
         )

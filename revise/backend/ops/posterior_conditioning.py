@@ -110,6 +110,7 @@ def condition_local_ot_cost(
         left_posterior,
         expected_observations=left_posterior.posterior.index,
         expected_categories=left_posterior.posterior.columns,
+        require_complete_posterior=True,
     )
     if right_posterior is None or right_posterior is left_posterior:
         right = left
@@ -118,6 +119,7 @@ def condition_local_ot_cost(
             right_posterior,
             expected_observations=right_posterior.posterior.index,
             expected_categories=left.posterior.columns,
+            require_complete_posterior=True,
         )
 
     try:
@@ -224,9 +226,14 @@ def posterior_reference_allocation(
             "posterior columns must match reference profile rows: "
             f"{posterior_values.shape[1]} vs {reference_values.shape[0]}"
         )
+    if not np.all(np.isfinite(posterior_values)):
+        raise ValueError("posterior values must be finite for reference allocation")
+    if np.any(posterior_values < 0):
+        raise ValueError("posterior values must be non-negative for reference allocation")
+    if np.any(posterior_values.sum(axis=1) <= 0):
+        raise ValueError("posterior rows must have positive mass for reference allocation")
 
-    q = np.nan_to_num(posterior_values, nan=0.0, posinf=0.0, neginf=0.0)
-    q[q < 0] = 0.0
+    q = posterior_values.copy()
     beta = float(beta)
     if beta != 1.0:
         q = np.power(q, beta)

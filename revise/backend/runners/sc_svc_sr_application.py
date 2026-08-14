@@ -77,6 +77,7 @@ class ScSVCSr(ApplicationSVC):
             expected_categories=pd.Index(
                 pd.unique(self.sc_ref_adata.obs[key_type])
             ),
+            unknown_key=self.config.unknown_key,
         )
         try:
             st_adata_common = self.st_adata[:, overlap_genes].copy()
@@ -158,6 +159,7 @@ class ScSVCSr(ApplicationSVC):
         projected_assignment = project_spot_assignment_to_virtual_cells(
             assignment,
             self.svc_obs,
+            unknown_key=self.config.unknown_key,
         )
         conditioning_strength = self.config.local_refinement_strength
         refinement_applied = False

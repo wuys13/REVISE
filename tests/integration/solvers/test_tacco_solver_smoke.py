@@ -75,8 +75,8 @@ reference = AnnData(
     ),
     obs=pd.DataFrame(
         {{
-            "Level1": ["A", "A", "B", "B", "A", "B"],
-            "Level2": ["A1", "A2", "B1", "B2", "A1", "B1"],
+            "Level1": ["B", "B", "A", "A", "B", "A"],
+            "Level2": ["B1", "B2", "A1", "A2", "B1", "A1"],
         }},
         index=["cell1", "cell2", "cell3", "cell4", "cell5", "cell6"],
     ),
@@ -96,6 +96,20 @@ config = ApplicationScConf(
     unknown_key="Unknown",
     tacco_annotate_multi_center=1,
     tacco_annotate_lamb=0.001,
+    annotate_pot_reg=0.1,
+    annotate_pot_reg_m=0.0,
+    annotate_pot_reg_type="entropy",
+    rec_graph_n_neighbors=10,
+    rec_graph_exp_neighbor_num=15,
+    rec_graph_spatial_neighbor_num=6,
+    rec_graph_method="joint",
+    rec_graph_alpha=0.2,
+    rec_random_state=42,
+    rec_pot_reg=0.1,
+    rec_pot_reg_m=0.0,
+    rec_pot_reg_type="entropy",
+    rec_alpha=0.5,
+    rec_match_spot_sum=False,
 )
 annotated = GlobalAnchoringKernel(config, logging.getLogger("tacco-smoke")).run(
     target, reference
@@ -124,7 +138,9 @@ assert add_one(1) == 2
 assert add_one.signatures
 assert annotated.obsm["Level1"].shape == (4, 2)
 assert annotated.obsm["Level1"].index.equals(annotated.obs_names)
-assert annotated.obsm["Level1"].columns.tolist() == ["A", "B"]
+assert annotated.obsm["Level1"].columns.tolist() == list(
+    pd.unique(reference.obs["Level1"])
+)
 np.testing.assert_allclose(
     annotated.obsm["Level1"].sum(axis=1).to_numpy(),
     np.ones(annotated.n_obs),
@@ -133,7 +149,13 @@ np.testing.assert_allclose(
 )
 assert annotated.obs["Level1"].tolist() == annotated.obsm["Level1"].idxmax(axis=1).tolist()
 assert annotated_level2.obsm["Level2"].shape == (4, 4)
+assert annotated_level2.obsm["Level2"].columns.tolist() == list(
+    pd.unique(reference.obs["Level2"])
+)
 assert annotated_reference.obsm["SVC_cluster"].shape == (6, 2)
+assert annotated_reference.obsm["SVC_cluster"].columns.tolist() == list(
+    pd.unique(annotated_level2.obs["SVC_cluster"])
+)
 assert coupling.shape == (2, 2)
 """
     env = os.environ.copy()

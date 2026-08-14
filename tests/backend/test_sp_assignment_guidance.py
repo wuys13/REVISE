@@ -249,6 +249,7 @@ def _config(*, solver="pot", strength=0.2):
     return SimpleNamespace(
         plot_flag=False,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_method="pca",
         rec_graph_alpha=0.0,
         rec_graph_exp_neighbor_num=1,
@@ -438,6 +439,32 @@ def test_strict_sp_assignment_rejects_invalid_q(
             key="major_type",
             expected_categories=pd.Index(["A", "B"]),
         )
+
+
+def test_sp_assignment_uses_unified_unknown_nan_contract(sp_modules):
+    application, _benchmark = sp_modules
+    runner = _application_runner(
+        application,
+        n_obs=2,
+        probabilities=[[0.9, 0.1], [np.nan, np.nan]],
+    )
+    runner.st_adata.obs["major_type"] = pd.Series(
+        ["A", np.nan],
+        index=runner.st_adata.obs_names,
+        dtype=object,
+    )
+    assignment = importlib.import_module(
+        "revise.backend.runners.sp_svc_assignment"
+    )
+
+    validated = assignment.global_assignment_from_adata(
+        runner.st_adata,
+        key="major_type",
+        expected_categories=pd.Index(["A", "B"]),
+        unknown_key="Unknown",
+    )
+    assert validated.labels.tolist() == ["A", "Unknown"]
+    assert np.isnan(validated.posterior.iloc[1]).all()
 
 
 @pytest.mark.parametrize(
@@ -774,3 +801,17 @@ def test_benchmark_zero_strength_matches_unconditioned_solver_call(
             np.testing.assert_array_equal(actual, expected)
         else:
             assert actual == expected
+
+
+def test_benchmark_unknown_nan_uses_unified_assignment_contract(
+    sp_modules,
+    monkeypatch,
+):
+    _application, benchmark = sp_modules
+    runner = _benchmark_runner(benchmark, strength=0.0)
+    runner.st_adata.obs.iloc[-1, runner.st_adata.obs.columns.get_loc("major_type")] = "Unknown"
+    runner.st_adata.obsm["major_type"].iloc[-1] = [np.nan, np.nan]
+    runner.config.unknown_key = "Unknown"
+    captured = {}
+    _patch_benchmark_problem(benchmark, monkeypatch, captured)
+    assert runner.local_refinement() is True
