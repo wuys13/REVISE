@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+import pypandoc
 
 # -- Path setup --------------------------------------------------------------
 
@@ -12,6 +15,11 @@ from pathlib import Path
 # breaking imports from the current `revise` package.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DOCS_SOURCE = Path(__file__).resolve().parent
+
+# nbsphinx invokes `pandoc` as a subprocess. The docs-only dependency bundles
+# that executable for clean CI and Read the Docs environments.
+PANDOC_DIR = Path(pypandoc.get_pandoc_path()).parent
+os.environ["PATH"] = f"{PANDOC_DIR}{os.pathsep}{os.environ['PATH']}"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
