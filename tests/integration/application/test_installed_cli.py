@@ -258,11 +258,18 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
         "cellphonedb",
         "spatialdata",
     }
+    omicverse_stack = {
+        "omicverse",
+        "torch-geometric",
+        "torch",
+        "setuptools",
+        "transformers",
+    }
     expected_extras = {
         "tacco": {"tacco"},
-        "pathway": {"gseapy", "networkx", "omicverse"},
-        "cci": {"cellphonedb", "omicverse"},
-        "trajectory": {"omicverse"},
+        "pathway": {"gseapy", "networkx", *omicverse_stack},
+        "cci": {"cellphonedb", *omicverse_stack},
+        "trajectory": omicverse_stack,
         "spatialdata": {"spatialdata"},
     }
     for extra, expected in expected_extras.items():
