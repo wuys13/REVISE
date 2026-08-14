@@ -443,9 +443,9 @@ def test_benchmark_docs_describe_actual_family_cardinality(monkeypatch, tmp_path
     benchmark_main.main(args_for("batch_effect"))
     assert len(discovered_tags) == 16
     assert {tag.split(":", 1)[1].split("_", 1)[0] for tag in discovered_tags} == {
-        "20",
         "50",
         "100",
+        "150",
         "200",
     }
     benchmark = _read(ROOT / "docs/source/benchmark.rst")

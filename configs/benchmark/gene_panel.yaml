@@ -2,8 +2,6 @@ schema_version: 1
 route: gene_panel
 cases: {}
 io:
-  data_root: raw_data/Sim2Real-ST/gene_panel/P2CRC
-  sample_name: cut_part1
   st_file: selected_xenium.h5ad
   gt_svc_file: selected_xenium.h5ad
   sc_ref_file: real_sc_ref.h5ad

@@ -1,7 +1,7 @@
 schema_version: 1
 route: batch_effect
 cases:
-  spot_sizes: [20, 50, 100, 200]
+  spot_sizes: [50, 100, 150, 200]
   batches:
     - number: 1
       gt_svc_file: selected_xenium.h5ad
@@ -16,7 +16,5 @@ cases:
       gt_svc_file: selected_xenium.h5ad
       sc_ref_file: real_sc_ref_others.h5ad
 io:
-  data_root: raw_data/Sim2Real-ST/batch_effect/P2CRC
-  sample_name: cut_part1
   st_file: xenium_spot.h5ad
 algorithm: {}

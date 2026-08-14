@@ -38,12 +38,17 @@ def test_benchmark_template_inventory_bytes_cardinality_and_imputation_contract(
 
     assert len(requests["segmentation"]["cases"]["segmentation_methods"]) == 4
     assert len(requests["bin2cell"]["cases"]["segmentation_methods"]) == 1
+    expected_spot_sizes = [50, 100, 150, 200]
+    assert requests["batch_effect"]["cases"]["spot_sizes"] == expected_spot_sizes
     assert len(requests["batch_effect"]["cases"]["spot_sizes"]) * len(
         requests["batch_effect"]["cases"]["batches"]
     ) == 16
-    assert len(requests["spot_size"]["cases"]["spot_sizes"]) == 4
+    assert requests["spot_size"]["cases"]["spot_sizes"] == expected_spot_sizes
     assert requests["gene_panel"]["cases"] == {}
     assert requests["gene_dropout"]["cases"] == {}
+    for request in requests.values():
+        assert "data_root" not in request["io"]
+        assert "sample_name" not in request["io"]
 
     expected_impute = {
         "merge_subcluster_method": "mean",
