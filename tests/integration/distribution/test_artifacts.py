@@ -13,6 +13,8 @@ from zipfile import ZipFile
 
 import pytest
 
+from revise import __version__
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -135,7 +137,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "revise-compute-biological-metrics = revise.analysis.cli:main"
         in entry_points
     )
-    assert "Version: 0.1.0rc1" in metadata
+    assert f"Version: {__version__}" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
     for extra in ("pathway", "cci", "trajectory"):
         assert f'Requires-Dist: torch-geometric; extra == "{extra}"' in metadata
@@ -292,7 +294,7 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
         env=env,
     )
     assert probe.returncode == 0, probe.stderr
-    assert "0.1.0rc1" in probe.stdout
+    assert probe.stdout.splitlines()[0] == __version__
     assert str(venv) in probe.stdout
     assert str(ROOT) not in probe.stdout
     histology_help = _run(

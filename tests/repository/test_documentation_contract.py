@@ -575,12 +575,21 @@ def test_docs_version_and_support_match_project_sources():
 
 def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():
     workflow = _read(ROOT / ".github/workflows/ci.yml")
+    installed_job = workflow.split("  installed-cli:", maxsplit=1)[1].split(
+        "  docs:", maxsplit=1
+    )[0]
     tacco_job = workflow.split("  tacco-smoke:", maxsplit=1)[1]
 
+    for candidate_job in (installed_job, tacco_job):
+        assert 'wheels=("${RUNNER_TEMP}"/candidate/revise_svc-*.whl)' in candidate_job
+        assert 'test "${#wheels[@]}" -eq 1' in candidate_job
+        assert 'test -f "${wheels[0]}"' in candidate_job
+        assert '"${wheels[0]}"' in candidate_job
+    assert re.search(r"revise_svc-\d", workflow) is None
+    assert 'echo "REVISE_WHEEL=${wheels[0]}" >> "${GITHUB_ENV}"' in installed_job
     assert "needs: package" in tacco_job
     assert "actions/download-artifact@v4" in tacco_job
     assert "name: candidate-dist" in tacco_job
-    assert "revise_svc-0.1.0rc1-py3-none-any.whl" in tacco_job
     assert "working-directory: ${{ runner.temp }}" in tacco_job
     assert 'python -m venv "${RUNNER_TEMP}/candidate-venv"' in tacco_job
     assert '"${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install' in tacco_job
@@ -594,3 +603,34 @@ def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():
         "tests/integration/solvers/test_local_refinement_solver_smoke.py"
         in tacco_job
     )
+
+
+def test_release_workflow_uses_oidc_and_separates_release_asset_permissions():
+    workflow = _read(ROOT / ".github/workflows/release.yml")
+    publish_action = (
+        "pypa/gh-action-pypi-publish@"
+        "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
+    )
+
+    assert "release:\n    types: [published]" in workflow
+    action_refs = re.findall(r"uses:\s+[A-Za-z0-9_.\-/]+@([^\s#]+)", workflow)
+    assert action_refs
+    assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in action_refs)
+    assert workflow.count("python -m build") == 1
+    assert workflow.count(publish_action) == 2
+    assert workflow.count("id-token: write") == 2
+    assert workflow.count("ref: ${{ github.event.release.tag_name }}") == 5
+    assert workflow.count("persist-credentials: false") == 5
+    assert "fetch-depth: 0" in workflow
+    assert "git merge-base --is-ancestor HEAD refs/remotes/origin/main" in workflow
+    assert "name: testpypi" in workflow
+    assert "name: pypi" in workflow
+    assert "repository-url: https://test.pypi.org/legacy/" in workflow
+    assert "password:" not in workflow
+    assert "skip-existing" not in workflow
+    assert workflow.count("for attempt in range(12)") == 2
+    assert "needs: [build, verify-pypi-files]" in workflow
+    assert "contents: write" in workflow
+    assert 'gh release upload "${RELEASE_TAG}"' in workflow
+    assert 'GH_REPO: ${{ github.repository }}' in workflow
+    assert "--clobber" not in workflow
