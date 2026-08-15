@@ -611,11 +611,20 @@ def test_release_workflow_uses_oidc_and_separates_release_asset_permissions():
         "pypa/gh-action-pypi-publish@"
         "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
     )
+    node24_actions = {
+        "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09": 5,
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": 6,
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": 1,
+        "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131": 7,
+    }
 
     assert "release:\n    types: [published]" in workflow
     action_refs = re.findall(r"uses:\s+[A-Za-z0-9_.\-/]+@([^\s#]+)", workflow)
     assert action_refs
     assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in action_refs)
+    assert len(action_refs) == 21
+    for action, count in node24_actions.items():
+        assert workflow.count(action) == count
     assert workflow.count("python -m build") == 1
     assert workflow.count(publish_action) == 2
     assert workflow.count("id-token: write") == 2
