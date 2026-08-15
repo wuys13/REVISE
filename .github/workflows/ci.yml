@@ -75,16 +75,20 @@ jobs:
         with:
           name: candidate-dist
           path: ${{ runner.temp }}/candidate
-      - name: Install exact candidate wheel
-        run: >-
-          python -m pip install
-          -c constraints/python-${{ matrix.python-version }}.txt
-          pytest
-          "${RUNNER_TEMP}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl"
+      - name: Locate and install exact candidate wheel
+        shell: bash
+        run: |
+          wheels=("${RUNNER_TEMP}"/candidate/revise_svc-*.whl)
+          test "${#wheels[@]}" -eq 1
+          test -f "${wheels[0]}"
+          python -m pip install \
+            -c constraints/python-${{ matrix.python-version }}.txt \
+            pytest \
+            "${wheels[0]}"
+          echo "REVISE_WHEEL=${wheels[0]}" >> "${GITHUB_ENV}"
       - name: Test installed reconstruction CLI
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-          REVISE_WHEEL: ${{ runner.temp }}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl
         run: >-
           python -m pytest -p no:capture -q
           tests/integration/application/test_installed_cli.py
@@ -116,12 +120,15 @@ jobs:
           path: ${{ runner.temp }}/candidate
       - name: Create isolated candidate wheel environment
         run: |
+          wheels=("${RUNNER_TEMP}"/candidate/revise_svc-*.whl)
+          test "${#wheels[@]}" -eq 1
+          test -f "${wheels[0]}"
           python -m venv "${RUNNER_TEMP}/candidate-venv"
           "${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install \
             -c constraints/python-3.11.txt \
             pytest \
             POT==0.9.5 tacco==0.5.0 \
-            "${RUNNER_TEMP}/candidate/revise_svc-0.1.0rc1-py3-none-any.whl"
+            "${wheels[0]}"
       - name: Copy solver smoke tests outside checkout
         run: |
           smoke_root="${RUNNER_TEMP}/wheel-smoke-tests/tests/integration/solvers"

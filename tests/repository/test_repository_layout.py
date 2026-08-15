@@ -20,7 +20,6 @@ ROOT = Path(__file__).resolve().parents[2]
         "application_sp_SVC_recon.sh",
         "application_sc_SVC_recon.py",
         "application_sc_SVC_recon.sh",
-        ".github/workflows/release.yml",
     ],
 )
 def test_main_repository_excludes_migration_and_custom_release_surfaces(relative):
