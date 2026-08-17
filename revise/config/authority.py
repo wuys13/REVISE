@@ -162,7 +162,7 @@ ROUTES: dict[str, dict[str, RouteSpec]] = {
                 "local_refinement": {"strength": 0.2},
             },
         ),
-        "sc-SVC": RouteSpec(
+        "sc-SVC:cluster": RouteSpec(
             "application_sc", "sc_svc", "sc", "ScSvcApplicationStrategy",
             {
                 "preprocess": {"st_min_transcripts": 60, "st_min_cells": 100, "sc_min_cells": 100},
@@ -175,8 +175,8 @@ ROUTES: dict[str, dict[str, RouteSpec]] = {
                 "sc": {"resolutions": [0.6, 0.7, 0.8], "tacco_annotate": {"multi_center": 1, "lamb": 0.001}},
             },
         ),
-        "sc-SVC-sr": RouteSpec(
-            "application_sc_sr", "sc_svc_sr", "sc", "ScSvcSrApplicationStrategy",
+        "sc-SVC:sr": RouteSpec(
+            "application_sc_super_resolution", "sc_svc_super_resolution", "sc", "ScSvcSuperResolutionApplicationStrategy",
             {
                 "graph": {"alpha": 0.2},
                 "local_refinement": {"strength": 0.0},

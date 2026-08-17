@@ -399,7 +399,7 @@ def test_sp_argmax_without_soft_posterior_fails_before_local_solver(
 
 
 def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):
-    from revise.backend.runners import sc_svc_sr_application as module
+    from revise.backend.runners import sc_svc_super_resolution_application as module
 
     st = AnnData(
         X=np.ones((1, 2)),
@@ -418,7 +418,7 @@ def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):
         ),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
-    runner = module.ScSVCSr.__new__(module.ScSVCSr)
+    runner = module.ScSVCSuperResolution.__new__(module.ScSVCSuperResolution)
     runner.st_adata = st
     runner.sc_ref_adata = reference
     runner.config = SimpleNamespace(
@@ -558,7 +558,7 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
     monkeypatch,
     load_runner,
 ):
-    module = load_runner("sc_svc_sr_application")
+    module = load_runner("sc_svc_super_resolution_application")
     from revise.backend.kernels.spot_sr import SpotSrKernel
     from revise.backend.ops.sr_allocation import (
         mandatory_reference_allocation as real_reference_allocation,
@@ -592,7 +592,7 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
         local_refinement_strength=0.0,
         rec_match_spot_sum=True,
     )
-    runner = module.ScSVCSr.__new__(module.ScSVCSr)
+    runner = module.ScSVCSuperResolution.__new__(module.ScSVCSuperResolution)
     runner.st_adata = st
     runner.sc_ref_adata = reference
     runner.config = config

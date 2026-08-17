@@ -1,36 +1,89 @@
 # Reproducing REVISE analyses
 
-The reproduction material has two entry points:
+This directory has two entry points: a Sim2Real-ST Benchmark launcher and the
+Application reconstruction workflow. Data are not stored in this repository
+and are not downloaded during package installation.
 
-| Workflow | Command entry | Notebook entry |
-| --- | --- | --- |
-| Benchmark | `python reproduce/benchmark_main.py ...` or `bash reproduce/benchmark_main.sh` from the repository root | [`benchmark/`](benchmark/) |
-| Application | `python reconstruct.py ...` from the repository root, or `revise-reconstruct ...` after installation | [`case/`](case/) |
+## Downloads
 
-Download the paper datasets and reproduced results from
-<https://zenodo.org/records/17705737>. Data are not stored in this Git
-repository and are not downloaded during package installation.
+| Material | Download |
+| --- | --- |
+| Sim2Real-ST benchmark | [Zenodo](https://zenodo.org/records/21921802) |
+| Reproduced benchmark results | [Zenodo](https://zenodo.org/records/21921802) |
+| Real-world ST datasets | [Zenodo](https://zenodo.org/records/21921802) |
+| Reproduced sp-SVC H5AD | [Zenodo](https://zenodo.org/records/18389835) |
+| Reproduced sc-SVC H5AD | [Zenodo](https://zenodo.org/records/18389211) |
 
-Some application notebooks require optional installation groups such as
-`pathway`, `cci`, or `trajectory`, as well as their corresponding external
-reference resources.
+## Benchmark
 
-## Canonical application-analysis notebooks
+Run one benchmark family from the repository root:
 
-The maintained paper-facing analysis set is:
+```bash
+python reproduce/benchmark_main.py \
+  --config configs/benchmark/segmentation.yaml \
+  --data-root raw_data/Sim2Real-ST \
+  --dataset-task segmentation \
+  --sample-name P2CRC/cut_part1 \
+  --output-root output/benchmark
+```
 
-- [Xenium T sc-SVC](case/Xenium_sc_SVC_T.ipynb)
-- [Xenium Fibroblast sc-SVC](case/Xenium_sc_SVC_Fibroblast.ipynb)
-- [Xenium Monocyte sc-SVC](case/Xenium_sc_SVC_Monocyte.ipynb)
-- [Visium HD sp-SVC](case/VisiumHD_sp_SVC.ipynb)
+For the bounded batch launcher, set its input/output environment variables and
+run:
 
-The three Xenium notebooks retain their validated execution snapshots and add
-user-facing explanations for input acquisition, analysis methods, result
-reading, direct observations, and paper context. The Visium HD notebook remains
-an unexecuted reference workflow with an explicit bounded-audit boundary.
+```bash
+RAW_DATA_PATH=raw_data/Sim2Real-ST \
+SAVE_PATH=output/benchmark \
+SAMPLE_PATIENT=P2CRC \
+SAMPLE_PARTS="part1" \
+bash reproduce/benchmark_main.sh
+```
 
-The separate
-[Visium mouse-brain sc-SVC-sr notebook](case/sc_SVC_sr_case_Visium_mouse_brain.ipynb)
-is preserved outside this four-notebook set. The three Xenium notebooks include
-their analysis outputs for direct review. Visium HD preserves the analysis
-workflow without claiming a full reconstruction or full-dataset execution.
+The launcher expands the six Benchmark route families. Benchmark YAML selects
+a confounding factor; it does not accept Application modes.
+
+After a Benchmark run, use the preserved notebooks in [`benchmark/`](benchmark/)
+for the associated analyses. The [REVISE documentation](https://revise-svc.readthedocs.io/en/latest/)
+is the current website reference.
+
+## Application
+
+Choose the current Application template and run it from the repository root:
+
+```bash
+python reconstruct.py --config configs/application/VisiumHD.yaml
+python reconstruct.py --config configs/application/Xenium.yaml --select-ct T
+python reconstruct.py --config configs/application/Visium.yaml
+```
+
+The Xenium template is shared by T, Fibroblast, and Mono/Macro analyses. Use
+the appropriate concrete ``--select-ct`` value. For the full configuration
+and output contract, see the
+[Application Reference](https://revise-svc.readthedocs.io/en/latest/source/application-reference.html).
+
+After reconstruction, use the matching preserved notebook in [`case/`](case/)
+to analyze the generated H5AD. The [Application gallery](https://revise-svc.readthedocs.io/en/latest/source/gallery.html)
+is the website entry point.
+
+## Application notebooks
+
+The preserved Application analysis notebooks are organized in website order:
+
+1. [VisiumHD sp-SVC](case/VisiumHD_sp_SVC.ipynb)
+2. [Xenium sc-SVC T cells](case/Xenium_sc_SVC_T.ipynb)
+3. [Xenium sc-SVC Fibroblast](case/Xenium_sc_SVC_Fibroblast.ipynb)
+4. [Xenium sc-SVC Mono/Macro](case/Xenium_sc_SVC_Monocyte.ipynb)
+5. [Visium sc-SVC mouse brain](case/Visium_sc_SVC_mouse_brain.ipynb) — SR mode
+
+Benchmark notebooks are under [`benchmark/`](benchmark/). The docs website
+links these notebooks without executing them.
+
+Some downstream notebooks require optional `pathway`, `cci`, or `trajectory`
+installation groups and their associated external resources. Install only the
+capabilities used by the analysis.
+
+## Evidence boundary
+
+Each notebook is a static historical snapshot. It can preserve a workflow and
+displayed output, but it is not evidence that the current source has been
+rerun, that all paper data were reprocessed, or that a biological conclusion
+has been independently validated.

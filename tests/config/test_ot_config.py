@@ -31,12 +31,17 @@ ROOT = Path(__file__).parents[2]
 def test_semantic_router_resolves_each_mode_without_cross_domain_selector():
     raw = _authority_document()
 
-    application = resolve_semantic_route(raw, svc_type="sc-SVC")
+    application = resolve_semantic_route(
+        raw,
+        svc_type="sc-SVC",
+        application_mode="cluster",
+    )
     benchmark = resolve_semantic_route(raw, cf="segmentation")
 
     assert application == {
         "mode": "application",
         "application_route": "sc-SVC",
+        "application_mode": "cluster",
         "profile": "application_sc",
         "task": "sc_svc",
         "svc_kind": "sc",
@@ -97,14 +102,20 @@ def _runtime_for_profile(raw, profile):
         for selector, route in routes.items():
             if route["profile"] != selected_profile:
                 continue
-            key = "application_route" if namespace == "application" else "confounding"
-            return {
-                "mode": namespace,
-                key: selector,
-                "task": route["task"],
-                "svc_kind": route["svc_kind"],
-                "strategy": route["strategy"],
-            }
+            if namespace == "application":
+                if selector.startswith("sc-SVC:"):
+                    runtime = resolve_semantic_route(
+                        raw,
+                        svc_type="sc-SVC",
+                        application_mode=selector.split(":", 1)[1],
+                    )
+                else:
+                    runtime = resolve_semantic_route(raw, svc_type=selector)
+            else:
+                runtime = resolve_semantic_route(raw, cf=selector)
+            runtime.pop("profile")
+            runtime.pop("warning")
+            return runtime
     raise AssertionError(f"No test route uses profile {selected_profile!r}")
 
 
@@ -228,7 +239,11 @@ def test_pipeline_accepts_preloaded_application_data():
     assert "algorithm_overrides" in public_parameters
     assert "set_overrides" not in public_parameters
     assert "st_adata" in public_parameters
-    assert list(inspect.signature(run_application).parameters) == ["config_path"]
+    assert "application_mode" in public_parameters
+    assert list(inspect.signature(run_application).parameters) == [
+        "config_path",
+        "select_ct",
+    ]
 
 
 @pytest.mark.parametrize("phase", ["ga", "lr"])
@@ -325,7 +340,7 @@ def test_default_ot_schema_is_single_public_surface():
 @pytest.mark.parametrize("profile", [
     "application_sp",
     "application_sc",
-    "application_sc_sr",
+    "application_sc_super_resolution",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -510,6 +525,7 @@ def test_runtime_and_context_route_have_no_ot_marker(tmp_path):
 def _application_request(**overrides):
     values = {
         "svc_type": "sc-SVC",
+        "mode": "cluster",
         "ot_method": None,
         "select_cell_type": "T",
         "broad_column": "Level1",
@@ -628,16 +644,16 @@ def test_application_metadata_cannot_override_canonical_provenance(tmp_path):
     assert svc.provenance["application_config"] == {}
 
 
-def test_application_sc_sr_config_fields_accept_production_mapping(adapters):
+def test_application_sc_super_resolution_config_fields_accept_production_mapping(adapters):
     from dataclasses import fields
-    from revise.config.runner_conf import ApplicationScSrConf
+    from revise.config.runner_conf import ApplicationScSuperResolutionConf
 
-    merged = _merge(_raw_config(), "application_sc_sr")
+    merged = _merge(_raw_config(), "application_sc_super_resolution")
     mapping = adapters._ot_runner_kwargs(merged)
-    field_names = {field.name for field in fields(ApplicationScSrConf)}
+    field_names = {field.name for field in fields(ApplicationScSuperResolutionConf)}
 
     assert set(mapping) <= field_names
-    conf = ApplicationScSrConf(
+    conf = ApplicationScSuperResolutionConf(
         sample_name="sample",
         raw_data_path="data",
         result_root_path="output",
@@ -735,7 +751,7 @@ def test_ot_reg_type_must_be_supported_string(section, bad_value):
 @pytest.mark.parametrize("profile", [
     "application_sp",
     "application_sc",
-    "application_sc_sr",
+    "application_sc_super_resolution",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -752,7 +768,7 @@ def test_current_profile_ot_numerics_remain_valid(profile):
     [
         ("SpSvcApplicationStrategy", "application_sp", "sp_svc_application", "SpSVC", False),
         ("ScSvcApplicationStrategy", "application_sc", "sc_svc_application", "ScSVC", False),
-        ("ScSvcSrApplicationStrategy", "application_sc_sr", "sc_svc_sr_application", "ScSVCSr", False),
+        ("ScSvcSuperResolutionApplicationStrategy", "application_sc_super_resolution", "sc_svc_super_resolution_application", "ScSVCSuperResolution", False),
         ("SpSvcBenchmarkSegStrategy", "benchmark_seg", "sp_svc_benchmark", "SpSVC", False),
         ("ScSvcSrBenchmarkStrategy", "benchmark_sr_batch", "sc_svc_sr_benchmark", "ScSVCSr", False),
         ("ScSvcImputeBenchmarkStrategy", "benchmark_impute_panel", "sc_svc_impute_benchmark", "ScSVCImpute", True),

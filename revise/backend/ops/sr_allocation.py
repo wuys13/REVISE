@@ -1,4 +1,4 @@
-"""sc-SVC-sr allocation and projected-posterior conditioning seams."""
+"""sc-SVC sr-mode allocation and projected-posterior conditioning seams."""
 
 from __future__ import annotations
 

@@ -13,7 +13,7 @@ def test_typed_authority_owns_defaults_routes_and_locked_keys():
     from revise.config.authority import ENGINE_DEFAULTS, LOCKED_KEYS, ROUTES, RouteSpec
 
     assert ENGINE_DEFAULTS["runtime"]["seed"] == 42
-    assert set(ROUTES["application"]) == {"sp-SVC", "sc-SVC", "sc-SVC-sr"}
+    assert set(ROUTES["application"]) == {"sp-SVC", "sc-SVC:cluster", "sc-SVC:sr"}
     assert set(ROUTES["benchmark"]) == {
         "segmentation",
         "bin2cell",
@@ -28,10 +28,52 @@ def test_typed_authority_owns_defaults_routes_and_locked_keys():
         for route in namespace.values()
     )
     assert ROUTES["application"]["sp-SVC"].overrides["reconstruct"]["alpha"] == 0.5
-    assert ROUTES["application"]["sc-SVC"].overrides["reconstruct"]["alpha"] == 0.5
+    assert ROUTES["application"]["sc-SVC:cluster"].overrides["reconstruct"]["alpha"] == 0.5
     assert ROUTES["benchmark"]["segmentation"].overrides["local_refinement"] == {"strength": 0.2}
     assert ROUTES["benchmark"]["batch_effect"].overrides["local_refinement"] == {"strength": 0.0}
     assert "ot.ga.pot.reg" in LOCKED_KEYS
+
+
+def test_sc_svc_application_route_requires_and_records_mode():
+    from revise.config import ConfigError, resolve_semantic_route
+    from revise.config.authority import _authority_document
+
+    authority = _authority_document()
+    cluster = resolve_semantic_route(
+        authority,
+        svc_type="sc-SVC",
+        application_mode="cluster",
+    )
+    sr = resolve_semantic_route(
+        authority,
+        svc_type="sc-SVC",
+        application_mode="sr",
+    )
+
+    assert cluster["application_route"] == sr["application_route"] == "sc-SVC"
+    assert cluster["application_mode"] == "cluster"
+    assert sr["application_mode"] == "sr"
+    assert cluster["task"] == "sc_svc"
+    assert sr["task"] == "sc_svc_super_resolution"
+
+    with pytest.raises(ConfigError, match="application_mode is required"):
+        resolve_semantic_route(authority, svc_type="sc-SVC")
+    with pytest.raises(ConfigError, match="sc-SVC-sr was removed"):
+        resolve_semantic_route(authority, svc_type="sc-SVC-sr")
+
+
+def test_benchmark_sr_routes_keep_their_legacy_runtime_contract():
+    from revise.config.authority import ROUTES
+
+    expected = {
+        "batch_effect": ("benchmark_sr_batch", "sc_svc_sr", "ScSvcSrBenchmarkStrategy"),
+        "spot_size": ("benchmark_sr_spot_size", "sc_svc_sr", "ScSvcSrBenchmarkStrategy"),
+    }
+    assert {
+        name: (route.profile, route.task, route.strategy)
+        for name, route in ROUTES["benchmark"].items()
+        if name in expected
+    } == expected
 
 
 def test_pipeline_has_no_external_engine_config_path():

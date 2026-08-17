@@ -19,7 +19,7 @@ independent and easier to evolve.
 REQUIRED_IO_BY_MODE_TASK = {
     ("application", "sp_svc"): {"st_file", "sc_ref_file"},
     ("application", "sc_svc"): {"st_file", "sc_ref_file"},
-    ("application", "sc_svc_sr"): {"st_file", "sc_ref_file"},
+    ("application", "sc_svc_super_resolution"): {"st_file", "sc_ref_file"},
     ("benchmark", "sp_svc"): {"st_file", "sc_ref_file", "gt_svc_file"},
     ("benchmark", "sc_svc_sr"): {
         "st_file",
@@ -290,7 +290,7 @@ class ApplicationScConf(BaseConf):
 
 
 @dataclass(kw_only=True)
-class ApplicationScSrConf(BaseConf):
+class ApplicationScSuperResolutionConf(BaseConf):
     st_file: str
     sc_ref_file: str
     annotate_mode: Optional[str]

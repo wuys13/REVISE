@@ -13,6 +13,7 @@ import pandas as pd
 from anndata import AnnData, read_h5ad
 
 from revise.io.spatialdata_service import SpatialDataService
+from revise.utils.labels import normalize_cell_type_label
 
 
 class PMOnCellSnapshotError(ValueError):
@@ -194,7 +195,10 @@ class REVISEInputService:
                     "backed": backed,
                     "shape": [int(adata.n_obs), int(adata.n_vars)],
                 }
-                if role == "st" and str(runtime.get("task")) == "sc_svc_sr":
+                if role == "st" and str(runtime.get("task")) in {
+                    "sc_svc_super_resolution",
+                    "sc_svc_sr",
+                }:
                     raw_mapping = adata.uns.get("all_cells_in_spot")
                     if raw_mapping is not None:
                         mapping_source = "embedded"
@@ -320,8 +324,8 @@ class REVISEInputService:
                     labels = labels[
                         adata.obs[patient_key].astype(str).eq(patient_sample)
                     ]
-                normalized_labels = labels.str.replace("/", "_", regex=False)
-                normalized_selected = str(selected).replace("/", "_")
+                normalized_labels = labels.map(normalize_cell_type_label)
+                normalized_selected = normalize_cell_type_label(str(selected))
                 if normalized_selected not in set(normalized_labels):
                     available = sorted(
                         {str(value) for value in normalized_labels.dropna().unique()}

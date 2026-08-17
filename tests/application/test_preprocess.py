@@ -110,7 +110,7 @@ def test_prepare_sc_svc_pair_normalizes_labels_and_limits_only_spatial_genes():
     reference = AnnData(
         X=np.ones((2, 3)),
         obs=pd.DataFrame(
-            {"Level1": ["Mono/Macro", "T"], "Level2": ["M/1", "T/1"]},
+            {"Level1": [" Mono/Macro ", "T"], "Level2": ["M/1", "T/1"]},
             index=["cell-1", "cell-2"],
         ),
         var=pd.DataFrame(index=["g1", "g2", "reference-only"]),
@@ -128,3 +128,17 @@ def test_prepare_sc_svc_pair_normalizes_labels_and_limits_only_spatial_genes():
     assert prepared_reference.obs.columns.tolist() == ["Level1", "Level2"]
     assert prepared_reference.obs["Level1"].tolist() == ["Mono_Macro", "T"]
     assert prepared_reference.obs["Level2"].tolist() == ["M_1", "T_1"]
+
+
+def test_sp_sr_reference_label_normalization_preserves_surrounding_whitespace_by_default():
+    from revise.application.preprocess import normalize_reference_labels
+
+    reference = AnnData(
+        X=np.ones((1, 1)),
+        obs=pd.DataFrame({"Level1": [" Mono/Macro "]}, index=["cell-1"]),
+        var=pd.DataFrame(index=["g1"]),
+    )
+
+    normalized = normalize_reference_labels(reference, ["Level1"])
+
+    assert normalized.obs["Level1"].tolist() == [" Mono_Macro "]

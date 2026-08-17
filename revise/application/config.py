@@ -7,16 +7,18 @@ the user-facing load, preprocess, reconstruct, and publication flow visible.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 import importlib.resources as resources
 import math
 from pathlib import Path
 from typing import Any, Mapping
+import unicodedata
 
 import yaml
 
 from revise.config.authority import ENGINE_DEFAULTS
+from revise.utils.labels import normalize_cell_type_label
 
 
 class ApplicationConfigError(ValueError):
@@ -39,6 +41,7 @@ class ApplicationConfig:
     resolved_root: Path
     cwd: Path
     svc_type: str
+    mode: str | None
     st_path: Path
     reference_path: Path
     st_format: str
@@ -66,6 +69,7 @@ class ApplicationConfig:
     local_refinement_match_spot_sum: bool | None
     ot_method: str | None
     pm_on_cell_path: Path | None
+    output_root: Path
     output_dir: Path
     output_name: str | None
     seed: int | None
@@ -142,10 +146,8 @@ def _compile_engine_config(
 
 _OFFICIAL_TEMPLATES = frozenset(
     {
-        "Xenium_T.yaml",
-        "Xenium_Fib.yaml",
-        "Xenium_Mono.yaml",
         "VisiumHD.yaml",
+        "Xenium.yaml",
         "Visium.yaml",
     }
 )
@@ -161,7 +163,8 @@ _TOP_LEVEL_KEYS = {
     "output",
     "execution",
 }
-_SVC_TYPES = {"sp-SVC", "sc-SVC", "sc-SVC-sr"}
+_SVC_TYPES = {"sp-SVC", "sc-SVC"}
+_SC_SVC_MODES = {"cluster", "sr"}
 _ST_FORMATS = {"h5ad", "spatialdata", "auto"}
 _ALL_CELL_TYPES = {"", "all", "*", "__all__", "all_cell_types"}
 _MIGRATION_MESSAGES = {
@@ -209,6 +212,28 @@ def _optional_string(value: Any, field: str) -> str | None:
     if value is None:
         return None
     return _string(value, field)
+
+
+def _concrete_cell_type(value: Any, field: str) -> str:
+    if not isinstance(value, str):
+        raise ApplicationConfigError(
+            f"{field} must name one concrete broad cell type safe for an output directory"
+        )
+    raw_selected = value.strip()
+    selected = normalize_cell_type_label(value)
+    if (
+        not raw_selected
+        or raw_selected.lower() in _ALL_CELL_TYPES
+        or "*" in raw_selected
+        or raw_selected in {".", ".."}
+        or any(part in {".", ".."} for part in raw_selected.split("/"))
+        or "\\" in raw_selected
+        or any(unicodedata.category(character) == "Cc" for character in value)
+    ):
+        raise ApplicationConfigError(
+            f"{field} must name one concrete broad cell type safe for an output directory"
+        )
+    return selected
 
 
 def _number(value: Any, field: str) -> float:
@@ -326,7 +351,7 @@ def _local_source(path: Path) -> ApplicationConfigSource:
 
 
 def resolve_application_source(config: str | Path) -> ApplicationConfigSource:
-    """Use an existing file first, then only the five official templates."""
+    """Use an existing file first, then only the three official templates."""
     value = str(config)
     path = Path(value).expanduser()
     if path.exists():
@@ -386,10 +411,26 @@ def compile_application_config(
         raise ApplicationConfigError("schema_version must be 1")
 
     application = _mapping(document["application"], "application")
-    _reject_unknown(application, {"svc_type"}, "application")
+    _reject_unknown(application, {"svc_type", "mode"}, "application")
     svc_type = _string(_required(application, "svc_type", "application"), "application.svc_type")
+    if svc_type == "sc-SVC-sr":
+        raise ApplicationConfigError(
+            "application.svc_type sc-SVC-sr was removed; use sc-SVC with application.mode: sr"
+        )
     if svc_type not in _SVC_TYPES:
-        raise ApplicationConfigError("application.svc_type must be one of: sp-SVC, sc-SVC, sc-SVC-sr")
+        raise ApplicationConfigError("application.svc_type must be one of: sp-SVC, sc-SVC")
+    mode = _optional_string(application.get("mode"), "application.mode")
+    if svc_type == "sc-SVC":
+        if mode is None:
+            raise ApplicationConfigError(
+                "application.mode is required for sc-SVC; use cluster or sr"
+            )
+        if mode not in _SC_SVC_MODES:
+            raise ApplicationConfigError(
+                "application.mode must be one of: cluster, sr"
+            )
+    elif mode is not None:
+        raise ApplicationConfigError("application.mode is only valid for sc-SVC")
 
     paths = _mapping(document["paths"], "paths")
     _reject_unknown(paths, {"root_dir"}, "paths")
@@ -412,8 +453,8 @@ def compile_application_config(
     )
     pm_path = None
     if "pm_on_cell" in inputs:
-        if svc_type != "sc-SVC-sr":
-            raise ApplicationConfigError("inputs.pm_on_cell is only allowed for sc-SVC-sr")
+        if mode != "sr":
+            raise ApplicationConfigError("inputs.pm_on_cell is only allowed for sc-SVC sr mode")
         pm = _mapping(inputs["pm_on_cell"], "inputs.pm_on_cell")
         _reject_unknown(pm, {"path"}, "inputs.pm_on_cell")
         pm_path = _relative_child(resolved_root, _required(pm, "path", "inputs.pm_on_cell"), "inputs.pm_on_cell.path")
@@ -487,17 +528,17 @@ def compile_application_config(
     subtype = select = strength = alpha = resolutions = None
     graph_method = graph_alpha = graph_n_neighbors = None
     graph_exp_neighbors = graph_spatial_neighbors = match_spot_sum = None
-    if svc_type == "sc-SVC":
+    if mode == "cluster":
         _reject_unknown(
             refinement,
             {"subtype_column", "select_cell_type", "alpha", "resolutions"},
             "local_refinement",
         )
         subtype = _string(_required(refinement, "subtype_column", "local_refinement"), "local_refinement.subtype_column")
-        raw_select = _required(refinement, "select_cell_type", "local_refinement")
-        if not isinstance(raw_select, str) or raw_select.strip().lower() in _ALL_CELL_TYPES:
-            raise ApplicationConfigError("local_refinement.select_cell_type must name one concrete broad cell type")
-        select = raw_select.strip()
+        select = _concrete_cell_type(
+            _required(refinement, "select_cell_type", "local_refinement"),
+            "local_refinement.select_cell_type",
+        )
         alpha = _number(
             _required(refinement, "alpha", "local_refinement"),
             "local_refinement.alpha",
@@ -509,7 +550,7 @@ def compile_application_config(
             _number(value, "local_refinement.resolutions")
             for value in raw_resolutions
         )
-    elif svc_type == "sc-SVC-sr":
+    elif mode == "sr":
         _reject_unknown(
             refinement,
             {"strength", "graph", "match_spot_sum"},
@@ -557,7 +598,8 @@ def compile_application_config(
 
     output = _mapping(document["output"], "output")
     _reject_unknown(output, {"dir", "name"}, "output")
-    output_dir = _relative_child(resolved_root, _required(output, "dir", "output"), "output.dir")
+    output_root = _relative_child(resolved_root, _required(output, "dir", "output"), "output.dir")
+    output_dir = output_root / select if mode == "cluster" else output_root
     output_name = _optional_string(output.get("name"), "output.name")
     if output_name is not None:
         if output_name in {".", ".."} or "/" in output_name or "\\" in output_name:
@@ -585,6 +627,7 @@ def compile_application_config(
         resolved_root=resolved_root,
         cwd=cwd,
         svc_type=svc_type,
+        mode=mode,
         st_path=st_path,
         reference_path=reference_path,
         st_format=st_format,
@@ -612,9 +655,29 @@ def compile_application_config(
         local_refinement_match_spot_sum=match_spot_sum,
         ot_method=ot_method,
         pm_on_cell_path=pm_path,
+        output_root=output_root,
         output_dir=output_dir,
         output_name=output_name,
         seed=seed,
+    )
+
+
+def override_select_cell_type(
+    config: ApplicationConfig,
+    select_ct: str | None,
+) -> ApplicationConfig:
+    """Apply a cluster override and derive its output from the configured root."""
+    if select_ct is None:
+        return config
+    if config.svc_type != "sc-SVC" or config.mode != "cluster":
+        raise ApplicationConfigError(
+            "--select-ct is only valid for sc-SVC cluster mode"
+        )
+    selected = _concrete_cell_type(select_ct, "--select-ct")
+    return replace(
+        config,
+        select_cell_type=selected,
+        output_dir=config.output_root / selected,
     )
 
 
@@ -624,5 +687,6 @@ __all__ = [
     "ApplicationConfigSource",
     "compile_application_config",
     "load_application_yaml",
+    "override_select_cell_type",
     "resolve_application_source",
 ]

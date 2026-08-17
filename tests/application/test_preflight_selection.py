@@ -9,6 +9,12 @@ from revise.config.runner_conf import InputSpec
 from revise.io.input_service import REVISEInputService
 
 
+def test_cluster_label_normalization_is_available_without_application_config():
+    from revise.utils.labels import normalize_cell_type_label
+
+    assert normalize_cell_type_label(" Mono/Macro ") == "Mono_Macro"
+
+
 def _write(path: Path, labels, *, patient=None):
     obs = pd.DataFrame({"Level1": labels, "Level2": [f"{x}_sub" for x in labels]})
     if patient is not None:
@@ -42,11 +48,31 @@ def test_preflight_rejects_selected_cell_type_missing_from_full_reference(tmp_pa
         )
 
 
-def test_preflight_accepts_slash_normalized_selected_cell_type(tmp_path):
+@pytest.mark.parametrize("selected", ["Mono/Macro", "Mono_Macro"])
+def test_preflight_accepts_config_normalized_selected_cell_type(tmp_path, selected):
     st_path = tmp_path / "st.h5ad"
     reference_path = tmp_path / "reference.h5ad"
     _write(st_path, ["Mono/Macro", "Mono/Macro"])
     _write(reference_path, ["Mono/Macro", "T"])
+
+    report = REVISEInputService().preflight(
+        (InputSpec("st", st_path), InputSpec("sc_ref", reference_path)),
+        runtime={"mode": "application", "task": "sc_svc"},
+        columns={
+            "cell_type_col": "Level1",
+            "sub_cell_type_col": "Level2",
+            "select_cell_type": selected.replace("/", "_"),
+        },
+    )
+
+    assert report["status"] == "ready"
+
+
+def test_preflight_accepts_reference_labels_normalized_like_selected_cell_type(tmp_path):
+    st_path = tmp_path / "st.h5ad"
+    reference_path = tmp_path / "reference.h5ad"
+    _write(st_path, ["Mono/Macro", "Mono/Macro"])
+    _write(reference_path, [" Mono/Macro ", "T"])
 
     report = REVISEInputService().preflight(
         (InputSpec("st", st_path), InputSpec("sc_ref", reference_path)),

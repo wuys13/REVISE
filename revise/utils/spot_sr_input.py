@@ -25,9 +25,9 @@ def ensure_all_cells_in_spot(
     min_cells_per_spot: int = 1,
     max_cells_per_spot: int = 12,
 ) -> AnnData:
-    """Ensure a spot-to-virtual-cell mapping exists for sc-SVC-sr inputs.
+    """Ensure a spot-to-virtual-cell mapping exists for sc-SVC sr-mode inputs.
 
-    The user-facing sc-SVC-sr input contract stays small: users provide a
+    The user-facing sc-SVC sr-mode input contract stays small: users provide a
     spot-level AnnData plus a scRNA-seq reference. REVISE still needs a list of
     virtual cells inside each spot before spot expression can be redistributed.
     This helper therefore implements the fallback in one place:

@@ -6,6 +6,8 @@ import pandas as pd
 import scanpy as sc
 from anndata import AnnData
 
+from revise.utils.labels import normalize_cell_type_label
+
 def filter_reference(
     adata: AnnData,
     filter_column: str | None = None,
@@ -57,16 +59,24 @@ def preprocess_reference(
     return result
 
 
-def normalize_reference_labels(adata: AnnData, columns: Iterable[str | None]) -> AnnData:
+def normalize_reference_labels(
+    adata: AnnData,
+    columns: Iterable[str | None],
+    *,
+    trim: bool = False,
+) -> AnnData:
     """Normalize route-visible reference labels without changing gene axes."""
     result = adata.copy()
     for column in columns:
         if column is None or column not in result.obs:
             continue
         labels = result.obs[column].astype(str)
-        if not labels.str.contains("/", regex=False).any():
-            continue
-        normalized = labels.str.replace("/", "_", regex=False)
+        if trim:
+            normalized = labels.map(normalize_cell_type_label)
+        else:
+            if not labels.str.contains("/", regex=False).any():
+                continue
+            normalized = labels.str.replace("/", "_", regex=False)
         pairs = pd.DataFrame({"original": labels, "normalized": normalized}).drop_duplicates()
         collisions = pairs.groupby("normalized", sort=False)["original"].nunique()
         if (collisions > 1).any():
@@ -94,7 +104,11 @@ def prepare_sc_svc_pair(
         raise KeyError(f"Missing required columns in sc reference: {missing}")
     result_reference = reference.copy()
     result_reference.obs = result_reference.obs.loc[:, required_columns].copy()
-    result_reference = normalize_reference_labels(result_reference, required_columns)
+    result_reference = normalize_reference_labels(
+        result_reference,
+        required_columns,
+        trim=True,
+    )
     overlap_genes = spatial.var_names.intersection(result_reference.var_names)
     if overlap_genes.empty:
         raise ValueError("No overlapping genes between spatial and sc reference data")

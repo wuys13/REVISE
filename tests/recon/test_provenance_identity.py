@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,7 @@ from revise.config import (
 )
 from revise.config.authority import _authority_document
 from revise.framework import REVISEPipeline
+from revise.recon.pipeline import UnifiedReconstructionPipeline
 from revise.recon.context import PipelineContext
 from revise.utils.deterministic import canonical_config_projection
 from revise.utils.provenance import hash_jsonable, input_identities
@@ -28,8 +30,11 @@ def _resolved_config(profile, algorithm_overrides=None):
     raw = _authority_document()
     selector = {
         "application_sp": {"svc_type": "sp-SVC"},
-        "application_sc": {"svc_type": "sc-SVC"},
-        "application_sc_sr": {"svc_type": "sc-SVC-sr"},
+        "application_sc": {"svc_type": "sc-SVC", "application_mode": "cluster"},
+        "application_sc_super_resolution": {
+            "svc_type": "sc-SVC",
+            "application_mode": "sr",
+        },
     }[profile]
     route = resolve_semantic_route(raw, **selector)
     route.pop("profile")
@@ -106,6 +111,29 @@ def _write_inputs(root: Path) -> None:
 def test_hash_jsonable_rejects_non_json_semantic_values(payload):
     with pytest.raises((TypeError, ValueError)):
         hash_jsonable(payload)
+
+
+def test_benchmark_sr_compatibility_outputs_keep_published_filenames(tmp_path):
+    outputs = {
+        "sc_svc_dec": AnnData(X=np.ones((1, 1))),
+        "sc_svc_dec_graphagg": AnnData(X=np.ones((1, 1))),
+    }
+    recorded = []
+    ctx = SimpleNamespace(run_dir=tmp_path, record_artifact=recorded.append)
+
+    UnifiedReconstructionPipeline.__new__(UnifiedReconstructionPipeline)._emit_compatibility_files(
+        ctx,
+        outputs,
+    )
+
+    assert {path.name for path in tmp_path.glob("*.h5ad")} == {
+        "sc_SVC.h5ad",
+        "sc_SVC_graphagg.h5ad",
+    }
+    assert {artifact["role"] for artifact in recorded} == {
+        "compatibility:sc_svc_dec",
+        "compatibility:sc_svc_dec_graphagg",
+    }
 
 
 def test_config_hash_excludes_only_input_and_output_locators(tmp_path):
@@ -305,7 +333,8 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
         if replacement is not None:
             pm_path.write_text(replacement, encoding="utf-8")
         svc = REVISEPipeline().run(
-            svc_type="sc-SVC-sr",
+            svc_type="sc-SVC",
+            application_mode="sr",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / name),
@@ -344,7 +373,8 @@ def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
 
     with pytest.raises(ValueError, match="pm_on_cell"):
         REVISEPipeline().run(
-            svc_type="sc-SVC-sr",
+            svc_type="sc-SVC",
+            application_mode="sr",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(output_root),
@@ -460,6 +490,16 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
     tmp_path,
 ):
     config = _config(tmp_path)
+    effective_request = {
+        "application_route": "sc-SVC",
+        "application_mode": "cluster",
+        "selected_cell_type": "T",
+        "output": {
+            "root": str(tmp_path / "output"),
+            "dir": str(tmp_path / "output" / "T"),
+            "name": "sample",
+        },
+    }
     application_config = {
         "source_path": str(tmp_path / "application.yaml"),
         "source_sha256": "a" * 64,
@@ -471,12 +511,14 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
             "reference": str(tmp_path / "sc.h5ad"),
             "output_dir": str(tmp_path / "output"),
         },
+        "output_root": str(tmp_path / "output"),
+        "output_dir": str(tmp_path / "output" / "T"),
         "output_paths": {
-            "svc": str(tmp_path / "output" / "sample.h5ad"),
+            "svc": str(tmp_path / "output" / "T" / "sample.h5ad"),
         },
         "output_name": "sample",
-        "effective_request": {"svc_type": "sp-SVC"},
-        "effective_request_hash": "b" * 64,
+        "effective_request": effective_request,
+        "effective_request_hash": hash_jsonable(effective_request),
         "config_path": "must-not-shadow-canonical-engine-truth",
     }
     ctx = PipelineContext(
@@ -505,11 +547,17 @@ def test_application_config_provenance_is_namespaced_without_overwriting_engine_
         "resolved_root",
         "cwd",
         "resolved_inputs",
+        "output_root",
+        "output_dir",
         "output_paths",
         "output_name",
         "effective_request",
         "effective_request_hash",
     }
+    assert manifest["application_config"]["effective_request"] == effective_request
+    assert manifest["application_config"]["effective_request_hash"] == hash_jsonable(
+        effective_request
+    )
 
 
 def test_benchmark_config_provenance_is_namespaced(tmp_path):

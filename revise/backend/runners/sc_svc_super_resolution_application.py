@@ -21,7 +21,7 @@ from revise.backend.ops.topology import get_adjacency_graph
 from revise.utils.spot_sr_input import CELL_LOCATIONS_KEY
 
 
-class ScSVCSr(ApplicationSVC):
+class ScSVCSuperResolution(ApplicationSVC):
     """
     sc-SVC super-resolution for application usage.
 
@@ -57,7 +57,7 @@ class ScSVCSr(ApplicationSVC):
         # Keep SpotSr logging stable when ground truth is unavailable.
         svc_obs["true_cell_type"] = "Unknown"
         return svc_obs
-    
+
     # TODO: out of spot imputation
     def local_refinement(self, *args, **kwargs):
         """Reconstruct single-cell expression profiles from spot-level data.

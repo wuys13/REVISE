@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 
-def _document(svc_type: str = "sp-SVC") -> dict:
+def _document(svc_type: str = "sp-SVC", mode: str | None = None) -> dict:
     local_refinement = (
         {
             "subtype_column": "Level2",
@@ -14,12 +14,15 @@ def _document(svc_type: str = "sp-SVC") -> dict:
             "alpha": 0.2,
             "resolutions": [0.6, 0.7, 0.8],
         }
-        if svc_type == "sc-SVC"
+        if svc_type == "sc-SVC" and mode != "sr"
         else {"strength": 0.2}
     )
+    application = {"svc_type": svc_type}
+    if mode is not None:
+        application["mode"] = mode
     return {
         "schema_version": 1,
-        "application": {"svc_type": svc_type},
+        "application": application,
         "paths": {"root_dir": "."},
         "algorithm": {"ot_method": "pot"},
         "inputs": {
@@ -105,11 +108,76 @@ def test_route_specific_fields_fail_closed(tmp_path):
 def test_sc_svc_requires_one_concrete_cell_type(tmp_path):
     from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
 
-    document = _document("sc-SVC")
+    document = _document("sc-SVC", "cluster")
     document["local_refinement"]["select_cell_type"] = None
     source, effective = load_application_yaml(_write_config(tmp_path, document))
     with pytest.raises(ApplicationConfigError, match="concrete broad cell type"):
         compile_application_config(effective, source=source)
+
+
+@pytest.mark.parametrize(
+    ("selected", "normalized"),
+    [
+        (" T ", "T"),
+        ("Fibroblast", "Fibroblast"),
+        ("Mono/Macro", "Mono_Macro"),
+        (" Mono/Macro ", "Mono_Macro"),
+    ],
+)
+def test_sc_cluster_output_dir_is_derived_from_output_root_and_normalized_selection(
+    tmp_path,
+    selected,
+    normalized,
+):
+    from revise.application.config import compile_application_config, load_application_yaml
+
+    document = _document("sc-SVC", "cluster")
+    document["paths"]["root_dir"] = str(tmp_path)
+    document["local_refinement"]["select_cell_type"] = selected
+    document["output"]["dir"] = "output/P2CRC_Xenium"
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+
+    config = compile_application_config(effective, source=source)
+
+    assert config.select_cell_type == normalized
+    assert config.output_root == tmp_path / "output/P2CRC_Xenium"
+    assert config.output_dir == config.output_root / normalized
+
+
+@pytest.mark.parametrize(
+    "selected",
+    ["", "all", "*", ".", "..", "../T", r"T\\x", "T\x00", "T\x7f", "T\x85"],
+)
+def test_sc_cluster_rejects_unsafe_cell_type_for_output_directory(tmp_path, selected):
+    from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
+
+    document = _document("sc-SVC", "cluster")
+    document["local_refinement"]["select_cell_type"] = selected
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+
+    with pytest.raises(ApplicationConfigError, match="concrete broad cell type"):
+        compile_application_config(effective, source=source)
+
+
+def test_cluster_override_rederives_output_dir_from_original_output_root(tmp_path):
+    from revise.application.config import (
+        compile_application_config,
+        load_application_yaml,
+        override_select_cell_type,
+    )
+
+    document = _document("sc-SVC", "cluster")
+    document["output"]["dir"] = "output/P2CRC_Xenium"
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+    config = compile_application_config(effective, source=source)
+
+    fib = override_select_cell_type(config, "Fibroblast")
+    mono = override_select_cell_type(fib, "Mono/Macro")
+
+    assert fib.output_dir == config.output_root / "Fibroblast"
+    assert mono.select_cell_type == "Mono_Macro"
+    assert mono.output_dir == config.output_root / "Mono_Macro"
+    assert mono.output_dir != config.output_dir / "T"
 
 
 def test_reference_filter_fields_must_be_supplied_together(tmp_path):
@@ -126,7 +194,7 @@ def test_reference_filter_fields_must_be_supplied_together(tmp_path):
 def test_sc_preprocessing_and_local_refinement_parameters_are_compiled(tmp_path):
     from revise.application.config import compile_application_config, load_application_yaml
 
-    document = _document("sc-SVC")
+    document = _document("sc-SVC", "cluster")
     document["inputs"]["reference"].update(
         filter_column="Patient",
         filter_value="P2CRC",
@@ -148,10 +216,10 @@ def test_sc_preprocessing_and_local_refinement_parameters_are_compiled(tmp_path)
     assert config.local_refinement_resolutions == (0.6, 0.7, 0.8)
 
 
-def test_sc_sr_local_refinement_graph_and_match_spot_sum_are_compiled(tmp_path):
+def test_sc_sr_mode_local_refinement_graph_and_match_spot_sum_are_compiled(tmp_path):
     from revise.application.config import compile_application_config, load_application_yaml
 
-    document = _document("sc-SVC-sr")
+    document = _document("sc-SVC", "sr")
     document["local_refinement"] = {
         "strength": 0.0,
         "graph": {
@@ -167,6 +235,7 @@ def test_sc_sr_local_refinement_graph_and_match_spot_sum_are_compiled(tmp_path):
 
     config = compile_application_config(effective, source=source)
 
+    assert config.mode == "sr"
     assert config.local_refinement_graph_method == "pca"
     assert config.local_refinement_graph_alpha == 0.2
     assert config.local_refinement_graph_n_neighbors == 10
@@ -206,7 +275,7 @@ def test_effective_request_metadata_hash_covers_application_algorithm_inputs(tmp
     from revise.application.publication import application_metadata, output_paths
     from revise.utils.provenance import hash_jsonable
 
-    document = _document("sc-SVC")
+    document = _document("sc-SVC", "cluster")
     document["inputs"]["reference"].update(
         filter_column="Patient",
         filter_value="P2CRC",
@@ -220,6 +289,17 @@ def test_effective_request_metadata_hash_covers_application_algorithm_inputs(tmp
     )
 
     request = metadata["effective_request"]
+    assert request["mode"] == "cluster"
+    assert request["application_route"] == "sc-SVC"
+    assert request["application_mode"] == "cluster"
+    assert request["selected_cell_type"] == "T"
+    assert request["output"] == {
+        "root": str(config.output_root),
+        "dir": str(config.output_dir),
+        "name": "sample_sp-SVC",
+    }
+    assert metadata["output_root"] == str(config.output_root)
+    assert metadata["output_dir"] == str(config.output_dir)
     assert request["preprocessing"] == {
         "spatial": {
             "min_transcript_counts": 60,
@@ -265,4 +345,31 @@ def test_removed_action_is_rejected(tmp_path):
     document["execution"]["action"] = "preflight"
     source, effective = load_application_yaml(_write_config(tmp_path, document))
     with pytest.raises(ApplicationConfigError, match="execution.action is not supported"):
+        compile_application_config(effective, source=source)
+
+
+def test_sc_svc_requires_an_explicit_mode_with_migration_guidance(tmp_path):
+    from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
+
+    source, effective = load_application_yaml(_write_config(tmp_path, _document("sc-SVC")))
+
+    with pytest.raises(ApplicationConfigError, match="application.mode is required"):
+        compile_application_config(effective, source=source)
+
+
+def test_legacy_sc_svc_sr_type_is_rejected_with_hard_cut_guidance(tmp_path):
+    from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
+
+    source, effective = load_application_yaml(_write_config(tmp_path, _document("sc-SVC-sr")))
+
+    with pytest.raises(ApplicationConfigError, match="sc-SVC-sr.*mode: sr"):
+        compile_application_config(effective, source=source)
+
+
+def test_sp_svc_rejects_application_mode(tmp_path):
+    from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
+
+    source, effective = load_application_yaml(_write_config(tmp_path, _document("sp-SVC", "cluster")))
+
+    with pytest.raises(ApplicationConfigError, match="application.mode is only valid for sc-SVC"):
         compile_application_config(effective, source=source)

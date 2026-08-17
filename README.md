@@ -10,340 +10,205 @@
 [![Documentation Status](https://readthedocs.org/projects/revise-svc/badge/?version=latest)](https://revise-svc.readthedocs.io/en/latest/?badge=latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-REVISE (REconstruction via Vision-integrated Spatial Estimation) reconstructs
-**Spatially-inferred Virtual Cells (SVCs)** from spatial transcriptomics data
-and a matched single-cell RNA-seq reference. Spatial or morphology-derived
-priors can be used when available.
+[REVISE documentation](https://revise-svc.readthedocs.io/en/latest/) | [Dataset](https://zenodo.org/records/21921802) | Paper
 
-## Quick start
+REVISE reconstructs Spatially-inferred Virtual Cells (SVCs) from spatial
+transcriptomics data and a matched single-cell reference. Choose the workflow
+from what one row of the spatial data represents, edit a small YAML request,
+and run one command. The same project also provides the Sim2Real-ST benchmark
+workflows used to study reconstruction under controlled confounding factors.
 
-REVISE supports Python 3.10 and 3.11. A clean environment is recommended.
+## Install
 
-<details>
-<summary><strong>Create an environment with uv or conda</strong></summary>
-
-With uv:
+REVISE supports Python 3.10 and 3.11.
 
 ```bash
-uv venv --python 3.11
-source .venv/bin/activate
+python -m pip install revise-svc
+python -m pip install "revise-svc[tacco]"  # alternative TACCO OT method
 ```
 
-Or with conda:
+The base package includes POT, the default OT implementation. REVISE also
+supports another OT method, TACCO; the maintained Xenium template selects it
+explicitly, so install `revise-svc[tacco]` before running that template.
+
+<details>
+<summary>Optional data-reading or downstream bioinformatics dependencies</summary>
+
+Install these only for the relevant data format or downstream analysis.
 
 ```bash
-conda create -n revise python=3.11 -y
-conda activate revise
+python -m pip install "revise-svc[spatialdata]"  # SpatialData/Zarr input
+python -m pip install "revise-svc[pathway]"      # pathway analysis
+python -m pip install "revise-svc[cci]"          # cell-cell interaction analysis
+python -m pip install "revise-svc[trajectory]"   # trajectory analysis
 ```
 
 </details>
 
-Install REVISE:
+See the [installation guide](https://revise-svc.readthedocs.io/en/latest/source/installation.html)
+for source installation, optional dependencies, and documentation builds.
 
-```bash
-pip install revise-svc
-```
+## Data downloads
 
-Choose the application template that matches the ST data:
+Download the source material or reproduced H5AD that matches your workflow.
+The records complement a YAML request; they do not configure a new run for you.
 
-| ST data | Template | REVISE route |
+| Material | Download |
+| --- | --- |
+| Sim2Real-ST benchmark | [Zenodo](https://zenodo.org/records/21921802) |
+| Reproduced benchmark results | [Zenodo](https://zenodo.org/records/21921802) |
+| Real-world ST datasets | [Zenodo](https://zenodo.org/records/21921802) |
+| Reproduced sp-SVC H5AD | [Zenodo](https://zenodo.org/records/18389835) |
+| Reproduced sc-SVC H5AD | [Zenodo](https://zenodo.org/records/18389211) |
+
+## Quick run
+
+### Choose the application template that matches the ST data
+
+Run from a local editable YAML copy. With a published package, first use the
+[template-copy step](https://revise-svc.readthedocs.io/en/latest/source/installation.html#application-templates)
+to copy one packaged template into your working directory, then use
+`revise-reconstruct`. In a source checkout, the maintained copies are under
+`configs/application/`; the source-checkout equivalent commands are shown with
+each template.
+
+| ST data | Start from | Public route |
 | --- | --- | --- |
-| Xenium T-cell data | [`configs/application/Xenium_T.yaml`](configs/application/Xenium_T.yaml) | `sc-SVC` |
-| Xenium fibroblast data | [`configs/application/Xenium_Fib.yaml`](configs/application/Xenium_Fib.yaml) | `sc-SVC` |
-| Xenium mono/macro data | [`configs/application/Xenium_Mono.yaml`](configs/application/Xenium_Mono.yaml) | `sc-SVC` |
 | Visium HD bins or pseudo-cells | [`configs/application/VisiumHD.yaml`](configs/application/VisiumHD.yaml) | `sp-SVC` |
-| Visium or another multi-cell spot assay | [`configs/application/Visium.yaml`](configs/application/Visium.yaml) | `sc-SVC-sr` |
+| Xenium segmented cells | [`configs/application/Xenium.yaml`](configs/application/Xenium.yaml) | `sc-SVC`, cluster mode |
+| Visium multi-cell spots | [`configs/application/Visium.yaml`](configs/application/Visium.yaml) | `sc-SVC`, sr mode |
 
-These files are present in a source checkout. With a package-only installation,
-copy the selected file from the packaged `revise.application/templates`
-resource into your project with Python's standard `importlib.resources`, edit
-the copy, and pass its local path to `--config` (see the
-[installation guide](docs/source/installation.rst)). A bare official template
-name first uses `configs/application/<name>.yaml` in the launch directory and
-then falls back to the packaged resource.
+`sc-SVC` always names its mode explicitly. Cluster mode is for segmented
+imaging-ST cells; sr mode reconstructs virtual cells within multi-cell spots.
+REVISE does not infer the choice from a filename or silently repair a
+mismatched request.
 
-Edit the selected YAML before running it. The fields you normally change are
-`paths.root_dir`, the exact ST/reference paths, optional reference
-`filter_column`/`filter_value`, preprocessing thresholds, annotation columns,
-and `output.dir`/`output.name`. The three Xenium files describe the same Xenium
-assay with different reconstruction targets: `T`, `Fibroblast`, or
-`Mono_Macro`. Confirm that the selected label exists in the full reference
-`obs` column. Visium HD and Visium expose only `local_refinement.strength`.
-Visium's `0.0` still runs LR; it only disables assignment-posterior
-strengthening of the LR cost. The official Xenium templates filter the shared
-reference with `Patient == P2CRC`; the key names are generic and may describe a
-different reference cohort field in a custom YAML.
+Before running any YAML, update the input paths, reference filter, annotation
+columns, preprocessing thresholds, and output root. The
+[Application Reference](https://revise-svc.readthedocs.io/en/latest/source/application-reference.html)
+defines the accepted fields and output contract.
 
-From a source checkout, run the YAML directly:
+For Visium HD bins or pseudo-cells, use `VisiumHD.yaml` and set the spatial and
+reference paths plus the broad annotation column.
 
 ```bash
+revise-reconstruct --config VisiumHD.yaml
+# Source-checkout equivalent:
 python reconstruct.py --config configs/application/VisiumHD.yaml
 ```
 
-After installation, the installed command `revise-reconstruct` is the
-equivalent entry name:
+For Xenium segmented cells, use `Xenium.yaml`, set its input/filter/annotation
+fields, and select one concrete broad cell type. The cluster route automatically
+writes to `T/`, `Fibroblast/`, or `Mono_Macro/` below the configured output root.
 
 ```bash
-revise-reconstruct --config configs/application/VisiumHD.yaml
+revise-reconstruct --config Xenium.yaml --select-ct T
+revise-reconstruct --config Xenium.yaml --select-ct Fibroblast
+revise-reconstruct --config Xenium.yaml --select-ct "Mono/Macro"
+# Source-checkout equivalent:
+python reconstruct.py --config configs/application/Xenium.yaml --select-ct T
+python reconstruct.py --config configs/application/Xenium.yaml --select-ct Fibroblast
+python reconstruct.py --config configs/application/Xenium.yaml --select-ct "Mono/Macro"
 ```
 
-The three routes publish:
+For multi-cell Visium spots, use `Visium.yaml` and review the optional PM prior
+when your run uses one.
+
+```bash
+revise-reconstruct --config Visium.yaml
+# Source-checkout equivalent:
+python reconstruct.py --config configs/application/Visium.yaml
+```
+
+`--config` is required. `--select-ct` is accepted only for `sc-SVC` cluster
+mode and overrides the Xenium YAML's `local_refinement.select_cell_type` with
+one concrete broad cell type.
+
+## What is written
+
+| Route | Files returned and published |
+| --- | --- |
+| `sp-SVC` | one `<output.dir>/<output.name>.h5ad`, or `svc.h5ad` when `output.name` is omitted |
+| `sc-SVC`, cluster mode | `<final-dir>/<name>_spatial.h5ad` and `<final-dir>/<name>_expr.h5ad`, or `spatial.h5ad` and `expr.h5ad` without a name |
+| `sc-SVC`, sr mode | one `<output.dir>/<output.name>.h5ad`, or `svc.h5ad` when `output.name` is omitted |
+
+Each H5AD carries its normalized route and mode metadata and links to the
+run's `provenance.json`. A run is successful only when its promised artifact
+or artifacts and succeeded manifest exist.
+
+For cluster mode, `output.dir` is the base directory and the final selected-cell-type
+subdirectory is appended automatically after label normalization.
+
+## Framework and supported data shapes
+
+REVISE uses one reconstruction lifecycle for three Application choices and
+for Sim2Real-ST Benchmark routes. Application handles user data and publishes
+the promised artifact shape; Benchmark owns its own experimental-case
+preparation and metrics.
+
+![REVISE framework overview](png/REVISE_overview.png)
+
+The concise scientific distinction is: Visium HD uses spatial refinement of
+high-resolution units; Xenium uses cluster-mode cell-state refinement; Visium
+uses sr-mode virtual-cell reconstruction. SR mode preserves spot-level
+evidence and does not by itself establish true sub-spot cell locations. See
+[Concepts](https://revise-svc.readthedocs.io/en/latest/source/concepts.html)
+for the data-shape and evidence boundaries.
+
+## Reproduce published material
+
+### Sim2Real-ST Benchmark
+
+Run the bounded benchmark batch launcher once from the repository root:
+
+```bash
+BENCHMARK_MAX_JOBS=1 bash reproduce/benchmark_main.sh
+```
+
+After the Benchmark run, use the notebooks in
+[`reproduce/benchmark/`](reproduce/benchmark/) for the paper analyses. See
+[reproduce/README.md](reproduce/README.md) for the data layout and detailed
+single-family or batch commands, or the [Benchmark documentation](https://revise-svc.readthedocs.io/en/latest/)
+for the current reference.
+
+### Real-world ST Application
+
+Run an Application template through the Quick run section, then use the
+matching notebook in [`reproduce/case/`](reproduce/case/) to analyze its H5AD.
+The [Application gallery](https://revise-svc.readthedocs.io/en/latest/source/gallery.html)
+and [REVISE documentation](https://revise-svc.readthedocs.io/en/latest/) provide
+the preserved analysis material and current reference. The notebooks are static
+snapshots, not evidence of a current rerun or biological validation.
+
+## Documentation index
+
+The README is the first-run guide. Each detailed rule has one canonical owner:
+
+| Question | Canonical documentation |
+| --- | --- |
+| How do I run a template quickly? | [Quick Start](https://revise-svc.readthedocs.io/en/latest/source/quickstart.html) |
+| What does every Application YAML field mean? | [Application Reference](https://revise-svc.readthedocs.io/en/latest/source/application-reference.html) |
+| Which SVC/mode fits my data and what does it prove? | [Concepts](https://revise-svc.readthedocs.io/en/latest/source/concepts.html) |
+| How do I install dependencies? | [Installation](https://revise-svc.readthedocs.io/en/latest/source/installation.html) |
+| How do I migrate a previous Application request? | [Application migration](https://revise-svc.readthedocs.io/en/latest/source/application-migration.html) |
+| How are Application and Benchmark routed internally? | [Architecture](https://revise-svc.readthedocs.io/en/latest/source/architecture.html) |
+| Which notebooks are preserved? | [Gallery](https://revise-svc.readthedocs.io/en/latest/source/gallery.html) |
+| How do I reproduce the paper workflows? | [`reproduce/README.md`](reproduce/README.md) |
+| How is the repository verified? | [`tests/README.md`](tests/README.md) |
+
+## Repository layout
 
 ```text
-output/sp_SVC_case/P1CRC/sp_SVC.h5ad
-output/visium_mouse_brain_revise/REVISEVisiumMouseBrain_sc-SVC-sr.h5ad
+configs/application/     maintained Application YAML templates
+reconstruct.py           Application CLI and Python entry point
+revise/                  package implementation and Sim2Real-ST benchmark API
+reproduce/               benchmark launchers and preserved analysis notebooks
+docs/                    ReadTheDocs source
+tests/                   executable contracts
 ```
 
-Standard `sc-SVC` publishes its two reconstruction carriers separately:
-
-```text
-output/P2CRC_Xenium/T/spatial.h5ad
-output/P2CRC_Xenium/T/expr.h5ad
-```
-
-The associated `provenance.json` keeps the application YAML identity under
-`application_config` (`source_path`, `source_sha256`, root and resolved paths,
-effective request/hash, and action). Top-level `engine_defaults_hash`,
-`authority_hash`, `algorithm_config_hash`, and `effective_config_hash` identify
-the package engine authority and resolved run. [`reconstruct.py`](reconstruct.py)
-is the canonical Application implementation, and the installed
-`revise-reconstruct` command points to its same `main()` implementation.
-
-<details>
-<summary><strong>What does each template reconstruct?</strong></summary>
-
-| Your ST data | Typical platform and input rows | Route | What REVISE reconstructs |
-| --- | --- | --- | --- |
-| **hST-like** high-resolution sequencing data | Visium HD; each row is a bin or pseudo-cell | `sp-SVC` | Reference-annotated expression with spatial refinement for the retained high-resolution units |
-| **iST** imaging-based data | iST-like segmented-cell inputs, such as Xenium, CosMx, or MERFISH | `sc-SVC` | Segmented-cell positions combined with reference-informed cell-state refinement and gene completion |
-| **sST** spot-based data | Visium; each row is a multi-cell spot | `sc-SVC-sr` | Reference-informed virtual-cell expression and cell-type composition within each spot |
-
-`sc-SVC-sr` does not by itself infer true sub-spot cell positions. When the ST
-H5AD contains segmentation-derived cell centers, REVISE uses them. Virtual
-cells without a supplied center remain at their source spot center.
-
-</details>
-
-<details>
-<summary><strong>Application YAML inputs and AnnData requirements</strong></summary>
-
-Set `inputs.st.path` and `inputs.reference.path` explicitly. `paths.root_dir: .` means the launch current
-working directory, not the application YAML directory; otherwise it must be an
-existing absolute directory. Input and output values are relative children of
-that root and cannot escape it with `..`. Package code in
-`revise.config.authority` owns engine defaults and routing.
-
-- Both inputs must have non-empty `X`, unique `obs_names`, unique `var_names`,
-  and at least one shared gene.
-- The ST input must contain finite two-dimensional coordinates in
-  `obsm["spatial"]`.
-- Every route requires `global_anchoring.broad_column` in reference `obs`. Only
-  standard `sc-SVC` accepts and requires `local_refinement.subtype_column`.
-  `sc-SVC-sr` composition and expression allocation use the broad assignment.
-- A reference `filter_column` and `filter_value` must be provided together or
-  both omitted. When present, filtering runs before the spatial and reference
-  count/gene preprocessing steps.
-- For sST inputs with segmentation-derived centers, the optional
-  `uns["revise_cell_locations"]` table uses unique `cell_id` values as its
-  index and contains `spot_name`, `x`, and `y`. Its cell IDs must agree with
-  `uns["all_cells_in_spot"]`; `x/y` must use the same coordinate system and
-  scale as `obsm["spatial"]`. Missing centers fall back to the spot center. The
-  optional score matrix can be provided with the exact
-  `inputs.pm_on_cell.path`. Its axes must exactly equal the active virtual-cell
-  IDs and normalized cell types; values must be finite and within `[0, 1]`.
-  REVISE reorders exact axes but does not clip or normalize PM.
-  Without that field, coordinates are retained while cell types are assigned
-  to the existing rows by a seeded random permutation of each spot's inferred
-  quota.
-
-</details>
-
-<details>
-<summary><strong>SpatialData and algorithm controls</strong></summary>
-
-ST `format` accepts `h5ad`, `spatialdata`, or `auto`; the reference remains
-H5AD. SpatialData table and spatial-element selections live under
-`inputs.st.spatialdata.table` and `inputs.st.spatialdata.element`. REVISE does
-not expose a coordinate-conversion promise through this entry point.
-
-`execution.seed` and `algorithm.ot_method` are optional. The latter controls
-both GA and LR; omitting it keeps the selected engine profile authoritative.
-Standard `sc-SVC` defaults to TACCO and requires the `tacco` extra; REVISE never
-changes solvers automatically. Unknown or route-inapplicable application
-fields are errors; the engine YAML and generic key/value overrides are not
-public application controls.
-
-</details>
-
-<details>
-<summary><strong>Source installation, optional capabilities, and development setup</strong></summary>
-
-To install the current repository source:
-
-```bash
-git clone https://github.com/wuys13/REVISE.git
-cd REVISE
-pip install .
-```
-
-The base package contains reconstruction, the POT implementation, clustering,
-and the core scientific stack. Install additional capabilities only when
-needed:
-
-| Capability | Installation | Purpose |
-| --- | --- | --- |
-| Standard sc-SVC default solver | `pip install "revise-svc[tacco]"` | Installs TACCO 0.5.0, required by the default standard sc-SVC route |
-| Pathway analysis | `pip install "revise-svc[pathway]"` | Dependencies used by pathway analysis notebooks |
-| Cell-cell interaction analysis | `pip install "revise-svc[cci]"` | Dependencies used by CCI notebooks; databases and reference resources are prepared separately |
-| Trajectory analysis | `pip install "revise-svc[trajectory]"` | Dependencies used by trajectory analysis notebooks |
-| SpatialData input | `pip install "revise-svc[spatialdata]"` | SpatialData/Zarr input support |
-
-For optional groups from a source checkout, replace `revise-svc` with `.`. For
-development:
-
-```bash
-pip install -e ".[dev]"
-```
-
-Installation does not download research data or external analysis databases.
-
-</details>
-
-Detailed documentation: <https://revise-svc.readthedocs.io/en/latest/>
-
-## What REVISE Covers
-
-Sim2Real-ST benchmarks six confounding factors across spatial transcriptomics
-platform types:
-
-- Spatially heterogeneous factors: image segmentation artifacts and bin-to-cell
-  assignment errors.
-- Spatially homogeneous factors: spot size, batch effect, gene panel
-  limitation, and gene dropout.
-
-![Spatial transcriptomics limitations](png/ST_limitations.png)
-
-<p align="center">Confounding factors that limit current spatial transcriptomics technologies</p>
-
-REVISE reconstructs three complementary SVC types:
-
-- `sp-SVC`: spatial refinement for high-resolution spatial transcriptomics.
-- `sc-SVC`: molecular completion and cell-state refinement for imaging-based
-  spatial transcriptomics.
-- `sc-SVC-sr`: spot-level super-resolution reconstruction.
-
-![REVISE overview](png/REVISE_overview.png)
-
-<p align="center">Overview of the REVISE framework</p>
-
-Application output names are declared in YAML. `sp-SVC` and `sc-SVC-sr` publish:
-
-```text
-<output-dir>/<output-name>.h5ad
-```
-
-If `output.name` is omitted, a single-output route uses `svc.h5ad`.
-`sc-SVC` publishes `<output-name>_spatial.h5ad` and
-`<output-name>_expr.h5ad`; without `output.name` it uses `spatial.h5ad` and
-`expr.h5ad`. The run's
-`provenance.json` records each result role together with the resolved route,
-configuration, inputs, stages, and artifacts.
-
-## Reproduce
-
-Paper datasets and reproduced results are available from
-<https://zenodo.org/records/17705737>. The repository keeps benchmark launchers
-and curated notebooks under [`reproduce/`](reproduce/); see
-[`reproduce/README.md`](reproduce/README.md) for the entry-point map.
-
-<details>
-<summary><strong>Run the Sim2Real-ST benchmarks</strong></summary>
-
-From a source checkout, run one confounding family:
-
-```bash
-python reproduce/benchmark_main.py \
-  --config configs/benchmark/segmentation.yaml \
-  --data-root raw_data/Sim2Real-ST \
-  --sample-name P2CRC/cut_part1 \
-  --dataset-task segmentation \
-  --evaluate true \
-  --output-root output/benchmark
-```
-
-Supported values are `segmentation`, `bin2cell`, `batch_effect`, `spot_size`,
-`gene_panel`, and `gene_dropout`. Run the bounded multi-family launcher with:
-
-```bash
-bash reproduce/benchmark_main.sh
-```
-
-The analysis notebooks are under [`reproduce/benchmark/`](reproduce/benchmark/).
-
-</details>
-
-<details>
-<summary><strong>Open the application and downstream-analysis notebooks</strong></summary>
-
-![SVC applications](png/SVC_applications.png)
-
-<p align="center">Biological insights enabled by SVC reconstruction</p>
-
-Application reconstruction and downstream-analysis notebooks are under
-[`reproduce/case/`](reproduce/case/). Some require the optional `pathway`,
-`cci`, or `trajectory` installation groups and their corresponding external
-reference resources.
-
-</details>
-
-<details>
-<summary><strong>Reproduction scope and validation status</strong></summary>
-
-The notebooks preserve the paper workflows, but their presence does not mean
-that the current source checkout has rerun every real-data analysis. Real-data
-end-to-end validation remains a separate release step. Installation does not
-download the paper datasets, reproduced results, or external analysis
-databases.
-
-</details>
-
-## Python API
-
-<details>
-<summary><strong>Run the reconstruction pipeline from Python</strong></summary>
-
-```python
-from reconstruct import run_application
-
-spatial_svc = run_application("configs/application/VisiumHD.yaml")
-spatial, expression = run_application("configs/application/Xenium_T.yaml")
-
-# sp-SVC and sc-SVC-sr return one AnnData; sc-SVC returns this fixed pair.
-```
-
-Application callers provide one YAML. `REVISEPipeline.run()` remains the
-engine-level interface used by Benchmark and advanced integrations; it is not
-the Application configuration API. Benchmark execution continues to use the
-separate `cf` selector for its confounding family.
-
-</details>
-
-## Repository Layout
-
-<details>
-<summary><strong>Show the top-level repository structure</strong></summary>
-
-- `revise/`: installable reconstruction and analysis package.
-- `reproduce/`: benchmark launchers and benchmark/application notebooks.
-- `docs/`: detailed user and method documentation.
-- `logo/`, `png/`: public project and scientific figures.
-- `tests/`: behavioral, scientific-contract, packaging, and CLI tests.
-- `.github/`: continuous integration.
-- `constraints/`: tested Python 3.10/3.11 dependency constraints.
-
-</details>
-
-## License
-
-REVISE is released under the [MIT License](LICENSE). Third-party datasets and
-notebook resources may have separate terms.
+## Citation and license
+
+This checkout does not currently contain citation metadata; consult the
+[REVISE documentation](https://revise-svc.readthedocs.io/en/latest/) for the
+current project citation. REVISE is released under the [MIT License](LICENSE).

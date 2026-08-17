@@ -2,6 +2,7 @@ schema_version: 1
 
 application:
   svc_type: sc-SVC
+  mode: cluster
 
 paths:
   root_dir: . # EDIT: this is the command launch directory, not the YAML directory.
@@ -37,7 +38,7 @@ local_refinement:
   resolutions: [0.6, 0.7, 0.8]
 
 output:
-  dir: output/P2CRC_Xenium/T # EDIT: relative to paths.root_dir.
+  dir: output/P2CRC_Xenium # EDIT: output root; selected cell type is appended automatically.
 
 execution:
   seed: 42 # KEEP for reproducible runs.

@@ -16,11 +16,17 @@ def _merge(profile: str, algorithm_overrides=None):
         for selector, spec in routes.items()
         if spec["profile"] == profile
     )
-    selector = (
-        {"svc_type": route[1]}
-        if route[0] == "application"
-        else {"cf": route[1]}
-    )
+    if route[0] == "application":
+        selector = (
+            {
+                "svc_type": "sc-SVC",
+                "application_mode": route[1].split(":", 1)[1],
+            }
+            if route[1].startswith("sc-SVC:")
+            else {"svc_type": route[1]}
+        )
+    else:
+        selector = {"cf": route[1]}
     runtime = resolve_semantic_route(raw, **selector)
     runtime.pop("profile")
     runtime.pop("warning")
@@ -38,7 +44,7 @@ def _merge(profile: str, algorithm_overrides=None):
     [
         ("application_sp", 0.2),
         ("benchmark_seg", 0.2),
-        ("application_sc_sr", 0.0),
+        ("application_sc_super_resolution", 0.0),
         ("benchmark_sr_batch", 0.0),
     ],
 )

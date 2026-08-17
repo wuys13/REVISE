@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from contextlib import redirect_stdout
+from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -45,7 +47,7 @@ def test_run_application_exposes_load_preprocess_and_reconstruct_flow(monkeypatc
 def test_main_keeps_reconstruction_output_out_of_success_stdout(monkeypatch):
     import reconstruct
 
-    def run_application(_path):
+    def run_application(_path, *, select_ct=None):
         print("pipeline noise")
         return _Artifact("AnnData object")
 
@@ -64,7 +66,7 @@ def test_main_prints_both_sc_svc_result_summaries(monkeypatch):
     monkeypatch.setattr(
         reconstruct,
         "run_application",
-        lambda _path: (_Artifact("spatial AnnData"), _Artifact("expression AnnData")),
+        lambda _path, *, select_ct=None: (_Artifact("spatial AnnData"), _Artifact("expression AnnData")),
     )
     stdout = StringIO()
 
@@ -81,7 +83,7 @@ def test_main_prints_both_sc_svc_result_summaries(monkeypatch):
 def test_main_does_not_print_finished_when_reconstruction_fails(monkeypatch):
     import reconstruct
 
-    def fail(_path):
+    def fail(_path, *, select_ct=None):
         raise RuntimeError("publication failed")
 
     monkeypatch.setattr(reconstruct, "run_application", fail)
@@ -93,14 +95,15 @@ def test_main_does_not_print_finished_when_reconstruction_fails(monkeypatch):
     assert "Finished" not in stdout.getvalue()
 
 
-def test_sc_svc_sr_preprocessing_ensures_spot_cells_before_generic_steps(monkeypatch):
+def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(monkeypatch):
     import reconstruct
 
     spatial = object()
     reference = object()
     calls = []
     config = SimpleNamespace(
-        svc_type="sc-SVC-sr",
+        svc_type="sc-SVC",
+        mode="sr",
         reference_filter_column="Patient",
         reference_filter_value="P2CRC",
         spatial_min_transcript_counts=60,
@@ -152,3 +155,83 @@ def test_sc_svc_sr_preprocessing_ensures_spot_cells_before_generic_steps(monkeyp
         "reference",
         "labels",
     ]
+
+
+@dataclass(frozen=True)
+class _ApplicationConfig:
+    svc_type: str
+    mode: str
+    select_cell_type: str | None
+    output_root: Path
+    output_dir: Path
+
+
+def test_run_application_overrides_cluster_cell_type_without_changing_output_path(
+    monkeypatch,
+    tmp_path,
+):
+    import reconstruct
+
+    config = _ApplicationConfig(
+        svc_type="sc-SVC",
+        mode="cluster",
+        select_cell_type="T",
+        output_root=tmp_path / "output",
+        output_dir=tmp_path / "output" / "T",
+    )
+    captured = []
+    result = object()
+    monkeypatch.setattr(reconstruct, "load_application_yaml", lambda path: (path, {}))
+    monkeypatch.setattr(reconstruct, "compile_application_config", lambda doc, source: config)
+    monkeypatch.setattr(reconstruct, "load_data", lambda value: (object(), object()))
+    monkeypatch.setattr(reconstruct, "preprocess_data", lambda left, right, value: (left, right))
+    monkeypatch.setattr(
+        reconstruct,
+        "reconstruct",
+        lambda left, right, value: captured.append(value) or result,
+    )
+
+    assert reconstruct.run_application("run.yaml", select_ct="Fibroblast") is result
+    assert captured == [
+        _ApplicationConfig(
+            svc_type="sc-SVC",
+            mode="cluster",
+            select_cell_type="Fibroblast",
+            output_root=config.output_root,
+            output_dir=config.output_root / "Fibroblast",
+        )
+    ]
+
+
+def test_run_application_rejects_cell_type_override_outside_cluster_mode(monkeypatch, tmp_path):
+    import reconstruct
+    from revise.application.config import ApplicationConfigError
+
+    config = _ApplicationConfig(
+        svc_type="sc-SVC",
+        mode="sr",
+        select_cell_type=None,
+        output_root=tmp_path / "output",
+        output_dir=tmp_path / "output",
+    )
+    monkeypatch.setattr(reconstruct, "load_application_yaml", lambda path: (path, {}))
+    monkeypatch.setattr(reconstruct, "compile_application_config", lambda doc, source: config)
+
+    with pytest.raises(ApplicationConfigError, match="only valid for sc-SVC cluster mode"):
+        reconstruct.run_application("run.yaml", select_ct="T")
+
+
+def test_main_passes_select_ct_to_application_entrypoint(monkeypatch):
+    import reconstruct
+
+    captured = {}
+    monkeypatch.setattr(
+        reconstruct,
+        "run_application",
+        lambda path, *, select_ct=None: captured.update(path=path, select_ct=select_ct)
+        or _Artifact("AnnData object"),
+    )
+
+    reconstruct.main(["--config", "Xenium.yaml", "--select-ct", "Fibroblast"])
+
+    assert captured == {"path": "Xenium.yaml", "select_ct": "Fibroblast"}

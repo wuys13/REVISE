@@ -33,7 +33,7 @@ COLUMNS = {
 DECLARED_PROFILES = {
     "application_sp",
     "application_sc",
-    "application_sc_sr",
+    "application_sc_super_resolution",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -99,7 +99,7 @@ def _write_application_inputs(tmp_path: Path):
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (
-            "application_sc_sr",
+            "application_sc_super_resolution",
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (
@@ -164,10 +164,17 @@ def test_all_declared_profiles_resolve_one_explicit_input_matrix(
         for selector, spec in routes.items()
         if spec["profile"] == profile
     )
-    route = resolve_semantic_route(
-        raw,
-        **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
-    )
+    if namespace == "application" and selector.startswith("sc-SVC:"):
+        route = resolve_semantic_route(
+            raw,
+            svc_type="sc-SVC",
+            application_mode=selector.split(":", 1)[1],
+        )
+    else:
+        route = resolve_semantic_route(
+            raw,
+            **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
+        )
     route.pop("profile")
     route.pop("warning")
     merged = merge_unified_config(
@@ -761,7 +768,7 @@ def test_sr_preflight_accepts_configured_broad_without_subtype_or_literal_level1
         specs,
         runtime={
             "mode": mode,
-            "task": "sc_svc_sr",
+            "task": "sc_svc_super_resolution" if mode == "application" else "sc_svc_sr",
         },
         columns=columns,
     )
@@ -792,7 +799,7 @@ def test_sr_preflight_rejects_missing_configured_broad_column(tmp_path, mode):
             specs,
             runtime={
                 "mode": mode,
-                "task": "sc_svc_sr",
+                "task": "sc_svc_super_resolution" if mode == "application" else "sc_svc_sr",
             },
             columns=columns,
         )
@@ -814,7 +821,7 @@ def test_application_sr_pre_allocation_rejects_mismatched_cell_locations(tmp_pat
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": "application", "task": "sc_svc_sr"},
+        runtime={"mode": "application", "task": "sc_svc_super_resolution"},
         columns=COLUMNS,
     )
 
@@ -843,7 +850,10 @@ def test_sr_preflight_records_documented_mapping_generation_path(
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": mode, "task": "sc_svc_sr"},
+        runtime={
+            "mode": mode,
+            "task": "sc_svc_super_resolution" if mode == "application" else "sc_svc_sr",
+        },
         columns=COLUMNS,
     )
 
@@ -898,7 +908,10 @@ def _policy_context(
     raw = _authority_document()
     selector = {
         ("application", "sp_svc"): {"svc_type": "sp-SVC"},
-        ("application", "sc_svc_sr"): {"svc_type": "sc-SVC-sr"},
+        ("application", "sc_svc_super_resolution"): {
+            "svc_type": "sc-SVC",
+            "application_mode": "sr",
+        },
         ("benchmark", "sp_svc"): {"cf": "segmentation"},
         ("benchmark", "sc_svc_sr"): {"cf": "batch_effect"},
         ("benchmark", "sc_svc_impute"): {"cf": "gene_panel"},

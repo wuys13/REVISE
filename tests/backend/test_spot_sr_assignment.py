@@ -25,10 +25,17 @@ def _merged(profile, *, runtime_overrides=None, io_overrides=None):
         for selector, spec in routes.items()
         if spec["profile"] == profile
     )
-    runtime = resolve_semantic_route(
-        raw,
-        **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
-    )
+    if namespace == "application" and selector.startswith("sc-SVC:"):
+        runtime = resolve_semantic_route(
+            raw,
+            svc_type="sc-SVC",
+            application_mode=selector.split(":", 1)[1],
+        )
+    else:
+        runtime = resolve_semantic_route(
+            raw,
+            **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
+        )
     selected_profile = runtime.pop("profile")
     runtime.pop("warning")
     runtime.update(runtime_overrides or {})
@@ -411,7 +418,12 @@ def test_true_cell_type_explicit_label_key_does_not_fallback(adapters):
 @pytest.mark.parametrize(
     ("strategy_name", "profile", "runner_module", "runner_class"),
     [
-        ("ScSvcSrApplicationStrategy", "application_sc_sr", "sc_svc_sr_application", "ScSVCSr"),
+        (
+            "ScSvcSuperResolutionApplicationStrategy",
+            "application_sc_super_resolution",
+            "sc_svc_super_resolution_application",
+            "ScSVCSuperResolution",
+        ),
         ("ScSvcSrBenchmarkStrategy", "benchmark_sr_batch", "sc_svc_sr_benchmark", "ScSVCSr"),
     ],
 )
@@ -433,8 +445,8 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     captured = {}
 
     conf_type = (
-        adapters.ApplicationScSrConf
-        if profile == "application_sc_sr"
+        adapters.ApplicationScSuperResolutionConf
+        if profile == "application_sc_super_resolution"
         else adapters.BenchmarkSrConf
     )
 
@@ -447,7 +459,7 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         pass
 
     runner_stub = types.ModuleType(f"revise.backend.runners.{runner_module}")
-    if profile == "application_sc_sr":
+    if profile == "application_sc_super_resolution":
         class StopRunner:
             def __init__(self, *_args, **_kwargs):
                 raise StopAfterConfig
@@ -475,8 +487,8 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=False,
         pm_on_cell=pd.DataFrame([[1.0]], index=["c1"], columns=["A"]),
-        st_adata=(object() if profile == "application_sc_sr" else None),
-        sc_ref_adata=(object() if profile == "application_sc_sr" else None),
+        st_adata=(object() if profile == "application_sc_super_resolution" else None),
+        sc_ref_adata=(object() if profile == "application_sc_super_resolution" else None),
     )
 
     with pytest.raises(StopAfterConfig):
