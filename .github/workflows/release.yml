@@ -1,0 +1,401 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Verify stable release tag and package version
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          package_version="$(python -c 'from revise import __version__; print(__version__)')"
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          test "${RELEASE_TAG}" = "v${package_version}"
+          test "${RELEASE_PRERELEASE}" = "false"
+          echo "version=${package_version}" >> "${GITHUB_OUTPUT}"
+      - name: Install build and distribution test dependencies
+        run: >-
+          python -m pip install
+          -c constraints/python-3.11.txt
+          build pytest twine
+      - name: Build wheel and source distribution
+        run: python -m build --outdir "${RUNNER_TEMP}/candidate"
+      - name: Check distribution metadata
+        run: python -m twine check "${RUNNER_TEMP}"/candidate/*
+      - name: Test distribution contents and clean installation
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          REVISE_DIST_DIR: ${{ runner.temp }}/candidate
+          REVISE_CLEAN_INSTALL: "1"
+        run: >-
+          python -m pytest -p no:capture -q
+          tests/integration/distribution/test_artifacts.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: python-package-distributions
+          path: ${{ runner.temp }}/candidate/*
+          if-no-files-found: error
+
+  installed-cli:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: ${{ runner.temp }}/candidate
+      - name: Locate and install exact candidate wheel
+        shell: bash
+        run: |
+          wheels=("${RUNNER_TEMP}"/candidate/revise_svc-*.whl)
+          test "${#wheels[@]}" -eq 1
+          test -f "${wheels[0]}"
+          python -m pip install \
+            -c constraints/python-${{ matrix.python-version }}.txt \
+            pytest \
+            "${wheels[0]}"
+          echo "REVISE_WHEEL=${wheels[0]}" >> "${GITHUB_ENV}"
+      - name: Test installed reconstruction CLI
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: >-
+          python -m pytest -p no:capture -q
+          tests/integration/application/test_installed_cli.py
+
+  tacco-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: ${{ runner.temp }}/candidate
+      - name: Create isolated candidate wheel environment
+        shell: bash
+        run: |
+          wheels=("${RUNNER_TEMP}"/candidate/revise_svc-*.whl)
+          test "${#wheels[@]}" -eq 1
+          test -f "${wheels[0]}"
+          python -m venv "${RUNNER_TEMP}/candidate-venv"
+          "${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install \
+            -c constraints/python-3.11.txt \
+            pytest \
+            POT==0.9.5 tacco==0.5.0 \
+            "${wheels[0]}"
+      - name: Copy solver smoke tests outside checkout
+        run: |
+          smoke_root="${RUNNER_TEMP}/wheel-smoke-tests/tests/integration/solvers"
+          mkdir -p "${smoke_root}"
+          cp tests/integration/solvers/conftest.py "${smoke_root}/"
+          cp tests/integration/solvers/test_tacco_solver_smoke.py "${smoke_root}/"
+          cp tests/integration/solvers/test_local_refinement_solver_smoke.py "${smoke_root}/"
+      - name: Verify candidate wheel import outside checkout
+        working-directory: ${{ runner.temp }}
+        run: >-
+          "${RUNNER_TEMP}/candidate-venv/bin/python" -c
+          "import os, pathlib, revise;
+          source = pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve();
+          installed = pathlib.Path(revise.__file__).resolve();
+          assert not installed.is_relative_to(source), (installed, source)"
+      - name: Run TACCO solver smoke
+        working-directory: ${{ runner.temp }}
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          REVISE_EXPECT_INSTALLED_PREFIX: ${{ runner.temp }}/candidate-venv
+        run: >-
+          "${RUNNER_TEMP}/candidate-venv/bin/python" -m pytest
+          -p no:capture --import-mode=importlib -q
+          "${RUNNER_TEMP}/wheel-smoke-tests/tests/integration/solvers"
+
+  publish-testpypi:
+    needs: [build, installed-cli, tacco-smoke]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/revise-svc
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Publish package distributions to TestPyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  verify-testpypi:
+    needs: [build, publish-testpypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Verify TestPyPI file hashes
+        env:
+          INDEX_JSON_URL: https://test.pypi.org/pypi/revise-svc/${{ needs.build.outputs.version }}/json
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import time
+          from pathlib import Path
+          from urllib.error import HTTPError, URLError
+          from urllib.request import urlopen
+
+          def release_hashes(payload):
+              return {
+                  item["filename"]: item["digests"]["sha256"]
+                  for item in payload["urls"]
+              }
+
+          def load_json(url, accept):
+              last_error = None
+              for attempt in range(12):
+                  try:
+                      with urlopen(url, timeout=30) as response:
+                          payload = json.load(response)
+                      if accept(payload):
+                          return payload
+                      last_error = AssertionError((url, payload))
+                  except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                      last_error = error
+                  if attempt < 11:
+                      time.sleep(10)
+              raise last_error
+
+          local = {
+              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in Path("dist").iterdir()
+          }
+          payload = load_json(
+              os.environ["INDEX_JSON_URL"],
+              lambda candidate: release_hashes(candidate) == local,
+          )
+          remote = release_hashes(payload)
+          assert remote == local, (remote, local)
+          PY
+      - name: Install the TestPyPI wheel and verify public entry points
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          wheels=("${GITHUB_WORKSPACE}"/dist/revise_svc-*.whl)
+          test "${#wheels[@]}" -eq 1
+          test -f "${wheels[0]}"
+          python -m pip install \
+            -c "${GITHUB_WORKSPACE}/constraints/python-3.11.txt" \
+            "${wheels[0]}"
+          python -m pip uninstall -y revise-svc
+          for attempt in {1..12}; do
+            if python -m pip install \
+              --no-cache-dir \
+              --no-deps \
+              --index-url https://test.pypi.org/simple/ \
+              "revise-svc==${{ needs.build.outputs.version }}"; then
+              break
+            fi
+            test "${attempt}" -lt 12
+            sleep 10
+          done
+          python -c \
+            "import os, pathlib, revise; \
+            source = pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve(); \
+            installed = pathlib.Path(revise.__file__).resolve(); \
+            assert revise.__version__ == '${{ needs.build.outputs.version }}'; \
+            assert not installed.is_relative_to(source), (installed, source)"
+          revise-reconstruct --help
+
+  publish-pypi:
+    needs: [build, verify-testpypi]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/revise-svc
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
+
+  verify-pypi-files:
+    needs: [build, publish-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Verify PyPI file hashes and latest stable version
+        env:
+          INDEX_JSON_URL: https://pypi.org/pypi/revise-svc/${{ needs.build.outputs.version }}/json
+          PROJECT_JSON_URL: https://pypi.org/pypi/revise-svc/json
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import time
+          from pathlib import Path
+          from urllib.error import HTTPError, URLError
+          from urllib.request import urlopen
+
+          def release_hashes(payload):
+              return {
+                  item["filename"]: item["digests"]["sha256"]
+                  for item in payload["urls"]
+              }
+
+          def load_json(url, accept):
+              last_error = None
+              for attempt in range(12):
+                  try:
+                      with urlopen(url, timeout=30) as response:
+                          payload = json.load(response)
+                      if accept(payload):
+                          return payload
+                      last_error = AssertionError((url, payload))
+                  except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+                      last_error = error
+                  if attempt < 11:
+                      time.sleep(10)
+              raise last_error
+
+          local = {
+              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in Path("dist").iterdir()
+          }
+          release = load_json(
+              os.environ["INDEX_JSON_URL"],
+              lambda candidate: release_hashes(candidate) == local,
+          )
+          remote = release_hashes(release)
+          assert remote == local, (remote, local)
+          expected = os.environ["EXPECTED_VERSION"]
+          project = load_json(
+              os.environ["PROJECT_JSON_URL"],
+              lambda candidate: candidate["info"]["version"] == expected,
+          )
+          assert project["info"]["version"] == expected
+          PY
+
+  verify-pypi-install:
+    needs: [build, verify-pypi-files]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install exact production release and verify public entry points
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -m pip install \
+            --no-cache-dir \
+            -c "${GITHUB_WORKSPACE}/constraints/python-${{ matrix.python-version }}.txt" \
+            "revise-svc==${{ needs.build.outputs.version }}"
+          python -c \
+            "import os, pathlib, revise; \
+            source = pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve(); \
+            installed = pathlib.Path(revise.__file__).resolve(); \
+            assert revise.__version__ == '${{ needs.build.outputs.version }}'; \
+            assert not installed.is_relative_to(source), (installed, source)"
+          revise-reconstruct --help
+          revise-build-histology-priors --help
+          revise-compute-biological-metrics --help
+
+  release-assets:
+    needs: [build, verify-pypi-files, verify-pypi-install]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: python-package-distributions
+          path: dist
+      - name: Attach distributions and checksums to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          wheels=(dist/revise_svc-*.whl)
+          sdists=(dist/revise_svc-*.tar.gz)
+          test "${#wheels[@]}" -eq 1
+          test "${#sdists[@]}" -eq 1
+          test -f "${wheels[0]}"
+          test -f "${sdists[0]}"
+          sha256sum "${wheels[0]}" "${sdists[0]}" > SHA256SUMS
+          gh release upload "${RELEASE_TAG}" \
+            "${wheels[0]}" "${sdists[0]}" SHA256SUMS \
+            --repo "${GH_REPO}"

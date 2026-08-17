@@ -321,7 +321,7 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
         env=env,
     )
     assert probe.returncode == 0, probe.stderr
-    assert __version__ in probe.stdout
+    assert probe.stdout.splitlines()[0] == __version__
     assert str(venv) in probe.stdout
     assert str(ROOT) not in probe.stdout
     histology_help = _run(

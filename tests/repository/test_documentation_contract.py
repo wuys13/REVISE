@@ -493,3 +493,75 @@ def test_public_api_diagram_uses_sc_svc_modes():
     assert "sc-SVC-sr" not in diagram
     assert "sc-SVC (cluster or SR mode)" in diagram
     assert "H5AD result(s) + manifest" in diagram
+
+
+def test_tacco_smoke_runs_both_solver_contracts_against_candidate_wheel():
+    workflow = _read(ROOT / ".github/workflows/ci.yml")
+    installed_job = workflow.split("  installed-cli:", maxsplit=1)[1].split(
+        "  docs:", maxsplit=1
+    )[0]
+    tacco_job = workflow.split("  tacco-smoke:", maxsplit=1)[1]
+
+    for candidate_job in (installed_job, tacco_job):
+        assert 'wheels=("${RUNNER_TEMP}"/candidate/revise_svc-*.whl)' in candidate_job
+        assert 'test "${#wheels[@]}" -eq 1' in candidate_job
+        assert 'test -f "${wheels[0]}"' in candidate_job
+        assert '"${wheels[0]}"' in candidate_job
+    assert re.search(r"revise_svc-\d", workflow) is None
+    assert 'echo "REVISE_WHEEL=${wheels[0]}" >> "${GITHUB_ENV}"' in installed_job
+    assert "needs: package" in tacco_job
+    assert "actions/download-artifact@v4" in tacco_job
+    assert "name: candidate-dist" in tacco_job
+    assert "working-directory: ${{ runner.temp }}" in tacco_job
+    assert 'python -m venv "${RUNNER_TEMP}/candidate-venv"' in tacco_job
+    assert '"${RUNNER_TEMP}/candidate-venv/bin/python" -m pip install' in tacco_job
+    assert "wheel-smoke-tests/tests/integration/solvers" in tacco_job
+    assert "tests/integration/solvers/conftest.py" in tacco_job
+    assert "REVISE_EXPECT_INSTALLED_PREFIX" in tacco_job
+    assert "--import-mode=importlib" in tacco_job
+    assert '"${GITHUB_WORKSPACE}/tests/integration/solvers/' not in tacco_job
+    assert "tests/integration/solvers/test_tacco_solver_smoke.py" in tacco_job
+    assert (
+        "tests/integration/solvers/test_local_refinement_solver_smoke.py"
+        in tacco_job
+    )
+
+
+def test_release_workflow_uses_oidc_and_separates_release_asset_permissions():
+    workflow = _read(ROOT / ".github/workflows/release.yml")
+    publish_action = (
+        "pypa/gh-action-pypi-publish@"
+        "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
+    )
+    node24_actions = {
+        "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09": 5,
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": 6,
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": 1,
+        "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131": 7,
+    }
+
+    assert "release:\n    types: [published]" in workflow
+    action_refs = re.findall(r"uses:\s+[A-Za-z0-9_.\-/]+@([^\s#]+)", workflow)
+    assert action_refs
+    assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in action_refs)
+    assert len(action_refs) == 21
+    for action, count in node24_actions.items():
+        assert workflow.count(action) == count
+    assert workflow.count("python -m build") == 1
+    assert workflow.count(publish_action) == 2
+    assert workflow.count("id-token: write") == 2
+    assert workflow.count("ref: ${{ github.event.release.tag_name }}") == 5
+    assert workflow.count("persist-credentials: false") == 5
+    assert "fetch-depth: 0" in workflow
+    assert "git merge-base --is-ancestor HEAD refs/remotes/origin/main" in workflow
+    assert "name: testpypi" in workflow
+    assert "name: pypi" in workflow
+    assert "repository-url: https://test.pypi.org/legacy/" in workflow
+    assert "password:" not in workflow
+    assert "skip-existing" not in workflow
+    assert workflow.count("for attempt in range(12)") == 2
+    assert "needs: [build, verify-pypi-files]" in workflow
+    assert "contents: write" in workflow
+    assert 'gh release upload "${RELEASE_TAG}"' in workflow
+    assert 'GH_REPO: ${{ github.repository }}' in workflow
+    assert "--clobber" not in workflow
