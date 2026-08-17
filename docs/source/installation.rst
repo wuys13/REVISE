@@ -81,6 +81,8 @@ After a matching package version is published, replace ``.`` with
 available; it does not choose a route or mode, and it does not download paper
 data.
 
+.. _application-templates:
+
 Application templates
 ---------------------
 
