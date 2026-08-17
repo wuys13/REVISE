@@ -15,6 +15,7 @@ from revise.application.config import (
     compile_application_config,
     _compile_engine_config,
     load_application_yaml,
+    override_select_cell_type,
 )
 from revise.application.preprocess import (
     filter_reference,
@@ -44,7 +45,7 @@ def preprocess_data(
     config: ApplicationConfig,
 ) -> tuple[AnnData, AnnData]:
     """Apply the visible Application preprocessing flow."""
-    if config.svc_type == "sc-SVC-sr":
+    if config.mode == "sr":
         ensure_all_cells_in_spot(spatial_adata)
     reference_adata = filter_reference(
         reference_adata,
@@ -63,7 +64,7 @@ def preprocess_data(
         config.reference_min_cell_counts,
         min_genes=config.reference_min_genes,
     )
-    if config.svc_type == "sc-SVC":
+    if config.mode == "cluster":
         return prepare_sc_svc_pair(
             spatial_adata,
             reference_adata,
@@ -93,6 +94,7 @@ def reconstruct(
 
     REVISEPipeline().run(
         svc_type=config.svc_type,
+        application_mode=config.mode,
         cf=None,
         runtime_overrides=runtime,
         io_overrides=io,
@@ -113,10 +115,15 @@ def reconstruct(
     return result
 
 
-def run_application(config_path: str | Path) -> AnnData | tuple[AnnData, AnnData]:
+def run_application(
+    config_path: str | Path,
+    *,
+    select_ct: str | None = None,
+) -> AnnData | tuple[AnnData, AnnData]:
     """Compile YAML, load inputs, preprocess, reconstruct, and return AnnData."""
     source, document = load_application_yaml(config_path)
     config = compile_application_config(document, source=source)
+    config = override_select_cell_type(config, select_ct)
     spatial_adata, reference_adata = load_data(config)
     spatial_adata, reference_adata = preprocess_data(
         spatial_adata,
@@ -129,10 +136,14 @@ def run_application(config_path: str | Path) -> AnnData | tuple[AnnData, AnnData
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Reconstruct one SVC from an Application YAML")
     parser.add_argument("--config", required=True, help="Application YAML")
+    parser.add_argument(
+        "--select-ct",
+        help="Override local_refinement.select_cell_type for sc-SVC cluster mode",
+    )
     args = parser.parse_args(argv)
     try:
         with redirect_stdout(sys.stderr):
-            result = run_application(args.config)
+            result = run_application(args.config, select_ct=args.select_ct)
     except ApplicationConfigError as exc:
         parser.error(str(exc))
     print("Finished")

@@ -67,6 +67,10 @@ exclude_patterns: list[str] = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
+    # Historical decision records stay in the repository but are not part of
+    # the current user documentation build.
+    "plans/**",
+    "design/**",
     # Ignore stale local copies from the old internal API reference. Current
     # public autosummary pages are generated from source/api/index.rst.
     "source/api/generated/revise.application.*",

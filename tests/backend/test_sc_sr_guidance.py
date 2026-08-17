@@ -380,7 +380,8 @@ def _build_runner(module, *, benchmark, strength, graph_enabled=True, seed=17):
         strength=strength,
         seed=seed,
     )
-    runner = module.ScSVCSr.__new__(module.ScSVCSr)
+    runner_class = module.ScSVCSr if benchmark else module.ScSVCSuperResolution
+    runner = runner_class.__new__(runner_class)
     runner.st_adata = spatial
     runner.sc_ref_adata = reference
     runner.config = config
@@ -412,7 +413,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
 
     snapshots = []
     for strength in (0.0, 3.0):
-        module = load_sr_runner("sc_svc_sr_application")
+        module = load_sr_runner("sc_svc_super_resolution_application")
         runner = _build_runner(
             module,
             benchmark=False,
@@ -555,7 +556,7 @@ def test_benchmark_disabled_graph_control_reports_no_local_ot(
 def test_allocation_completes_before_invalid_virtual_projection_fails(
     load_sr_runner,
 ):
-    module = load_sr_runner("sc_svc_sr_application")
+    module = load_sr_runner("sc_svc_super_resolution_application")
     runner = _build_runner(
         module,
         benchmark=False,

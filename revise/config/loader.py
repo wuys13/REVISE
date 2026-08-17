@@ -28,6 +28,7 @@ RUNTIME_KEYS = {
     "deterministic",
     "compatibility_mode",
     "application_route",
+    "application_mode",
     "confounding",
     "mode",
     "task",
@@ -354,16 +355,33 @@ def resolve_semantic_route(
     raw_config: Dict[str, Any],
     *,
     svc_type: str | None = None,
+    application_mode: str | None = None,
     cf: str | None = None,
 ) -> Dict[str, Any]:
     """Resolve one Application or Benchmark route from its domain selector."""
     if svc_type is None and cf is None:
         raise ConfigError("Exactly one route selector is required: svc_type or cf")
+    if svc_type is None and application_mode is not None:
+        raise ConfigError("application_mode requires svc_type='sc-SVC'")
 
     router = raw_config.get("router", {})
     if svc_type is not None:
         routes = router.get("application", {})
-        route = routes.get(svc_type)
+        if svc_type == "sc-SVC-sr":
+            raise ConfigError(
+                "sc-SVC-sr was removed; use svc_type='sc-SVC' with application_mode='sr'"
+            )
+        if svc_type == "sc-SVC":
+            if application_mode is None:
+                raise ConfigError("application_mode is required for sc-SVC")
+            if application_mode not in {"cluster", "sr"}:
+                raise ConfigError("application_mode must be one of: cluster, sr")
+            selector = f"sc-SVC:{application_mode}"
+        else:
+            if application_mode is not None:
+                raise ConfigError("application_mode is only valid for sc-SVC")
+            selector = svc_type
+        route = routes.get(selector)
         if route is None:
             raise ConfigError(
                 f"invalid svc_type {svc_type!r}; available values: {sorted(routes)}"
@@ -377,6 +395,11 @@ def resolve_semantic_route(
         return {
             "mode": "application",
             "application_route": svc_type,
+            **(
+                {"application_mode": application_mode}
+                if application_mode is not None
+                else {}
+            ),
             **copy.deepcopy(route),
             "warning": warning,
         }
@@ -461,8 +484,21 @@ def _validate_runtime(merged: Dict[str, Any]) -> None:
             raise ConfigError(
                 "Application runtime requires application_route and no confounding"
             )
+        application_route = runtime["application_route"]
+        application_mode = runtime.get("application_mode")
+        if application_route == "sc-SVC":
+            if application_mode not in {"cluster", "sr"}:
+                raise ConfigError(
+                    "Application sc-SVC runtime requires application_mode cluster or sr"
+                )
+        elif application_mode not in (None, ""):
+            raise ConfigError("Only Application sc-SVC may set application_mode")
     elif mode == "benchmark":
-        if not runtime.get("confounding") or runtime.get("application_route") is not None:
+        if (
+            not runtime.get("confounding")
+            or runtime.get("application_route") is not None
+            or runtime.get("application_mode") not in (None, "")
+        ):
             raise ConfigError(
                 "Benchmark runtime requires confounding and no application_route"
             )
@@ -502,7 +538,7 @@ def _resolve_local_refinement(merged: Dict[str, Any]) -> None:
         _validate_local_refinement(configured, "resolved.local_refinement")
 
     task = str(merged["runtime"]["task"])
-    if task not in {"sp_svc", "sc_svc_sr"}:
+    if task not in {"sp_svc", "sc_svc_sr", "sc_svc_super_resolution"}:
         if configured is not None and "strength" in configured:
             raise ConfigError(
                 f"runtime.task={task} does not accept local_refinement.strength"

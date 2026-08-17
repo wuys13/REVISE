@@ -25,14 +25,14 @@ ROOT = Path(__file__).resolve().parents[2]
 LOCAL_OT_CALLERS = {
     "revise/backend/runners/sp_svc_application.py": 1,
     "revise/backend/runners/sp_svc_benchmark.py": 1,
-    "revise/backend/runners/sc_svc_sr_application.py": 1,
+    "revise/backend/runners/sc_svc_super_resolution_application.py": 1,
     "revise/backend/runners/sc_svc_sr_benchmark.py": 1,
     "revise/backend/runners/sc_svc_impute_benchmark.py": 1,
 }
 GUIDED_LOCAL_OT_CALLERS = {
     "revise/backend/runners/sp_svc_application.py",
     "revise/backend/runners/sp_svc_benchmark.py",
-    "revise/backend/runners/sc_svc_sr_application.py",
+    "revise/backend/runners/sc_svc_super_resolution_application.py",
     "revise/backend/runners/sc_svc_sr_benchmark.py",
 }
 

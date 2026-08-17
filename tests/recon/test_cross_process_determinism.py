@@ -41,11 +41,12 @@ config = {
     "runtime": {
         "seed": seed,
         "deterministic": True,
-        "confounding": "spot_size",
         "mode": "application",
-        "task": "sc_svc_sr",
+        "application_route": "sc-SVC",
+        "application_mode": "sr",
+        "task": "sc_svc_super_resolution",
         "svc_kind": "sc",
-        "strategy": "ScSvcSrApplicationStrategy",
+        "strategy": "ScSvcSuperResolutionApplicationStrategy",
     },
     "io": {
         "data_root": str(input_root),

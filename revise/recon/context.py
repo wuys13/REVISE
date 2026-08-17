@@ -371,6 +371,7 @@ class PipelineContext:
         }
         if self.runtime.get("mode") == "application":
             route["application_route"] = self.runtime.get("application_route")
+            route["application_mode"] = self.runtime.get("application_mode")
         else:
             route["confounding"] = self.runtime.get("confounding")
         return route

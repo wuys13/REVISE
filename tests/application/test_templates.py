@@ -24,65 +24,9 @@ TOP_LEVEL_KEYS = [
 
 
 EXPECTED = {
-    "Xenium_T.yaml": {
-        "svc_type": "sc-SVC",
-        "output_name": None,
-        "output_dir": "output/P2CRC_Xenium/T",
-        "ot_method": "tacco",
-        "st_path": "raw_data/Real_application/P2CRC_Xenium.h5ad",
-        "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
-        "reference_filter": {"filter_column": "Patient", "filter_value": "P2CRC"},
-        "preprocessing": {
-            "spatial": {"min_transcript_counts": 60, "min_cell_counts": 100},
-            "reference": {"min_transcript_counts": None, "min_cell_counts": 100},
-        },
-        "local_refinement": {
-            "subtype_column": "Level2",
-            "select_cell_type": "T",
-            "alpha": 0.2,
-            "resolutions": [0.6, 0.7, 0.8],
-        },
-    },
-    "Xenium_Fib.yaml": {
-        "svc_type": "sc-SVC",
-        "output_name": None,
-        "output_dir": "output/P2CRC_Xenium/Fib",
-        "ot_method": "tacco",
-        "st_path": "raw_data/Real_application/P2CRC_Xenium.h5ad",
-        "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
-        "reference_filter": {"filter_column": "Patient", "filter_value": "P2CRC"},
-        "preprocessing": {
-            "spatial": {"min_transcript_counts": 60, "min_cell_counts": 100},
-            "reference": {"min_transcript_counts": None, "min_cell_counts": 100},
-        },
-        "local_refinement": {
-            "subtype_column": "Level2",
-            "select_cell_type": "Fibroblast",
-            "alpha": 0.2,
-            "resolutions": [0.6, 0.7, 0.8],
-        },
-    },
-    "Xenium_Mono.yaml": {
-        "svc_type": "sc-SVC",
-        "output_name": None,
-        "output_dir": "output/P2CRC_Xenium/Mono",
-        "ot_method": "tacco",
-        "st_path": "raw_data/Real_application/P2CRC_Xenium.h5ad",
-        "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
-        "reference_filter": {"filter_column": "Patient", "filter_value": "P2CRC"},
-        "preprocessing": {
-            "spatial": {"min_transcript_counts": 60, "min_cell_counts": 100},
-            "reference": {"min_transcript_counts": None, "min_cell_counts": 100},
-        },
-        "local_refinement": {
-            "subtype_column": "Level2",
-            "select_cell_type": "Mono_Macro",
-            "alpha": 0.2,
-            "resolutions": [0.6, 0.7, 0.8],
-        },
-    },
     "VisiumHD.yaml": {
         "svc_type": "sp-SVC",
+        "mode": None,
         "output_name": "sp_SVC",
         "output_dir": "output/sp_SVC_case/P1CRC",
         "ot_method": "pot",
@@ -102,9 +46,30 @@ EXPECTED = {
         },
         "local_refinement": {"strength": 0.2},
     },
+    "Xenium.yaml": {
+        "svc_type": "sc-SVC",
+        "mode": "cluster",
+        "output_name": None,
+        "output_dir": "output/P2CRC_Xenium",
+        "ot_method": "tacco",
+        "st_path": "raw_data/Real_application/P2CRC_Xenium.h5ad",
+        "reference_path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
+        "reference_filter": {"filter_column": "Patient", "filter_value": "P2CRC"},
+        "preprocessing": {
+            "spatial": {"min_transcript_counts": 60, "min_cell_counts": 100},
+            "reference": {"min_transcript_counts": None, "min_cell_counts": 100},
+        },
+        "local_refinement": {
+            "subtype_column": "Level2",
+            "select_cell_type": "T",
+            "alpha": 0.2,
+            "resolutions": [0.6, 0.7, 0.8],
+        },
+    },
     "Visium.yaml": {
-        "svc_type": "sc-SVC-sr",
-        "output_name": "REVISEVisiumMouseBrain_sc-SVC-sr",
+        "svc_type": "sc-SVC",
+        "mode": "sr",
+        "output_name": "REVISEVisiumMouseBrain_sc-SVC",
         "output_dir": "output/visium_mouse_brain_revise",
         "ot_method": "pot",
         "st_path": "raw_data/visium_mouse_brain/ST_mouse_brain_prepared.h5ad",
@@ -137,6 +102,13 @@ EXPECTED = {
 }
 
 
+def test_official_application_template_sets_are_exact_and_mirrored():
+    expected = set(EXPECTED)
+
+    assert {path.name for path in PACKAGE_TEMPLATES.glob("*.yaml")} == expected
+    assert {path.name for path in SOURCE_TEMPLATES.glob("*.yaml")} == expected
+
+
 @pytest.mark.parametrize("filename", EXPECTED)
 def test_packaged_template_is_canonical_and_source_mirror_is_byte_exact(filename):
     package_path = PACKAGE_TEMPLATES / filename
@@ -149,9 +121,10 @@ def test_packaged_template_is_canonical_and_source_mirror_is_byte_exact(filename
     expected = EXPECTED[filename]
     assert list(document) == TOP_LEVEL_KEYS
     assert document["schema_version"] == 1
-    assert document["application"] == {
-        "svc_type": expected["svc_type"],
-    }
+    application = {"svc_type": expected["svc_type"]}
+    if expected["mode"] is not None:
+        application["mode"] = expected["mode"]
+    assert document["application"] == application
     assert document["paths"] == {"root_dir": "."}
     expected_inputs = {
         "st": {"path": expected["st_path"], "format": "h5ad"},
@@ -176,9 +149,8 @@ def test_packaged_template_is_canonical_and_source_mirror_is_byte_exact(filename
     assert "base_config" not in package_bytes.decode("utf-8")
 
 
-@pytest.mark.parametrize("filename", ("Xenium_T.yaml", "Xenium_Fib.yaml", "Xenium_Mono.yaml"))
-def test_xenium_templates_explain_that_the_selected_broad_type_must_exist(filename):
-    text = (PACKAGE_TEMPLATES / filename).read_text(encoding="utf-8")
+def test_xenium_template_explains_that_the_selected_broad_type_must_exist():
+    text = (PACKAGE_TEMPLATES / "Xenium.yaml").read_text(encoding="utf-8")
 
     assert "broad label exists" in text
 

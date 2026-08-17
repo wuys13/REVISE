@@ -12,7 +12,7 @@ from scipy import sparse
 from revise.backend.contracts import LocalRefinementStrategy
 from revise.config.runner_conf import (
     ApplicationScConf,
-    ApplicationScSrConf,
+    ApplicationScSuperResolutionConf,
     ApplicationSpConf,
     BenchmarkImputeConf,
     BenchmarkSegConf,
@@ -339,7 +339,11 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
         # centrally managed under revise.backend.kernels.
         from revise.backend.kernels import build_kernel
 
-        if ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}:
+        if ctx.runtime.get("task") in {
+            "sp_svc",
+            "sc_svc_super_resolution",
+            "sc_svc_sr",
+        }:
             ctx.runner_config.local_refinement_applied_callback = (
                 lambda: ctx.record_local_refinement(True)
             )
@@ -489,17 +493,19 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         )
 
 
-class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
-    strategy_id = "ScSvcSrApplicationStrategy"
+class ScSvcSuperResolutionApplicationStrategy(RunnerBackedStrategy):
+    strategy_id = "ScSvcSuperResolutionApplicationStrategy"
 
     def prepare_context(self, ctx) -> None:
-        from revise.backend.runners.sc_svc_sr_application import ScSVCSr as ScSrAppRunner
+        from revise.backend.runners.sc_svc_super_resolution_application import (
+            ScSVCSuperResolution as ScSrAppRunner,
+        )
 
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
 
-        conf = ApplicationScSrConf(
+        conf = ApplicationScSuperResolutionConf(
             sample_name=io_cfg["sample_name"],
             raw_data_path=io_cfg["data_root"],
             result_root_path=str(ctx.run_dir),

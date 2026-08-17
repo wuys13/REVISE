@@ -12,13 +12,19 @@ Application
 
    from reconstruct import run_application
 
-   result = run_application("configs/application/VisiumHD.yaml")
+   spatial, expression = run_application(
+       "configs/application/Xenium.yaml",
+       select_ct="T",
+   )
 
-``run_application(config_path)`` compiles one Application YAML, loads its two
-inputs, runs the explicit preprocessing sequence, reconstructs, publishes, and
-returns the same in-memory ``AnnData`` object(s) that it writes to H5AD; it does
-not reload them from disk. ``sp-SVC`` and ``sc-SVC-sr`` return one ``AnnData``.
-Standard ``sc-SVC`` returns ``(spatial_adata, expression_adata)``.
+``run_application(config_path, *, select_ct=None)`` compiles one Application
+YAML, loads and preprocesses its inputs, reconstructs, publishes, and returns
+the same in-memory objects that it writes. ``select_ct`` is an optional
+cluster-mode-only override; it has priority over the YAML value. The current
+Application output rules are defined in :doc:`../application-reference`.
+
+``sp-SVC`` and ``sc-SVC`` SR mode return one ``AnnData``. ``sc-SVC`` cluster
+mode returns ``(spatial_adata, expression_adata)``.
 
 .. autosummary::
    :toctree: generated
@@ -42,11 +48,10 @@ Sim2Real Benchmark
        evaluate=True,
    )
 
-``run_benchmark`` runs every leaf declared by one of the six Benchmark YAML
-routes and returns a report mapping. Inspect ``report["ok"]``,
-``total_runs``, ``passed_runs``, and each member of ``results``; do not infer
-suite success from one output directory. A route/YAML error fails before the
-report is created, while a leaf execution error is represented in its result.
+``run_benchmark`` expands the selected Benchmark YAML's cases and returns a
+report mapping. Inspect ``report["ok"]``, ``total_runs``, ``passed_runs``, and
+each member of ``results``; one output directory is not proof that a suite
+succeeded.
 
 .. autosummary::
    :toctree: generated
@@ -54,18 +59,17 @@ report is created, while a leaf execution error is represented in its result.
 
    revise.benchmark.run_benchmark
 
-Advanced engine objects
------------------------
+Advanced engine boundary
+------------------------
 
-``REVISEPipeline`` is the shared engine interface used by both workflow
-functions. It resolves one Application ``svc_type`` or Benchmark ``cf`` and
-returns the canonical ``SVC`` carrier. Direct callers are responsible for the
-correct route-specific IO and algorithm overrides; this is not a replacement
-for the simpler Application YAML interface.
+``REVISEPipeline`` is the shared engine interface. Direct Application callers
+must pass ``svc_type="sc-SVC"`` with
+``application_mode="cluster"`` or ``application_mode="sr"``. They are
+responsible for correct route-specific IO and algorithm overrides, so this is
+not a replacement for the YAML entry point.
 
-``SVC`` holds the expression/spatial carriers, assignment information,
-provenance, quality metrics, and named artifacts produced inside the unified
-engine.
+``SVC`` holds the canonical expression/spatial carriers, assignment
+information, artifacts, metrics, and provenance produced by the engine.
 
 .. autosummary::
    :toctree: generated
@@ -80,8 +84,8 @@ Metrics
 ``compute_metric`` produces the Benchmark-compatible per-gene ``PCC``,
 ``SSIM``, ``MSE``, and ``NRMSE`` table. The caller must align observations;
 the function aligns genes but does not join cells by identifier.
-``compute_clustering_metrics`` returns ``(ARI, NMI)`` from two columns in
-``adata.obs``.
+``compute_clustering_metrics`` returns ``(ARI, NMI)`` from two ``adata.obs``
+columns.
 
 .. autosummary::
    :toctree: generated
@@ -89,8 +93,3 @@ the function aligns genes but does not join cells by identifier.
 
    revise.analysis.compute_metric
    revise.analysis.compute_clustering_metrics
-
-Internal runner configuration dataclasses, backend runner classes, pipeline
-contexts, and compatibility output switches are implementation surfaces. They
-remain importable where required by repository notebooks and tests, but they
-are not recommended entry points for new users.

@@ -1,7 +1,8 @@
 schema_version: 1
 
 application:
-  svc_type: sc-SVC-sr
+  svc_type: sc-SVC
+  mode: sr
 
 paths:
   root_dir: . # EDIT: this is the command launch directory, not the YAML directory.
@@ -46,7 +47,7 @@ local_refinement:
 
 output:
   dir: output/visium_mouse_brain_revise # EDIT: relative to paths.root_dir.
-  name: REVISEVisiumMouseBrain_sc-SVC-sr # EDIT: one logical result name; do not add .h5ad.
+  name: REVISEVisiumMouseBrain_sc-SVC # EDIT: one logical result name; do not add .h5ad.
 
 execution:
   seed: 42 # KEEP for reproducible runs.

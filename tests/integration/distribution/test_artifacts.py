@@ -6,6 +6,7 @@ import csv
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -44,17 +45,37 @@ def built_distributions(tmp_path_factory):
     root = tmp_path_factory.mktemp("distribution-artifacts")
     supplied_dist = os.environ.get("REVISE_DIST_DIR")
     dist = Path(supplied_dist).resolve() if supplied_dist else root / "dist"
+    source = root / "source"
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHONNOUSERSITE"] = "1"
     if not supplied_dist:
+        shutil.copytree(
+            ROOT,
+            source,
+            ignore=shutil.ignore_patterns(
+                ".git",
+                ".agents",
+                ".codegraph",
+                ".codex",
+                "build",
+                "dist",
+                "output",
+                "raw_data",
+                "results",
+                "*.egg-info",
+                "__pycache__",
+                ".pytest_cache",
+            ),
+        )
         command = [
             os.environ.get("REVISE_INTEGRATION_PYTHON", sys.executable),
             "-m",
             "build",
+            "--no-isolation",
             "--outdir",
             dist,
-            ROOT,
+            source,
         ]
         result = _run(command, cwd=root, env=env)
         assert result.returncode == 0, result.stderr
@@ -105,10 +126,8 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         **{
             f"revise/application/templates/{filename}": f"configs/application/{filename}"
             for filename in (
-                "Xenium_T.yaml",
-                "Xenium_Fib.yaml",
-                "Xenium_Mono.yaml",
                 "VisiumHD.yaml",
+                "Xenium.yaml",
                 "Visium.yaml",
             )
         },
@@ -126,8 +145,16 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
     }
     packaged_templates = set(template_mirrors)
     assert packaged_templates <= set(wheel_names)
-    assert len(packaged_templates) == 11
+    assert len(packaged_templates) == 9
     assert "reconstruct.py" in wheel_names
+    assert "revise/backend/runners/sc_svc_super_resolution_application.py" in wheel_names
+    for removed in (
+        "revise/application/templates/Xenium_T.yaml",
+        "revise/application/templates/Xenium_Fib.yaml",
+        "revise/application/templates/Xenium_Mono.yaml",
+        "revise/backend/runners/sc_svc_sr_application.py",
+    ):
+        assert removed not in wheel_names
     assert "revise-reconstruct = reconstruct:main" in entry_points
     assert (
         "revise-build-histology-priors = revise.preprocess.cli:main"

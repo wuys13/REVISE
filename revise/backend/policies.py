@@ -76,25 +76,26 @@ class ModeValidationPolicy(InputValidationPolicy):
         try:
             identities = input_identities(specs)
             ctx.pm_on_cell = None
-            if str(task) == "sc_svc_sr":
-                if mode == "application":
-                    pm_path = io_cfg.get("pm_on_cell_path") or None
-                else:
-                    pm_path = (
-                        pm_on_cell_path_from_data_root(str(data_root))
-                        if data_root
-                        else None
-                    )
-                if pm_path is not None and not Path(pm_path).exists():
+            if (mode, task) == ("application", "sc_svc_super_resolution"):
+                pm_path = io_cfg.get("pm_on_cell_path") or None
+            elif (mode, task) == ("benchmark", "sc_svc_sr"):
+                pm_path = (
+                    pm_on_cell_path_from_data_root(str(data_root))
+                    if data_root
+                    else None
+                )
+            else:
+                pm_path = None
+            if pm_path is not None:
+                if not Path(pm_path).exists():
                     raise FileNotFoundError(
                         f"io.pm_on_cell_path does not exist: {pm_path}"
                     )
-                if pm_path is not None:
-                    ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
-                        pm_path
-                    )
-                    if pm_identity is not None:
-                        identities.append(pm_identity)
+                ctx.pm_on_cell, pm_identity = input_service.snapshot_pm_on_cell(
+                    pm_path
+                )
+                if pm_identity is not None:
+                    identities.append(pm_identity)
             identities.sort(key=lambda identity: identity["role"])
             ctx.input_identities = identities
         except (OSError, RuntimeError, TypeError, ValueError) as exc:

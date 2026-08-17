@@ -44,6 +44,8 @@ _APPLICATION_CONFIG_PROVENANCE_KEYS = (
     "resolved_root",
     "cwd",
     "resolved_inputs",
+    "output_root",
+    "output_dir",
     "output_name",
     "output_paths",
     "effective_request",
@@ -122,6 +124,7 @@ class REVISEPipeline:
         self,
         *,
         svc_type: Optional[str] = None,
+        application_mode: Optional[str] = None,
         cf: Optional[str] = None,
         runtime_overrides: Optional[Dict[str, Any]] = None,
         io_overrides: Optional[Dict[str, Any]] = None,
@@ -143,6 +146,7 @@ class REVISEPipeline:
 
         route_identity_keys = {
             "application_route",
+            "application_mode",
             "confounding",
             "mode",
             "task",
@@ -159,6 +163,7 @@ class REVISEPipeline:
         resolved_route = resolve_semantic_route(
             self.authority,
             svc_type=svc_type,
+            application_mode=application_mode,
             cf=cf,
         )
         route_warning = resolved_route.pop("warning")
@@ -195,6 +200,8 @@ class REVISEPipeline:
             if runtime["mode"] == "application"
             else runtime["confounding"]
         )
+        if runtime["mode"] == "application" and runtime.get("application_mode"):
+            selector = f"{selector}:{runtime['application_mode']}"
         route_key = f"{runtime['mode']}:{selector}"
         output_root = merged_config["io"]["output_root"]
         sample_name = merged_config["io"]["sample_name"]

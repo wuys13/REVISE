@@ -36,7 +36,7 @@ environment variables documented in their modules and CI jobs.
 | `application/test_request.py` | `revise/application/request.py`, `configs/application/` | Strict application YAML schema, route fields, and path compilation | Application config edits | Request compilation only; no scientific kernels |
 | `application/test_service.py` | `reconstruct.py` | Readable root flow and success-output contract | Application entrypoint edits | Mocked pipeline boundary |
 | `application/test_templates.py` | Application YAML templates | Official route configuration contracts | Template edits | YAML compilation only |
-| `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC-sr runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
+| `backend/test_application_column_contract.py` | Application sp-SVC/sc-SVC SR runners | Configured annotation columns reach route-specific local refinement | Application column changes | Stops at the configured downstream call |
 | `backend/test_benchmark_preprocess.py` | `revise/backend/adapters.py` | Benchmark preprocessing dispatch preserves route-family sampling and alignment | Benchmark preprocessing edits | Synthetic AnnData only |
 | `backend/test_local_refinement_conditioning.py` | `revise/backend/ops/assignment.py`, `posterior_conditioning.py` | Strict global posterior axes and fixed local OT cost conditioning | Assignment/local-refinement edits | Synthetic matrices only |
 | `backend/test_distance_contract.py` | `revise/backend/ops/distance.py` | Distance formulas and invalid inputs | Numerical-op edits | Small arrays |
@@ -45,7 +45,7 @@ environment variables documented in their modules and CI jobs.
 | `backend/test_sc_local_ot.py` | `revise/backend/kernels/local_anchoring.py` | sc-SVC LR uses the selected POT/TACCO path | Local-OT edits | Synthetic local units |
 | `backend/test_sc_graph_guidance.py` | sc-SVC graph route | Argmax cohort routing and ordinary GraphCluster invariance to soft-Q changes | Graph-route edits | Synthetic Graph and public-route proof only |
 | `backend/test_sc_imputation_guidance.py` | sc-SVC imputation route | Guidance-free imputation, solver routing, and panel/dropout behavior | Imputation-route edits | Synthetic imputation proof |
-| `backend/test_sc_sr_guidance.py` | sc-SVC-sr route | Mandatory allocation invariance, projected virtual Q, and conditioned local OT | SR-route edits | Synthetic SR proof |
+| `backend/test_sc_sr_guidance.py` | sc-SVC SR route | Mandatory allocation invariance, projected virtual Q, and conditioned local OT | SR-route edits | Synthetic SR proof |
 | `backend/test_scientific_contracts.py` | Backend kernels/ops and analysis formulas | Cross-cutting scientific invariants | Scientific implementation edits | Formula/array contracts only |
 | `backend/test_solver_routing.py` | `revise/backend/ops/` and route callers | Solver dispatch and caller coverage | OT edits | Mocked/synthetic solver boundaries |
 | `backend/test_spot_sr_assignment.py` | `revise/backend/kernels/spot_sr.py` | PM-on-cell and random cell-type allocation | Spot-SR edits | Assignment, not localization truth |

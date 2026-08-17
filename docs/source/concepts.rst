@@ -2,10 +2,10 @@ Concepts
 ========
 
 REVISE reconstructs Spatially-inferred Virtual Cells (SVCs) with one shared
-reconstruction lifecycle. Application users choose a reconstruction type from
-the rows represented by their spatial dataset. Benchmark users choose a
-confounding-factor family. Those frontends prepare data differently, but both
-reach the same pipeline and shared OT implementation.
+reconstruction lifecycle. Application users choose from the shape of their
+spatial observations; Sim2Real-ST Benchmark users choose a confounding-factor
+family. The frontends prepare different data, then meet at the same engine and
+optimal-transport implementation.
 
 Choose from the data shape
 --------------------------
@@ -14,43 +14,45 @@ Choose from the data shape
    :header-rows: 1
    :widths: 2 3 3 3
 
-   * - Public type
-     - Spatial observations
-     - Typical platform or task
+   * - Public type and mode
+     - Spatial rows
+     - Typical platform
      - Public result
    * - ``sp-SVC``
      - high-definition bins or pseudo-cells
-     - Visium HD; segmentation or bin-to-cell artifacts
+     - Visium HD
      - one spatially refined ``AnnData``
-   * - ``sc-SVC``
-     - segmented imaging-ST cells
-     - Xenium, CosMx, or MERFISH; one selected broad cell type
-     - spatial and expression ``AnnData`` objects
-   * - ``sc-SVC-sr``
+   * - ``sc-SVC``, cluster mode
+     - segmented cells
+     - Xenium, CosMx, MERFISH
+     - spatial and expression ``AnnData`` objects for one selected broad type
+   * - ``sc-SVC``, sr mode
      - multi-cell spots
-     - Visium; spot super-resolution
-     - one reconstructed ``AnnData``
+     - Visium
+     - one virtual-cell reconstruction ``AnnData``
 
-This is a data-shape decision, not an automatic platform detector. Users are
-responsible for supplying data that match the selected type and for choosing
-the correct annotations and mode.
+This is a data-shape decision, not an automatic platform detector. The user is
+responsible for supplying the matching input and annotation columns.
 
-Inputs and outputs
-------------------
+sc-SVC modes
+------------
 
-The normal carrier is AnnData/H5AD. The ST object contains expression and
-finite two-dimensional coordinates in ``obsm["spatial"]``. The matched
-single-cell reference contains expression and the broad annotation named by
-``global_anchoring.broad_column``. Standard ``sc-SVC`` also requires its
-configured subtype annotation and one concrete selected broad type. Inputs
-must share at least one gene.
+Cluster mode starts from segmented-cell observations. Its selected broad cell
+type identifies the cohort that receives subtype and expression refinement;
+the two output carriers keep spatial-side and expression-side analysis
+separate.
 
-``sp-SVC`` and ``sc-SVC-sr`` publish ``<output-dir>/<output-name>.h5ad`` and
-return one ``AnnData``. Standard ``sc-SVC`` publishes
-``<output-dir>/<output-name>_spatial.h5ad`` and
-``<output-dir>/<output-name>_expr.h5ad`` and returns the fixed
-``(spatial, expression)`` pair. Each public H5AD links to the run's
-``provenance.json``.
+SR mode starts from a multi-cell spot. It constructs the virtual-cell rows
+needed for each spot and assigns the spot-level broad composition to those
+rows. A supplied PM-on-cell score matrix can guide that assignment; otherwise
+the seeded quota allocation is used. SR mode reconstructs cell-type composition
+and expression within a spot. It does **not** by itself prove physical
+sub-spot cell locations or a nucleus/localization result. Segmentation-derived
+centers, when supplied, are retained; missing centers remain at the source
+spot coordinate.
+
+For exact input axes, PM semantics, field constraints, and output paths, see
+:doc:`application-reference`.
 
 Unified lifecycle and OT
 ------------------------
@@ -63,45 +65,16 @@ Application and Benchmark requests converge on this fixed stage order:
 4. finalize the SVC;
 5. evaluate only for an enabled Benchmark request.
 
-POT and TACCO share the same bottom-level OT surface. In an Application YAML,
-``algorithm.ot_method`` sets both the GA solver and the LR solver. REVISE does
-not switch solvers automatically when a selected implementation is missing or
-fails.
-
-Spot super-resolution assignment
---------------------------------
-
-``sc-SVC-sr`` needs a virtual-cell count for every spot. A prepared object may
-provide ``uns["all_cells_in_spot"]``. Otherwise the input service estimates
-counts from spot transcript totals and creates virtual-cell rows.
-
-Optional segmentation-derived centers use the standardized
-``uns["revise_cell_locations"]`` table. Its index contains unique cell IDs;
-the columns are ``spot_name``, ``x``, and ``y``; and its assignments must agree
-with ``uns["all_cells_in_spot"]``. Coordinates must already use the same scale
-and coordinate system as ``obsm["spatial"]``. Rows without a center retain the
-source spot coordinate; REVISE does not invent a sub-spot location.
-
-The assignment converts spot-level Global Anchoring posterior proportions with
-``np.round`` and repairs them in stable order to an exact quota. Application
-can declare one exact
-``inputs.pm_on_cell.path``. This sample-local score matrix must have rows
-exactly equal to the active virtual-cell IDs, columns exactly equal to the
-active normalized broad labels, and numeric finite values in ``[0, 1]``.
-REVISE only reorders matching
-axes; it never clips or normalizes the values. PM is not a case table, cohort
-registry, or generic assignment posterior.
-
-If that field is omitted, no sidecar is probed. One seeded random permutation
-assigns the exact quota to existing virtual-cell rows within each spot. The
-tested contract is exact composition and same-seed repeatability. It is not a
-nucleus or cell-localization result.
+``algorithm.ot_method`` selects both the Global Anchoring and Local Refinement
+solver in an Application YAML. POT and TACCO share the same lower-level OT
+surface. A missing or failed selected solver is an error; REVISE never switches
+to the other solver automatically.
 
 Evidence boundary
 -----------------
 
 Tests establish routing, input and axis contracts, deterministic identities,
-failure states, output publication, and small synthetic execution. A rendered
-notebook or passing software test does not establish biological validation,
+failure states, output publication, and small synthetic execution. A notebook
+snapshot or a passing software test does not establish biological validation,
 clinical validity, cross-solver biological parity, or production-scale
 suitability.

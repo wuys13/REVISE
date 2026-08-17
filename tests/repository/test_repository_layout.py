@@ -54,13 +54,14 @@ def test_biological_metrics_remain_owned_by_the_analysis_package():
         assert f"def {function}(" in source
 
 
-def test_case_notebooks_are_the_canonical_analysis_set_plus_preserved_sr():
+def test_case_notebooks_are_the_canonical_application_gallery():
     case_dir = ROOT / "reproduce" / "case"
     canonical = {
         "Xenium_sc_SVC_T.ipynb",
         "Xenium_sc_SVC_Fibroblast.ipynb",
         "Xenium_sc_SVC_Monocyte.ipynb",
         "VisiumHD_sp_SVC.ipynb",
+        "Visium_sc_SVC_mouse_brain.ipynb",
     }
     retired = {
         "sc_SVC_case_T_analysis.ipynb",
@@ -73,9 +74,7 @@ def test_case_notebooks_are_the_canonical_analysis_set_plus_preserved_sr():
         "application_sc_SVC_analysis_case.ipynb",
     }
 
-    assert {path.name for path in case_dir.glob("*.ipynb")} == canonical | {
-        "sc_SVC_sr_case_Visium_mouse_brain.ipynb"
-    }
+    assert {path.name for path in case_dir.glob("*.ipynb")} == canonical
     assert all(not (case_dir / name).exists() for name in retired)
 
 
@@ -92,6 +91,7 @@ def test_public_notebook_indexes_use_only_canonical_application_names():
         "Xenium_sc_SVC_Fibroblast.ipynb",
         "Xenium_sc_SVC_Monocyte.ipynb",
         "VisiumHD_sp_SVC.ipynb",
+        "Visium_sc_SVC_mouse_brain.ipynb",
     ):
         assert canonical in combined
     for retired in (
@@ -99,5 +99,6 @@ def test_public_notebook_indexes_use_only_canonical_application_names():
         "sc_SVC_case_Fibroblast_recon.ipynb",
         "sc_SVC_case_Monocyte_recon.ipynb",
         "application_sc_SVC_analysis_case.ipynb",
+        "sc_SVC_sr_case_Visium_mouse_brain.ipynb",
     ):
         assert retired not in combined

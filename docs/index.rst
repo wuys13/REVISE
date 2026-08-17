@@ -6,9 +6,11 @@
    :maxdepth: 2
    :hidden:
 
-   source/concepts
    source/quickstart
+   source/application-reference
+   source/concepts
    source/installation
+   source/application-migration
 
 .. toctree::
    :caption: Sim2Real Benchmark
@@ -27,16 +29,17 @@
    :maxdepth: 1
    :hidden:
 
-   Visium (sST platform) sc-SVC-sr mouse brain <case/sc_SVC_sr_case_Visium_mouse_brain>
+   VisiumHD (hST platform) sp-SVC <case/VisiumHD_sp_SVC>
+   Xenium (iST platform) sc-SVC T cells <case/Xenium_sc_SVC_T>
    Xenium (iST platform) sc-SVC Fibroblast <case/Xenium_sc_SVC_Fibroblast>
    Xenium (iST platform) sc-SVC Mono/Macro <case/Xenium_sc_SVC_Monocyte>
-   Xenium (iST platform) sc-SVC T cells <case/Xenium_sc_SVC_T>
-   VisiumHD (hST platform) sp-SVC <case/VisiumHD_sp_SVC>
+   Visium (sST platform) sc-SVC mouse brain <case/Visium_sc_SVC_mouse_brain>
 
 .. toctree::
    :caption: Reference
    :maxdepth: 2
    :hidden:
 
+   Gallery <source/gallery>
    Architecture <source/architecture>
    Python API <source/api/index>
