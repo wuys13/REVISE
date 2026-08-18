@@ -10,7 +10,6 @@
    source/application-reference
    source/concepts
    source/installation
-   source/application-migration
 
 .. toctree::
    :caption: Sim2Real Benchmark

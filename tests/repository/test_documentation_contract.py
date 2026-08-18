@@ -141,7 +141,6 @@ def test_application_reference_is_the_only_owner_of_cluster_output_directory_rul
 
     for path in (
         ROOT / "docs/source/quickstart.rst",
-        ROOT / "docs/source/application-migration.rst",
         ROOT / "docs/source/api/index.rst",
         ROOT / "reproduce/README.md",
     ):
@@ -197,14 +196,12 @@ def test_readme_documentation_index_points_to_canonical_owners():
         "application-reference",
         "concepts",
         "installation",
-        "application-migration",
         "architecture",
         "gallery",
     ):
         assert f"https://revise-svc.readthedocs.io/en/latest/source/{page}.html" in readme
     for path in (
         ROOT / "docs/source/application-reference.rst",
-        ROOT / "docs/source/application-migration.rst",
         ROOT / "docs/source/api/index.rst",
         ROOT / "reproduce/README.md",
         ROOT / "tests/README.md",
@@ -249,15 +246,8 @@ def test_current_user_docs_use_sc_svc_modes_not_a_third_public_category():
     assert "sc-SVC``, ``cluster`` mode" in _read(ROOT / "docs/source/quickstart.rst")
     assert "sc-SVC``, ``sr`` mode" in _read(ROOT / "docs/source/quickstart.rst")
 
-    migration = _read(ROOT / "docs/source/application-migration.rst")
-    for legacy in (
-        "sc-SVC-sr",
-        "Xenium_T.yaml",
-        "application_sc_sr",
-        "sc_svc_sr_application",
-        "ApplicationScSrConf",
-    ):
-        assert legacy in migration
+    assert not (ROOT / "docs/source/application-migration.rst").exists()
+    assert "application-migration" not in current
 
 
 def test_quickstart_matches_the_current_cli_and_minimum_fields():
@@ -353,7 +343,6 @@ def test_documentation_navigation_has_six_benchmark_pages_and_ordered_gallery():
         "source/application-reference",
         "source/concepts",
         "source/installation",
-        "source/application-migration",
     ):
         assert target in index
 
@@ -467,7 +456,7 @@ def test_installation_describes_supported_versions_and_optional_layers():
 
 
 def test_docs_have_no_machine_paths_and_documentation_build_is_static():
-    for path in (*USER_DOCS, ROOT / "docs/source/application-migration.rst"):
+    for path in USER_DOCS:
         assert not re.search(r"/Users/|/home/", _read(path))
 
     conf = _read(ROOT / "docs/conf.py")

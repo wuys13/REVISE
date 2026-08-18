@@ -36,9 +36,7 @@ Use exactly one of these combinations:
      - ``sr``
      - virtual cells reconstructed from multi-cell spots
 
-``mode`` is required for ``sc-SVC`` and forbidden for ``sp-SVC``. Previous
-Application requests are rejected rather than translated; use
-:doc:`application-migration` for the explicit mapping.
+``mode`` is required for ``sc-SVC`` and forbidden for ``sp-SVC``.
 
 Paths and input formats
 -----------------------

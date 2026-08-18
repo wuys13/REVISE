@@ -110,7 +110,5 @@ Next steps
 
 - :doc:`concepts` explains what the three data shapes and two sc-SVC modes
   mean scientifically.
-- :doc:`application-migration` maps previous Application requests to the
-  hard-cut interface.
 - :doc:`gallery` lists the preserved benchmark and Application notebook
   snapshots; it is not a replacement for this current reconstruction entry.

@@ -190,7 +190,6 @@ The README is the first-run guide. Each detailed rule has one canonical owner:
 | What does every Application YAML field mean? | [Application Reference](https://revise-svc.readthedocs.io/en/latest/source/application-reference.html) |
 | Which SVC/mode fits my data and what does it prove? | [Concepts](https://revise-svc.readthedocs.io/en/latest/source/concepts.html) |
 | How do I install dependencies? | [Installation](https://revise-svc.readthedocs.io/en/latest/source/installation.html) |
-| How do I migrate a previous Application request? | [Application migration](https://revise-svc.readthedocs.io/en/latest/source/application-migration.html) |
 | How are Application and Benchmark routed internally? | [Architecture](https://revise-svc.readthedocs.io/en/latest/source/architecture.html) |
 | Which notebooks are preserved? | [Gallery](https://revise-svc.readthedocs.io/en/latest/source/gallery.html) |
 | How do I reproduce the paper workflows? | [`reproduce/README.md`](reproduce/README.md) |
