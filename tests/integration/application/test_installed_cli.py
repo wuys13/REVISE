@@ -259,7 +259,7 @@ def test_installed_cli_normalizes_cluster_override_before_reconstruction(install
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    expected_dir = root / "output" / "P2CRC_Xenium" / "Mono_Macro"
+    expected_dir = root / "results" / "sc_SVC_case" / "P2CRC_Xenium" / "Mono_Macro"
     assert payload == {
         "select_cell_type": "Mono_Macro",
         "output_dir": str(expected_dir),

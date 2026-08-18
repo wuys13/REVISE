@@ -21,28 +21,31 @@ BENCHMARK_NOTEBOOKS = (
     "plot_imputation_case.ipynb",
 )
 CODE_SOURCE_DIGESTS = {
-    "Xenium_sc_SVC_T.ipynb": "45938fda09840700e66f2df505759af2c05db10a0f62edcadac93dc91de6aaea",
-    "Xenium_sc_SVC_Fibroblast.ipynb": "7e260ff47fba229a9742bfd9adcd255b719121a54dd0d49fbc8431821f81c4d1",
-    "Xenium_sc_SVC_Monocyte.ipynb": "a47cc825541e70decc7d7a655bbd78929bf3565651c93aca61811274c7255649",
-    "VisiumHD_sp_SVC.ipynb": "d38bf4308eba8c09a152a77583674a6b35a485eb23d6a0f5271981f177c3c763",
+    "Xenium_sc_SVC_T.ipynb": "0ce1be5d5200c89d998b5b9485a35e693dd77bfde38fbbe1ed6d7659a452c7b8",
+    "Xenium_sc_SVC_Fibroblast.ipynb": "ffe701d77c7c806aced707725575cd52102932c1cc31be85d5d94580d91974e6",
+    "Xenium_sc_SVC_Monocyte.ipynb": "1c0bacbeea786dd576cb225f8e608e3536456f2e4eae2aea5e4fad97f2ee3c39",
+    "VisiumHD_sp_SVC.ipynb": "9c0074d147d88650821fdb080874891b7c0da497231fa2beaa2d6d95566b1b56",
     "segmentation.ipynb": "0b72170a0fedce72ddeb01f698799f7e9f9e412188fcf84c50d588dc72348a16",
     "bin2cell.ipynb": "2d9082ca947f18036fbf251165decbd4dfd1aca5c054a00b6918cf62294a6274",
     "batch.ipynb": "c56737e6b4c4b042c2c5f78108a341ab1a559b3ec99ecc703bd6ad8a52caf872",
     "spot.ipynb": "37db402cfffe9cac631c9c98d3bdf574a499aa62d638531c7dd9be7d74b67d92",
-    "imputation_and_dropout.ipynb": "1c00f690839c1719ba014f98464d05abd813a3e75da0cb8719c37b104a64936c",
+    "imputation_and_dropout.ipynb": "93f30ef9ef0d142b617d668d6fafd534bcf7150d71603d7a86d2ff9baaa98e93",
     "plot_imputation_case.ipynb": "df15d5935f310583e5299f4e1acc9cd512ec3d52109ef3267b3730cfe408878e",
 }
 CODE_SNAPSHOT_DIGESTS = {
-    "VisiumHD_sp_SVC.ipynb": "03e156ca648a4414dc2a7058b817afa9c27b6dfd526c27512a30a1387fd09c64",
-    "Xenium_sc_SVC_T.ipynb": "92e536179f648c92468a005e11e9547b99bbbc525508af39244b1f0f13f703dc",
-    "Xenium_sc_SVC_Fibroblast.ipynb": "0a69132b8c167006f3e07abc811fcf4474405a3d7175b32bc778af175f7d5c8d",
-    "Xenium_sc_SVC_Monocyte.ipynb": "ada46cc32b632beb08c0af2c1f3baebbe0ee8d0e2691f7c9ccb07649774dbf02",
+    "VisiumHD_sp_SVC.ipynb": "54a943359b36c28f63b30288d6f98fe824956dbaaf0d1fa3f9d98d258a024ac8",
+    "Xenium_sc_SVC_T.ipynb": "187cd1b78e82f0be2f1525513cc32b7f6c5eb37246627ae0ba13328c40fee40e",
+    "Xenium_sc_SVC_Fibroblast.ipynb": "d261d263fe58a18c942b9ed6b09bc332e97e1118138a17f1b40c0853f8ade203",
+    "Xenium_sc_SVC_Monocyte.ipynb": "62d366db999148631b13060316840ce0bce0a3ac349b0d6b234fdb208f2b3916",
     "segmentation.ipynb": "d6e35abb508b3b728b8253119a452f77309ca6b3953fb6108ab939ca0cc71ab5",
     "bin2cell.ipynb": "4a6506161921ca09e6fe13bd9184f624010aa24c34f0d1713b898c162fa9395d",
-    "batch.ipynb": "e0d1f4a222e9674a5f54e771a179365787feef13332b8e5b66f6887dc11cb6a3",
-    "spot.ipynb": "1e05cfa2f85e1d9c2b1548197362466b1eeea4177c53fa687f1c7228355ec67a",
-    "imputation_and_dropout.ipynb": "5d5a9940c9f17d4595cd126b11ace7877525bdb8494c2e31a2718dd4aa77f367",
+    "batch.ipynb": "542f8c2deef00b98e2ec5ef72bf80c085ff21e09d46ccdede1f810d67b8a25cb",
+    "spot.ipynb": "eabf5ce8a9e4f2e20c6fee182f9a6b6b5e29cd06a8f90f455fc036c7a241aedc",
+    "imputation_and_dropout.ipynb": "1dd00c67e23ec7353c462ada7347f881a6298e5430c06dde9975f79f1fffd42b",
     "plot_imputation_case.ipynb": "56cccedad1a06a5fcfbb688ec9a4046f899be7c0f9e0cf5af2ae427fd5a84251",
+}
+NOTEBOOK_METADATA_DIGESTS = {
+    "VisiumHD_sp_SVC.ipynb": "a7762c677ddb239293c8ef52b3a4f641e7c8d67998e7bc3a7902b3fa7dc70b2c",
 }
 VISIUM_SC_SVC_NOTEBOOK = "Visium_sc_SVC_mouse_brain.ipynb"
 VISIUM_UNCHANGED_CODE_DIGEST = (
@@ -60,6 +63,14 @@ def _markdown(name: str) -> str:
         "".join(cell.get("source", []))
         for cell in _notebook(name)["cells"]
         if cell["cell_type"] == "markdown"
+    )
+
+
+def _code_source(name: str) -> str:
+    return "\n".join(
+        "".join(cell.get("source", []))
+        for cell in _notebook(name)["cells"]
+        if cell["cell_type"] == "code"
     )
 
 
@@ -89,6 +100,13 @@ def _code_snapshot_digest(name: str) -> str:
     ).hexdigest()
 
 
+def _metadata_digest(name: str) -> str:
+    payload = _notebook(name).get("metadata", {})
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _code_digest_except(name: str, excluded_indexes: set[int]) -> str:
     sources = [
         "".join(cell.get("source", []))
@@ -109,22 +127,31 @@ def test_curated_notebooks_match_approved_ordered_code_cell_sources():
 def test_active_notebooks_preserve_execution_counts_and_outputs():
     for name, expected_digest in CODE_SNAPSHOT_DIGESTS.items():
         assert _code_snapshot_digest(name) == expected_digest
+    for name, expected_digest in NOTEBOOK_METADATA_DIGESTS.items():
+        assert _metadata_digest(name) == expected_digest
 
 
 def test_xenium_notebooks_read_the_current_derived_cluster_directories():
-    fib_source = "\n".join(
-        "".join(cell.get("source", []))
-        for cell in _notebook("Xenium_sc_SVC_Fibroblast.ipynb")["cells"]
-    )
-    mono_source = "\n".join(
-        "".join(cell.get("source", []))
-        for cell in _notebook("Xenium_sc_SVC_Monocyte.ipynb")["cells"]
-    )
+    t_source = _code_source("Xenium_sc_SVC_T.ipynb")
+    fib_source = _code_source("Xenium_sc_SVC_Fibroblast.ipynb")
+    mono_source = _code_source("Xenium_sc_SVC_Monocyte.ipynb")
 
-    assert "P2CRC_Xenium/Fibroblast" in fib_source
-    assert "P2CRC_Xenium/Mono_Macro" in mono_source
-    assert "P2CRC_Xenium/Fib/" not in fib_source
-    assert "P2CRC_Xenium/Mono/" not in mono_source
+    for source in (t_source, fib_source, mono_source):
+        assert 'data_root = "../../results/sc_SVC_case/P2CRC_Xenium"' in source
+    assert 'case_dir = f"{data_root}/Fibroblast"' in fib_source
+    assert 'case_dir = f"{data_root}/Mono_Macro"' in mono_source
+    assert (
+        'analysis_output_dir = os.environ.get("REVISE_ANALYSIS_OUTPUT_ROOT", '
+        '"../../output/P2CRC_Xenium/Fib")'
+    ) in fib_source
+    assert (
+        'analysis_output_dir = os.environ.get("REVISE_ANALYSIS_OUTPUT_ROOT", '
+        '"../../output/P2CRC_Xenium/Mono")'
+    ) in mono_source
+    assert "results/P2CRC_Xenium/Fibroblast" not in fib_source
+    assert "results/P2CRC_Xenium/Mono_Macro" not in mono_source
+    assert "../../results/sc_SVC_case/P2CRC_Xenium/T/expr.h5ad" in mono_source
+    assert "../../results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/expr.h5ad" in mono_source
 
 
 def test_active_notebooks_use_the_current_download_names_and_record():
@@ -161,6 +188,12 @@ def test_active_notebooks_use_the_current_download_names_and_record():
         assert material in markdown
         assert "Sim2Real-ST benchmark" in markdown
         assert "Reproduced benchmark results" in markdown
+
+    imputation_markdown = _markdown("imputation_and_dropout.ipynb")
+    imputation_code = _code_source("imputation_and_dropout.ipynb")
+    assert "SpaGE_impute.csv" in imputation_markdown
+    assert "identity control" in imputation_markdown
+    assert 'methods = ["Raw", "Tangram", "gimVI", "SpaGE", "REVISE"]' in imputation_code
 
     for path in (
         *(CASE_DIR / name for name in CODE_SOURCE_DIGESTS if name in {
@@ -214,7 +247,7 @@ def test_notebook_labels_explain_their_paper_facing_equivalents():
         assert label in mono_markdown
 
 
-def test_xenium_retains_executed_snapshots_and_visium_remains_clean():
+def test_active_notebooks_retain_approved_execution_snapshots():
     for name in XENIUM_NOTEBOOKS:
         code_cells = [
             cell for cell in _notebook(name)["cells"] if cell["cell_type"] == "code"
@@ -231,8 +264,19 @@ def test_xenium_retains_executed_snapshots_and_visium_remains_clean():
         for cell in _notebook("VisiumHD_sp_SVC.ipynb")["cells"]
         if cell["cell_type"] == "code"
     ]
-    assert all(cell["execution_count"] is None for cell in visium_code)
-    assert all(cell["outputs"] == [] for cell in visium_code)
+    assert any(cell["execution_count"] is not None for cell in visium_code)
+    assert any(cell["outputs"] for cell in visium_code)
+    assert all(
+        output.get("output_type") != "error"
+        for cell in visium_code
+        for output in cell["outputs"]
+    )
+    visium_markdown = _markdown("VisiumHD_sp_SVC.ipynb")
+    visium_source = _code_source("VisiumHD_sp_SVC.ipynb")
+    assert "sampled independently" in visium_markdown
+    assert "observation-paired inference" in visium_markdown
+    assert "sample_independently" in visium_source
+    assert "sample_paired_by_identity" not in visium_source
 
 
 def test_visium_sc_svc_hard_cut_changes_only_allowed_code_cells_and_names():

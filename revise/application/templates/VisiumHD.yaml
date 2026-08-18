@@ -34,7 +34,7 @@ local_refinement:
   strength: 0.2 # KEEP; this changes LR cost blending and does not skip LR.
 
 output:
-  dir: output/sp_SVC_case/P1CRC # EDIT: relative to paths.root_dir.
+  dir: results/sp_SVC_case/P1CRC # EDIT: relative to paths.root_dir.
   name: sp_SVC # EDIT: one logical result name; do not add .h5ad.
 
 execution:

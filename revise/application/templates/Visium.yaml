@@ -46,7 +46,7 @@ local_refinement:
   match_spot_sum: true
 
 output:
-  dir: output/visium_mouse_brain_revise # EDIT: relative to paths.root_dir.
+  dir: results/visium_mouse_brain_revise # EDIT: relative to paths.root_dir.
   name: REVISEVisiumMouseBrain_sc-SVC # EDIT: one logical result name; do not add .h5ad.
 
 execution:

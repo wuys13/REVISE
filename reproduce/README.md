@@ -64,6 +64,12 @@ After reconstruction, use the matching preserved notebook in [`case/`](case/)
 to analyze the generated H5AD. The [Application gallery](https://revise-svc.readthedocs.io/en/latest/source/gallery.html)
 is the website entry point.
 
+The maintained Application profiles use `raw_data/` for reconstruction inputs
+and set `output.dir` under `results/` for reconstructed H5ADs and provenance.
+Case notebooks read those reconstruction artifacts from `results/` and write
+their secondary analysis artifacts under `output/`; the three roots have
+separate roles.
+
 ## Application notebooks
 
 The preserved Application analysis notebooks are organized in website order:

@@ -154,6 +154,12 @@ the base directory and the final directory is
 selected label must be safe for an output directory: empty values, traversal,
 backslashes, wildcards, and control characters are rejected.
 
+The maintained templates use ``raw_data/`` for reconstruction inputs and set
+``output.dir`` under ``results/`` for reconstruction publication. The
+``output`` mapping is a schema name, not a requirement that reconstruction
+files live under an ``output/`` directory; case-notebook analysis artifacts
+use ``output/`` separately.
+
 ``sp-SVC`` and ``sc-SVC`` SR mode each publish one H5AD. ``sc-SVC`` cluster
 mode publishes a fixed pair.
 
