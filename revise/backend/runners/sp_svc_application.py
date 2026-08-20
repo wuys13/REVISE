@@ -199,6 +199,10 @@ class SpSVC(ApplicationSVC):
         self.logger.info(f"after trim: {svc_recon_adata.X.data.shape}")
 
         svc_recon_adata.obsm = self.st_adata.obsm.copy()
+        # Global Anchoring stores its soft cell-type posterior Q in
+        # obsm[cell_type_col]. Q carries the inferred mixture evidence used to
+        # disambiguate mixed or mis-segmented spatial units and is propagated
+        # unchanged into Local Refinement.
         assignment_categories = pd.Index(
             pd.unique(
                 self.sc_ref_adata.obs[self.config.cell_type_col]
@@ -274,6 +278,11 @@ class SpSVC(ApplicationSVC):
                     similarity_matrix,
                     valid_neighbor_mask,
                 )
+                # Local Refinement combines the propagated Q with spatially
+                # informed neighbor support: posterior compatibility conditions
+                # local OT costs, and the resulting coupling is applied gene-wise
+                # to neighboring observed expression to reconstruct spatially
+                # specific profiles.
                 distance_matrix = condition_sp_local_ot_cost(
                     distance_matrix,
                     assignment=assignment,
