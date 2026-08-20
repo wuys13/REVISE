@@ -199,10 +199,6 @@ class SpSVC(ApplicationSVC):
         self.logger.info(f"after trim: {svc_recon_adata.X.data.shape}")
 
         svc_recon_adata.obsm = self.st_adata.obsm.copy()
-        # Global Anchoring stores its soft cell-type posterior Q in
-        # obsm[cell_type_col]. Q carries the inferred mixture evidence used to
-        # disambiguate mixed or mis-segmented spatial units and is propagated
-        # unchanged into Local Refinement.
         assignment_categories = pd.Index(
             pd.unique(
                 self.sc_ref_adata.obs[self.config.cell_type_col]

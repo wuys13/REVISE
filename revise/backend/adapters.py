@@ -348,6 +348,9 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
                 lambda: ctx.record_local_refinement(True)
             )
         kernel = build_kernel("global_anchoring", config=ctx.runner_config, logger=ctx.logger)
+        # For sp-SVC, the GA result carries the soft cell-type posterior Q in
+        # st_adata.obsm. Q preserves inferred mixture evidence from mixed or
+        # mis-segmented spatial units for the downstream Local Refinement stage.
         ctx.runner.st_adata = kernel.run(
             ctx.runner.st_adata,
             ctx.runner.sc_ref_adata,
