@@ -50,6 +50,7 @@ dependencies = [
 [project.scripts]
 revise-reconstruct = "reconstruct:main"
 revise-build-histology-priors = "revise.preprocess.cli:main"
+revise-prepare-sim2real-pseudospots = "revise.preprocess.sim2real_pseudospot.cli:main"
 revise-compute-biological-metrics = "revise.analysis.cli:main"
 
 [project.optional-dependencies]
