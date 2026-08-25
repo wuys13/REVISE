@@ -20,7 +20,9 @@ def _nearest_neighbor_distance(coordinates: np.ndarray) -> float:
     return float(graph.data.min())
 
 
-def aggregate_real_cells(cells: AnnData, *, spot_size: int) -> tuple[AnnData, pd.DataFrame]:
+def aggregate_real_cells(
+    cells: AnnData, *, spot_size: int
+) -> tuple[AnnData, pd.DataFrame]:
     """Sum real-cell expression into the legacy square pseudo-spot grid."""
     if spot_size <= 0:
         raise ValueError("spot_size must be positive.")
@@ -75,11 +77,18 @@ def aggregate_real_cells(cells: AnnData, *, spot_size: int) -> tuple[AnnData, pd
     )
     spots.obsm["spatial"] = spot_coordinates
     spots.uns["all_cells_in_spot"] = mapping
-    nonempty = np.asarray(counts.getnnz(axis=1) > 0) | np.asarray(assignment.getnnz(axis=1) > 0)
+    nonempty = np.asarray(counts.getnnz(axis=1) > 0) | np.asarray(
+        assignment.getnnz(axis=1) > 0
+    )
     spots = spots[nonempty].copy()
 
-    distribution = pd.Series(
-        [len(members) if members is not None else 0 for members in mapping.values()]
-    ).value_counts().sort_index().to_frame("count")
+    distribution = (
+        pd.Series(
+            [len(members) if members is not None else 0 for members in mapping.values()]
+        )
+        .value_counts()
+        .sort_index()
+        .to_frame("count")
+    )
     distribution.index.name = None
     return spots, distribution

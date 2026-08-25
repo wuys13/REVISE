@@ -94,7 +94,9 @@ def suppress_overlaps(
     return selected
 
 
-def _candidate_windows(coordinates: np.ndarray, config: "ProposalConfig") -> list[Bounds]:
+def _candidate_windows(
+    coordinates: np.ndarray, config: "ProposalConfig"
+) -> list[Bounds]:
     xmin, ymin = coordinates.min(axis=0)
     xmax, ymax = coordinates.max(axis=0)
     windows: list[Bounds] = []
@@ -110,7 +112,12 @@ def _candidate_windows(coordinates: np.ndarray, config: "ProposalConfig") -> lis
             y_stop = np.ceil(ymax / config.step) * config.step
             for left in np.arange(x_start, x_stop + config.step, config.step):
                 for top in np.arange(y_start, y_stop + config.step, config.step):
-                    bounds = (float(left), float(left + width), float(top), float(top + height))
+                    bounds = (
+                        float(left),
+                        float(left + width),
+                        float(top),
+                        float(top + height),
+                    )
                     if bounds not in seen:
                         windows.append(bounds)
                         seen.add(bounds)
@@ -145,7 +152,9 @@ def _core_continuity(labels: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
     return scores
 
 
-def _leading_edge_contacts(labels: np.ndarray, coordinates: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _leading_edge_contacts(
+    labels: np.ndarray, coordinates: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     tumor_scores = np.zeros(labels.size, dtype=float)
     fibroblast_scores = np.zeros(labels.size, dtype=float)
     if labels.size < 2:
@@ -169,7 +178,9 @@ def _composition(
     counts: pd.Series, categories: list[str]
 ) -> tuple[dict[str, float], np.ndarray]:
     total = float(counts.sum())
-    values = np.array([float(counts.get(category, 0.0)) / total for category in categories])
+    values = np.array(
+        [float(counts.get(category, 0.0)) / total for category in categories]
+    )
     return dict(zip(categories, values.tolist())), values
 
 
@@ -187,7 +198,9 @@ def _continuity_for_window(
     fibroblast = retained & (labels == "Fibroblast")
     if not tumor.any() or not fibroblast.any():
         return 0.0
-    return float(np.sqrt(tumor_scores[tumor].mean() * fibroblast_scores[fibroblast].mean()))
+    return float(
+        np.sqrt(tumor_scores[tumor].mean() * fibroblast_scores[fibroblast].mean())
+    )
 
 
 def propose_candidates(
@@ -205,10 +218,14 @@ def propose_candidates(
         raise ValueError(f"Unsupported region role: {role}")
     coordinates = np.asarray(cells.obsm["spatial"], dtype=float)
     labels = cells.obs[label_key].astype(str).to_numpy()
-    categories = sorted(set(template_composition) | set(labels[labels != unknown_label]))
+    categories = sorted(
+        set(template_composition) | set(labels[labels != unknown_label])
+    )
     if not categories:
         raise ValueError("No retained Level 1 categories are available for proposals.")
-    template = np.array([float(template_composition.get(category, 0.0)) for category in categories])
+    template = np.array(
+        [float(template_composition.get(category, 0.0)) for category in categories]
+    )
     template /= template.sum()
     core_scores = _core_continuity(labels, coordinates)
     tumor_scores, fibroblast_scores = _leading_edge_contacts(labels, coordinates)
@@ -238,7 +255,11 @@ def propose_candidates(
         simplicity_score = (
             1.0
             if active_categories <= 1
-            else float(1.0 + np.sum(values[values > 0] * np.log(values[values > 0])) / np.log(active_categories))
+            else float(
+                1.0
+                + np.sum(values[values > 0] * np.log(values[values > 0]))
+                / np.log(active_categories)
+            )
         )
         area = (xmax - xmin) * (ymax - ymin)
         candidates.append(
@@ -265,10 +286,16 @@ def propose_candidates(
     if not candidates:
         return []
 
-    density_reference = float(np.percentile([candidate.density for candidate in candidates], 95))
+    density_reference = float(
+        np.percentile([candidate.density for candidate in candidates], 95)
+    )
     scored = []
     for candidate in candidates:
-        coverage_score = min(candidate.density / density_reference, 1.0) if density_reference else 0.0
+        coverage_score = (
+            min(candidate.density / density_reference, 1.0)
+            if density_reference
+            else 0.0
+        )
         total_score = (
             0.5 * candidate.composition_score
             + 0.2 * candidate.simplicity_score
@@ -311,7 +338,9 @@ def candidate_table(candidates_by_role: Mapping[str, list[Candidate]]) -> pd.Dat
                 "coverage_score": candidate.coverage_score,
                 "total_score": candidate.total_score,
             }
-            row.update({f"proportion_{label}": value for label, value in candidate.composition})
+            row.update(
+                {f"proportion_{label}": value for label, value in candidate.composition}
+            )
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -377,7 +406,9 @@ def plot_selected_region(
     figure, axis = plt.subplots(figsize=(10, 10))
     for label, color in zip(sorted(labels.unique()), plt.get_cmap("tab20").colors):
         mask = labels == label
-        axis.scatter(coordinates[mask, 0], coordinates[mask, 1], s=2, color=color, label=label)
+        axis.scatter(
+            coordinates[mask, 0], coordinates[mask, 1], s=2, color=color, label=label
+        )
     axis.set_aspect("equal")
     axis.invert_yaxis()
     axis.legend(markerscale=4)

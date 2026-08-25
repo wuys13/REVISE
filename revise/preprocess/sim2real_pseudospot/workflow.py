@@ -26,7 +26,6 @@ from revise.preprocess.sim2real_pseudospot.regions import (
     propose_candidates,
 )
 
-
 REGION_PARTS = {
     "leading_edge": "part1",
     "normal_core": "part2",
@@ -144,7 +143,9 @@ def load_config(path: str | Path) -> Sim2RealPseudospotConfig:
         patient_column=str(_required(reference, "patient_column")),
         samples=samples,
         preprocessing=PreprocessingConfig(
-            transcript_counts_min=int(_required(preprocessing, "transcript_counts_min")),
+            transcript_counts_min=int(
+                _required(preprocessing, "transcript_counts_min")
+            ),
             gene_min_cells=int(_required(preprocessing, "gene_min_cells")),
             label_key=str(_required(preprocessing, "label_key")),
             unknown_label=str(_required(preprocessing, "unknown_label")),
@@ -164,15 +165,21 @@ def load_config(path: str | Path) -> Sim2RealPseudospotConfig:
     )
 
 
-def _as_config(config: str | Path | Sim2RealPseudospotConfig) -> Sim2RealPseudospotConfig:
-    return config if isinstance(config, Sim2RealPseudospotConfig) else load_config(config)
+def _as_config(
+    config: str | Path | Sim2RealPseudospotConfig,
+) -> Sim2RealPseudospotConfig:
+    return (
+        config if isinstance(config, Sim2RealPseudospotConfig) else load_config(config)
+    )
 
 
 def _sample_config(config: Sim2RealPseudospotConfig, sample: str) -> SampleConfig:
     try:
         return config.samples[sample]
     except KeyError as exc:
-        raise ValueError(f"Unknown sample {sample!r}; configured samples are {sorted(config.samples)}.") from exc
+        raise ValueError(
+            f"Unknown sample {sample!r}; configured samples are {sorted(config.samples)}."
+        ) from exc
 
 
 def _prepare_annotation(
@@ -202,7 +209,9 @@ def _prepare_annotation(
         if {"x", "y"}.issubset(spatial.obs.columns):
             spatial.obsm["spatial"] = spatial.obs[["x", "y"]].to_numpy()
         else:
-            raise KeyError("Xenium input must provide obsm['spatial'] or obs[['x', 'y']].")
+            raise KeyError(
+                "Xenium input must provide obsm['spatial'] or obs[['x', 'y']]."
+            )
     if config.preprocessing.label_key not in reference.obs:
         raise KeyError(
             f"Reference is missing obs[{config.preprocessing.label_key!r}] for Level 1 annotation."
@@ -289,7 +298,9 @@ def propose_regions(
     }
     short = [role for role, values in candidates.items() if len(values) != 3]
     if short:
-        raise ValueError(f"Could not produce three valid candidates for: {', '.join(short)}")
+        raise ValueError(
+            f"Could not produce three valid candidates for: {', '.join(short)}"
+        )
 
     region_dir.mkdir(parents=True, exist_ok=False)
     image_path = region_dir / "candidate_regions.png"
@@ -317,7 +328,9 @@ def propose_regions(
             for role, values in candidates.items()
         },
     }
-    proposal_path.write_text(yaml.safe_dump(proposal, sort_keys=False), encoding="utf-8")
+    proposal_path.write_text(
+        yaml.safe_dump(proposal, sort_keys=False), encoding="utf-8"
+    )
     return ProposalResult(
         sample=sample,
         region_selection_dir=region_dir,
@@ -354,7 +367,9 @@ def _bounds_from_confirmation(
                 if candidate["candidate_id"] == candidate_id
             ]
             if len(matches) != 1:
-                raise ValueError(f"Unknown confirmed candidate {candidate_id!r} for {role}.")
+                raise ValueError(
+                    f"Unknown confirmed candidate {candidate_id!r} for {role}."
+                )
             raw_bounds = matches[0]["bounds"]
         if not isinstance(raw_bounds, list) or len(raw_bounds) != 4:
             raise ValueError(f"confirmation bounds for {role} must have four values.")
@@ -375,7 +390,9 @@ def build_real_pseudospots(
     sample_config = _sample_config(loaded, sample)
     confirmation_path = Path(confirmation).resolve()
     if not confirmation_path.is_file():
-        raise FileNotFoundError(f"confirmation manifest does not exist: {confirmation_path}")
+        raise FileNotFoundError(
+            f"confirmation manifest does not exist: {confirmation_path}"
+        )
     with confirmation_path.open(encoding="utf-8") as handle:
         confirmed = yaml.safe_load(handle)
     if not isinstance(confirmed, Mapping):
@@ -397,7 +414,9 @@ def build_real_pseudospots(
         raise FileExistsError(f"Refusing to overwrite existing output: {final_dir}")
     annotated_path = Path(str(proposal.get("annotated_xenium", "")))
     if not annotated_path.is_file():
-        raise FileNotFoundError(f"proposal annotated Xenium file is missing: {annotated_path}")
+        raise FileNotFoundError(
+            f"proposal annotated Xenium file is missing: {annotated_path}"
+        )
     annotated = read_h5ad(annotated_path)
     reference = filter_reference(
         read_h5ad(loaded.reference_path),
@@ -433,7 +452,9 @@ def build_real_pseudospots(
         ref_part = reference[
             reference.obs[loaded.preprocessing.label_key].astype(str).isin(cell_types)
         ].copy()
-        ref_part.obs["clusters"] = ref_part.obs[loaded.preprocessing.label_key].astype(str)
+        ref_part.obs["clusters"] = ref_part.obs[loaded.preprocessing.label_key].astype(
+            str
+        )
         ref_part.write_h5ad(part_dir / "real_sc_ref_part.h5ad")
 
         for spot_size in loaded.spot_sizes:

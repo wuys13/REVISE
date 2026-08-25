@@ -15,7 +15,6 @@ from revise.preprocess.sim2real_pseudospot import cli
 from revise.preprocess.sim2real_pseudospot import regions
 from revise.preprocess.sim2real_pseudospot import workflow
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -30,7 +29,7 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
         self.assertTrue((module / "aggregation.py").is_file())
         self.assertTrue((module / "cli.py").is_file())
         self.assertIn(
-            'revise-prepare-sim2real-pseudospots = '
+            "revise-prepare-sim2real-pseudospots = "
             '"revise.preprocess.sim2real_pseudospot.cli:main"',
             pyproject,
         )
@@ -59,7 +58,9 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
         self.assertEqual(proposed.stage, "propose")
         self.assertEqual(built.stage, "build")
 
-    def test_real_aggregation_sums_cells_and_keeps_empty_spots_only_in_distribution(self):
+    def test_real_aggregation_sums_cells_and_keeps_empty_spots_only_in_distribution(
+        self,
+    ):
         self.assertTrue(hasattr(aggregation, "aggregate_real_cells"))
 
         cells = AnnData(
@@ -96,7 +97,10 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
                     yaml.safe_dump(
                         {
                             "schema_version": 1,
-                            "reference": {"path": "sc.h5ad", "patient_column": "Patient"},
+                            "reference": {
+                                "path": "sc.h5ad",
+                                "patient_column": "Patient",
+                            },
                             "samples": {
                                 "P1CRC": {
                                     "xenium_path": "P1.h5ad",
@@ -178,15 +182,22 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
         ]
         selected = regions.suppress_overlaps(candidates, max_iou=0.25, limit=3)
 
-        self.assertEqual([candidate.candidate_id for candidate in selected], [
-            "normal_core-1",
-            "normal_core-3",
-        ])
+        self.assertEqual(
+            [candidate.candidate_id for candidate in selected],
+            [
+                "normal_core-1",
+                "normal_core-3",
+            ],
+        )
 
-    def test_candidate_search_returns_three_deterministic_nonoverlapping_proposals(self):
+    def test_candidate_search_returns_three_deterministic_nonoverlapping_proposals(
+        self,
+    ):
         cells = AnnData(
             X=np.ones((15, 1)),
-            obs=pd.DataFrame({"Level1": ["Tumor"] * 15}, index=[f"c{index}" for index in range(15)]),
+            obs=pd.DataFrame(
+                {"Level1": ["Tumor"] * 15}, index=[f"c{index}" for index in range(15)]
+            ),
             var=pd.DataFrame(index=["g1"]),
         )
         cells.obsm["spatial"] = np.array(
@@ -312,12 +323,20 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
                 "sample": "P1CRC",
                 "annotated_xenium": str(annotated_path),
                 "regions": {
-                    "leading_edge": [{"candidate_id": "leading_edge-1", "bounds": [-1, 10, -1, 7]}],
-                    "normal_core": [{"candidate_id": "normal_core-1", "bounds": [99, 110, -1, 7]}],
-                    "tumor_core": [{"candidate_id": "tumor_core-1", "bounds": [199, 210, -1, 7]}],
+                    "leading_edge": [
+                        {"candidate_id": "leading_edge-1", "bounds": [-1, 10, -1, 7]}
+                    ],
+                    "normal_core": [
+                        {"candidate_id": "normal_core-1", "bounds": [99, 110, -1, 7]}
+                    ],
+                    "tumor_core": [
+                        {"candidate_id": "tumor_core-1", "bounds": [199, 210, -1, 7]}
+                    ],
                 },
             }
-            (region_dir / "proposal.yaml").write_text(yaml.safe_dump(proposal), encoding="utf-8")
+            (region_dir / "proposal.yaml").write_text(
+                yaml.safe_dump(proposal), encoding="utf-8"
+            )
             confirmation_path = region_dir / "confirmed_regions.yaml"
             confirmation_path.write_text(
                 yaml.safe_dump(
@@ -339,7 +358,12 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
                     {
                         "schema_version": 1,
                         "reference": {"path": "sc.h5ad", "patient_column": "Patient"},
-                        "samples": {"P1CRC": {"xenium_path": "unused.h5ad", "output_dir": "out/P1"}},
+                        "samples": {
+                            "P1CRC": {
+                                "xenium_path": "unused.h5ad",
+                                "output_dir": "out/P1",
+                            }
+                        },
                         "preprocessing": {
                             "transcript_counts_min": 60,
                             "gene_min_cells": 100,
@@ -363,7 +387,9 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = workflow.build_real_pseudospots(config_path, "P1CRC", confirmation_path)
+            result = workflow.build_real_pseudospots(
+                config_path, "P1CRC", confirmation_path
+            )
 
             self.assertTrue(result.output_dir.is_dir())
             for part in ("part1", "part2", "part3"):
@@ -372,6 +398,12 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
                 self.assertTrue((part_dir / "real_sc_ref_part.h5ad").is_file())
                 self.assertTrue((part_dir / "cut.png").is_file())
                 for size in (50, 100, 150, 200):
-                    self.assertTrue((part_dir / f"spot_{size}" / "xenium_spot.h5ad").is_file())
-                    self.assertTrue((part_dir / f"spot_{size}" / "cell_num_distribution.csv").is_file())
+                    self.assertTrue(
+                        (part_dir / f"spot_{size}" / "xenium_spot.h5ad").is_file()
+                    )
+                    self.assertTrue(
+                        (
+                            part_dir / f"spot_{size}" / "cell_num_distribution.csv"
+                        ).is_file()
+                    )
             self.assertEqual(list(result.output_dir.rglob("*simulated*")), [])
