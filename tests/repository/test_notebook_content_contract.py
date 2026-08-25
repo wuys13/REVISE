@@ -21,10 +21,10 @@ BENCHMARK_NOTEBOOKS = (
     "plot_imputation_case.ipynb",
 )
 CODE_SOURCE_DIGESTS = {
-    "Xenium_sc_SVC_T.ipynb": "0ce1be5d5200c89d998b5b9485a35e693dd77bfde38fbbe1ed6d7659a452c7b8",
-    "Xenium_sc_SVC_Fibroblast.ipynb": "ffe701d77c7c806aced707725575cd52102932c1cc31be85d5d94580d91974e6",
-    "Xenium_sc_SVC_Monocyte.ipynb": "1c0bacbeea786dd576cb225f8e608e3536456f2e4eae2aea5e4fad97f2ee3c39",
-    "VisiumHD_sp_SVC.ipynb": "9c0074d147d88650821fdb080874891b7c0da497231fa2beaa2d6d95566b1b56",
+    "Xenium_sc_SVC_T.ipynb": "cfeff26eb68901473b1f59f18e46c09722674e9ab71c8eb75bc0942e1470f6e3",
+    "Xenium_sc_SVC_Fibroblast.ipynb": "10f9f2976ceb97842a992432cb8044c449e29bdeb018b4e879772447e331a3e9",
+    "Xenium_sc_SVC_Monocyte.ipynb": "0b8f3d66b7df3914fa5134c6ed4d271c81de76702c84788ab2a43b63149a8534",
+    "VisiumHD_sp_SVC.ipynb": "9833157b60f4cbde93888cf0a61381c2f2403a76b2d42ed51849ca96e9b8adb6",
     "segmentation.ipynb": "0b72170a0fedce72ddeb01f698799f7e9f9e412188fcf84c50d588dc72348a16",
     "bin2cell.ipynb": "2d9082ca947f18036fbf251165decbd4dfd1aca5c054a00b6918cf62294a6274",
     "batch.ipynb": "c56737e6b4c4b042c2c5f78108a341ab1a559b3ec99ecc703bd6ad8a52caf872",
@@ -33,10 +33,10 @@ CODE_SOURCE_DIGESTS = {
     "plot_imputation_case.ipynb": "df15d5935f310583e5299f4e1acc9cd512ec3d52109ef3267b3730cfe408878e",
 }
 CODE_SNAPSHOT_DIGESTS = {
-    "VisiumHD_sp_SVC.ipynb": "54a943359b36c28f63b30288d6f98fe824956dbaaf0d1fa3f9d98d258a024ac8",
-    "Xenium_sc_SVC_T.ipynb": "187cd1b78e82f0be2f1525513cc32b7f6c5eb37246627ae0ba13328c40fee40e",
-    "Xenium_sc_SVC_Fibroblast.ipynb": "d261d263fe58a18c942b9ed6b09bc332e97e1118138a17f1b40c0853f8ade203",
-    "Xenium_sc_SVC_Monocyte.ipynb": "62d366db999148631b13060316840ce0bce0a3ac349b0d6b234fdb208f2b3916",
+    "VisiumHD_sp_SVC.ipynb": "76d4c142b43adcb33e5232491ab95a29a470ce599c58c25380eedf98d3b42bef",
+    "Xenium_sc_SVC_T.ipynb": "4c1b7e8d9828f37acf686c815e1b65282395647fbc4697606e09d067b9cd6652",
+    "Xenium_sc_SVC_Fibroblast.ipynb": "75f4d6eeaed97fa120387fa827c52114ba0aa82ba6b24e525db48d1efc482dfd",
+    "Xenium_sc_SVC_Monocyte.ipynb": "94f2e97696698c1d6c7beab12ce00aa8dd9329390283bab2ce95a900f63f7a3f",
     "segmentation.ipynb": "d6e35abb508b3b728b8253119a452f77309ca6b3953fb6108ab939ca0cc71ab5",
     "bin2cell.ipynb": "4a6506161921ca09e6fe13bd9184f624010aa24c34f0d1713b898c162fa9395d",
     "batch.ipynb": "542f8c2deef00b98e2ec5ef72bf80c085ff21e09d46ccdede1f810d67b8a25cb",
