@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 import pandas as pd
-from anndata import AnnData
+from anndata import AnnData, read_h5ad
 import yaml
 
 import revise.preprocess.sim2real_pseudospot as pseudospot
@@ -282,7 +282,7 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
                     config_path, "P1CRC", root / "missing-confirmed-regions.yaml"
                 )
 
-    def test_build_writes_only_real_standard_output_contract(self):
+    def test_build_writes_spot_size_output_contract(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             labels = []
@@ -395,7 +395,16 @@ class Sim2RealPseudospotContractTest(unittest.TestCase):
             for part in ("part1", "part2", "part3"):
                 part_dir = result.output_dir / part
                 self.assertTrue((part_dir / "selected_xenium.h5ad").is_file())
-                self.assertTrue((part_dir / "real_sc_ref_part.h5ad").is_file())
+                ref_all_path = part_dir / "real_sc_ref_all.h5ad"
+                self.assertTrue(ref_all_path.is_file())
+                ref_all = read_h5ad(ref_all_path)
+                self.assertEqual(ref_all.n_obs, 9)
+                self.assertEqual(
+                    ref_all.obs["clusters"].astype(str).tolist(),
+                    ref_all.obs["Level1"].astype(str).tolist(),
+                )
+                self.assertFalse((part_dir / "real_sc_ref_part.h5ad").exists())
+                self.assertFalse((part_dir / "real_sc_ref_others.h5ad").exists())
                 self.assertTrue((part_dir / "cut.png").is_file())
                 for size in (50, 100, 150, 200):
                     self.assertTrue(

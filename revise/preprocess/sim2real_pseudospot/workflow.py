@@ -448,14 +448,11 @@ def build_real_pseudospots(
             output_path=part_dir / "cut.png",
         )
 
-        cell_types = selected.obs[loaded.preprocessing.label_key].astype(str).unique()
-        ref_part = reference[
-            reference.obs[loaded.preprocessing.label_key].astype(str).isin(cell_types)
-        ].copy()
-        ref_part.obs["clusters"] = ref_part.obs[loaded.preprocessing.label_key].astype(
+        ref_all = reference.copy()
+        ref_all.obs["clusters"] = ref_all.obs[loaded.preprocessing.label_key].astype(
             str
         )
-        ref_part.write_h5ad(part_dir / "real_sc_ref_part.h5ad")
+        ref_all.write_h5ad(part_dir / "real_sc_ref_all.h5ad")
 
         for spot_size in loaded.spot_sizes:
             spots, distribution = aggregate_real_cells(selected, spot_size=spot_size)
