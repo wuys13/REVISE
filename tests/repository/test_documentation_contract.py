@@ -83,7 +83,7 @@ def test_readme_first_run_flow_has_resources_install_downloads_and_quick_run():
         ("https://zenodo.org/records/21921802", "Reproduced benchmark results"),
         ("https://zenodo.org/records/21921802", "Real-world ST datasets"),
         ("https://zenodo.org/records/18389835", "Reproduced sp-SVC H5AD"),
-        ("https://zenodo.org/records/18389211", "Reproduced sc-SVC H5AD"),
+        ("https://zenodo.org/records/22046001", "Reproduced sc-SVC H5AD"),
     ):
         assert url in downloads
         assert label in downloads
@@ -415,7 +415,7 @@ def test_reproduce_documentation_uses_the_requested_downloads_and_boundary():
     urls = (
         "https://zenodo.org/records/21921802",
         "https://zenodo.org/records/18389835",
-        "https://zenodo.org/records/18389211",
+        "https://zenodo.org/records/22046001",
     )
     for url in urls:
         assert url in reproduce

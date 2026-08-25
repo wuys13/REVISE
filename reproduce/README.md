@@ -12,7 +12,7 @@ and are not downloaded during package installation.
 | Reproduced benchmark results | [Zenodo](https://zenodo.org/records/21921802) |
 | Real-world ST datasets | [Zenodo](https://zenodo.org/records/21921802) |
 | Reproduced sp-SVC H5AD | [Zenodo](https://zenodo.org/records/18389835) |
-| Reproduced sc-SVC H5AD | [Zenodo](https://zenodo.org/records/18389211) |
+| Reproduced sc-SVC H5AD | [Zenodo](https://zenodo.org/records/22046001) |
 
 ## Benchmark
 

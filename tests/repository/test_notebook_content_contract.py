@@ -156,7 +156,7 @@ def test_xenium_notebooks_read_the_current_derived_cluster_directories():
 
 def test_active_notebooks_use_the_current_download_names_and_record():
     material = "https://zenodo.org/records/21921802"
-    sc_svc = "https://zenodo.org/records/18389211"
+    sc_svc = "https://zenodo.org/records/22046001"
     sp_svc = "https://zenodo.org/records/18389835"
 
     for name in XENIUM_NOTEBOOKS:
