@@ -1,0 +1,42 @@
+schema_version: 1
+
+application:
+  svc_type: sc-SVC
+  mode: cluster
+
+paths:
+  root_dir: .
+
+algorithm:
+  ot_method: tacco
+
+inputs:
+  st:
+    path: prepared/allen_visp_merfish/MERFISH.h5ad
+    format: h5ad
+  reference:
+    path: prepared/allen_visp_merfish/Tasic2018_sc_mouse_cortex.h5ad
+    format: h5ad
+
+preprocessing:
+  spatial:
+    min_transcript_counts: 15
+    min_cell_counts: 1
+  reference:
+    min_transcript_counts: null
+    min_cell_counts: 1
+
+global_anchoring:
+  broad_column: Level1
+
+local_refinement:
+  subtype_column: Level2
+  select_cell_type: Glutamatergic
+  alpha: 0.2
+  resolutions: [0.6, 0.7, 0.8]
+
+output:
+  dir: results/allen_visp_merfish
+
+execution:
+  seed: 42

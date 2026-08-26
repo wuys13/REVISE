@@ -1,0 +1,47 @@
+schema_version: 1
+
+application:
+  svc_type: sp-SVC
+
+paths:
+  root_dir: .
+
+algorithm:
+  ot_method: tacco
+
+inputs:
+  st:
+    path: prepared/zesta_zf5/zf5_stereoseq_counts.h5ad
+    format: h5ad
+  reference:
+    path: prepared/zesta_zf5/zf5_scRNA_counts.h5ad
+    format: h5ad
+
+preprocessing:
+  spatial:
+    min_transcript_counts: null
+    min_counts: 50
+    min_cell_counts: 1
+  reference:
+    min_transcript_counts: null
+    min_genes: null
+    min_cell_counts: 1
+
+global_anchoring:
+  broad_column: celltype_new
+
+local_refinement:
+  strength: 0.0
+  graph:
+    method: joint
+    alpha: 0.8
+    n_neighbors: 10
+    exp_neighbors: 10
+    spatial_neighbors: 6
+
+output:
+  dir: results/zesta_zf5
+  name: ZESTA_zf5_sp_SVC
+
+execution:
+  seed: 42

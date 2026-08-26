@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -332,8 +333,9 @@ def test_architecture_records_the_application_only_sr_rename_and_failure_contrac
         assert value in architecture
 
 
-def test_documentation_navigation_has_six_benchmark_pages_and_ordered_gallery():
+def test_documentation_navigation_has_benchmarks_and_gallery_landing_page():
     index = _read(ROOT / "docs/index.rst")
+    gallery = _read(ROOT / "docs/source/gallery.rst")
 
     assert index.startswith(".. include:: ../README.md\n   :parser: readme_parser\n")
     captions = re.findall(r":caption:\s*(.+?)\s*$", index, flags=re.MULTILINE)
@@ -357,13 +359,90 @@ def test_documentation_navigation_has_six_benchmark_pages_and_ordered_gallery():
     ]
 
     gallery_block = index.split(":caption: Gallery", 1)[1].split(":caption: Reference", 1)[0]
-    assert [line.strip() for line in gallery_block.splitlines() if "<case/" in line] == [
-        "VisiumHD (hST platform) sp-SVC <case/VisiumHD_sp_SVC>",
-        "Xenium (iST platform) sc-SVC T cells <case/Xenium_sc_SVC_T>",
-        "Xenium (iST platform) sc-SVC Fibroblast <case/Xenium_sc_SVC_Fibroblast>",
-        "Xenium (iST platform) sc-SVC Mono/Macro <case/Xenium_sc_SVC_Monocyte>",
-        "Visium (sST platform) sc-SVC mouse brain <case/Visium_sc_SVC_mouse_brain>",
+    assert [
+        line.strip() for line in gallery_block.splitlines() if "<source/" in line
+    ] == ["Gallery <source/gallery>"]
+    assert "<case/" not in gallery_block
+    reference_block = index.split(":caption: Reference", 1)[1]
+    assert "Gallery <source/gallery>" not in reference_block
+
+    assert gallery.count(".. nbgallery::") == 1
+    assert ":orphan:" not in gallery
+    assert ".. note::" not in gallery
+    assert [
+        line.strip() for line in gallery.splitlines() if "<../case/" in line
+    ] == [
+        "Visium HD (hST platform) sp-SVC <../case/VisiumHD_sp_SVC>",
+        "Slide-seq (hST platform) mouse olfactory bulb sp-SVC <../case/SlideSeq_mouse_olfactory_bulb_sp_SVC>",
+        "Slide-seq (hST platform) mouse colon sp-SVC <../case/SlideSeq_mouse_colon_sp_SVC>",
+        "Stereo-seq (hST platform) zebrafish 5 hpf sp-SVC <../case/StereoSeq_zebrafish_5hpf_sp_SVC>",
+        "CosMx SMI (iST platform) 267T_not sp-SVC <../case/CosMx_SMI_267T_not_sp_SVC>",
+        "Xenium (iST platform) sc-SVC T cells <../case/Xenium_sc_SVC_T>",
+        "Xenium (iST platform) sc-SVC Fibroblast <../case/Xenium_sc_SVC_Fibroblast>",
+        "Xenium (iST platform) sc-SVC Mono/Macro <../case/Xenium_sc_SVC_Monocyte>",
+        "osmFISH (iST platform) sc-SVC cluster <../case/osmFISH_sc_SVC_cluster>",
+        "MERFISH (iST platform) Allen VISp sc-SVC cluster <../case/MERFISH_Allen_VISp_sc_SVC_cluster>",
+        "Visium (sST platform) sc-SVC mouse brain (SR mode) <../case/Visium_sc_SVC_mouse_brain>",
     ]
+
+
+def test_gallery_uses_curated_embedded_thumbnails_and_three_column_cards():
+    conf = _read(ROOT / "docs/conf.py")
+    tree = ast.parse(conf)
+    thumbnail_assignment = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "nbsphinx_thumbnails"
+            for target in node.targets
+        )
+    )
+    thumbnails = ast.literal_eval(thumbnail_assignment.value)
+    assert thumbnails == {
+        "case/VisiumHD_sp_SVC": "_images/case_VisiumHD_sp_SVC_36_6.png",
+        "case/SlideSeq_mouse_olfactory_bulb_sp_SVC": (
+            "_images/case_SlideSeq_mouse_olfactory_bulb_sp_SVC_8_0.png"
+        ),
+        "case/SlideSeq_mouse_colon_sp_SVC": (
+            "_images/case_SlideSeq_mouse_colon_sp_SVC_9_0.png"
+        ),
+        "case/StereoSeq_zebrafish_5hpf_sp_SVC": (
+            "_images/case_StereoSeq_zebrafish_5hpf_sp_SVC_8_0.png"
+        ),
+        "case/CosMx_SMI_267T_not_sp_SVC": (
+            "_images/case_CosMx_SMI_267T_not_sp_SVC_5_0.png"
+        ),
+        "case/Xenium_sc_SVC_T": "_images/case_Xenium_sc_SVC_T_9_4.png",
+        "case/Xenium_sc_SVC_Fibroblast": (
+            "_images/case_Xenium_sc_SVC_Fibroblast_16_4.png"
+        ),
+        "case/Xenium_sc_SVC_Monocyte": (
+            "_images/case_Xenium_sc_SVC_Monocyte_9_4.png"
+        ),
+        "case/osmFISH_sc_SVC_cluster": (
+            "_images/case_osmFISH_sc_SVC_cluster_10_0.png"
+        ),
+        "case/MERFISH_Allen_VISp_sc_SVC_cluster": (
+            "_images/case_MERFISH_Allen_VISp_sc_SVC_cluster_8_0.png"
+        ),
+        "case/Visium_sc_SVC_mouse_brain": (
+            "_images/case_Visium_sc_SVC_mouse_brain_29_2.png"
+        ),
+    }
+    assert "case/MERFISH_human_liver_sc_SVC_cluster" not in thumbnails
+
+    css = _read(ROOT / "docs/source/_static/revise.css")
+    compact_css = re.sub(r"\s+", " ", css)
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in compact_css
+    assert "aspect-ratio: 8 / 5;" in compact_css
+    assert "object-fit: contain;" in compact_css
+    assert "object-position: right center;" in compact_css
+    assert "@media (max-width: 900px)" in css
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in compact_css
+    assert "@media (max-width: 600px)" in css
+    assert "grid-template-columns: minmax(0, 1fr);" in compact_css
+    assert 'img[src$="nbsphinx-no-thumbnail.svg"]' in css
 
 
 def test_nblink_inventory_targets_the_current_notebooks():
@@ -379,6 +458,12 @@ def test_nblink_inventory_targets_the_current_notebooks():
         "docs/case/Xenium_sc_SVC_Fibroblast.nblink": "reproduce/case/Xenium_sc_SVC_Fibroblast.ipynb",
         "docs/case/Xenium_sc_SVC_Monocyte.nblink": "reproduce/case/Xenium_sc_SVC_Monocyte.ipynb",
         "docs/case/Visium_sc_SVC_mouse_brain.nblink": "reproduce/case/Visium_sc_SVC_mouse_brain.ipynb",
+        "docs/case/SlideSeq_mouse_olfactory_bulb_sp_SVC.nblink": "reproduce/case/SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb",
+        "docs/case/SlideSeq_mouse_colon_sp_SVC.nblink": "reproduce/case/SlideSeq_mouse_colon_sp_SVC.ipynb",
+        "docs/case/osmFISH_sc_SVC_cluster.nblink": "reproduce/case/osmFISH_sc_SVC_cluster.ipynb",
+        "docs/case/StereoSeq_zebrafish_5hpf_sp_SVC.nblink": "reproduce/case/StereoSeq_zebrafish_5hpf_sp_SVC.ipynb",
+        "docs/case/CosMx_SMI_267T_not_sp_SVC.nblink": "reproduce/case/CosMx_SMI_267T_not_sp_SVC.ipynb",
+        "docs/case/MERFISH_Allen_VISp_sc_SVC_cluster.nblink": "reproduce/case/MERFISH_Allen_VISp_sc_SVC_cluster.ipynb",
     }
     observed = {
         str(path.relative_to(ROOT)): path
@@ -437,7 +522,22 @@ def test_reproduce_documentation_uses_the_requested_downloads_and_boundary():
         in reproduce
     )
     assert "not evidence that the current source has been" in reproduce
-    assert reproduce.index("VisiumHD sp-SVC") < reproduce.index("Xenium sc-SVC T cells") < reproduce.index("Visium sc-SVC mouse brain")
+    ordered_cases = (
+        "Visium HD sp-SVC",
+        "Slide-seq mouse olfactory bulb sp-SVC",
+        "Slide-seq mouse colon sp-SVC",
+        "Stereo-seq zebrafish 5 hpf sp-SVC",
+        "CosMx SMI 267T_not sp-SVC",
+        "Xenium sc-SVC T cells",
+        "Xenium sc-SVC Fibroblast",
+        "Xenium sc-SVC Mono/Macro",
+        "osmFISH sc-SVC cluster",
+        "MERFISH Allen VISp sc-SVC cluster",
+        "Visium sc-SVC mouse brain",
+    )
+    assert [reproduce.index(name) for name in ordered_cases] == sorted(
+        reproduce.index(name) for name in ordered_cases
+    )
 
 
 def test_installation_describes_supported_versions_and_optional_layers():
@@ -467,12 +567,9 @@ def test_docs_have_no_machine_paths_and_documentation_build_is_static():
     assert '"design/**"' in conf
 
 
-def test_documentation_links_and_failure_contract_are_navigable_and_accurate():
-    gallery = _read(ROOT / "docs/source/gallery.rst")
+def test_documentation_failure_contract_is_accurate():
     architecture = " ".join(_read(ROOT / "docs/source/architecture.rst").split())
 
-    assert "`reproduce/README.md`_" in gallery
-    assert "https://github.com/wuys13/REVISE/blob/main/reproduce/README.md" in gallery
     assert "not reader-atomic or crash-atomic" in architecture
     assert "catchable replacement failures attempt rollback" in architecture
 

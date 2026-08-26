@@ -74,11 +74,17 @@ separate roles.
 
 The preserved Application analysis notebooks are organized in website order:
 
-1. [VisiumHD sp-SVC](case/VisiumHD_sp_SVC.ipynb)
-2. [Xenium sc-SVC T cells](case/Xenium_sc_SVC_T.ipynb)
-3. [Xenium sc-SVC Fibroblast](case/Xenium_sc_SVC_Fibroblast.ipynb)
-4. [Xenium sc-SVC Mono/Macro](case/Xenium_sc_SVC_Monocyte.ipynb)
-5. [Visium sc-SVC mouse brain](case/Visium_sc_SVC_mouse_brain.ipynb) — SR mode
+1. [Visium HD sp-SVC](case/VisiumHD_sp_SVC.ipynb)
+2. [Slide-seq mouse olfactory bulb sp-SVC](case/SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb)
+3. [Slide-seq mouse colon sp-SVC](case/SlideSeq_mouse_colon_sp_SVC.ipynb)
+4. [Stereo-seq zebrafish 5 hpf sp-SVC](case/StereoSeq_zebrafish_5hpf_sp_SVC.ipynb)
+5. [CosMx SMI 267T_not sp-SVC](case/CosMx_SMI_267T_not_sp_SVC.ipynb)
+6. [Xenium sc-SVC T cells](case/Xenium_sc_SVC_T.ipynb)
+7. [Xenium sc-SVC Fibroblast](case/Xenium_sc_SVC_Fibroblast.ipynb)
+8. [Xenium sc-SVC Mono/Macro](case/Xenium_sc_SVC_Monocyte.ipynb)
+9. [osmFISH sc-SVC cluster](case/osmFISH_sc_SVC_cluster.ipynb)
+10. [MERFISH Allen VISp sc-SVC cluster](case/MERFISH_Allen_VISp_sc_SVC_cluster.ipynb)
+11. [Visium sc-SVC mouse brain](case/Visium_sc_SVC_mouse_brain.ipynb) — SR mode
 
 Benchmark notebooks are under [`benchmark/`](benchmark/). The docs website
 links these notebooks without executing them.

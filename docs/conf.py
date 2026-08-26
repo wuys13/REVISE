@@ -62,6 +62,41 @@ nbsphinx_prolog = r"""
    contract.
 """
 
+# Keep Gallery thumbnails tied to representative embedded notebook outputs.
+# Wide platform-comparison figures are focused on their rightmost REVISE panel
+# by the Gallery CSS.
+nbsphinx_thumbnails = {
+    "case/VisiumHD_sp_SVC": "_images/case_VisiumHD_sp_SVC_36_6.png",
+    "case/SlideSeq_mouse_olfactory_bulb_sp_SVC": (
+        "_images/case_SlideSeq_mouse_olfactory_bulb_sp_SVC_8_0.png"
+    ),
+    "case/SlideSeq_mouse_colon_sp_SVC": (
+        "_images/case_SlideSeq_mouse_colon_sp_SVC_9_0.png"
+    ),
+    "case/StereoSeq_zebrafish_5hpf_sp_SVC": (
+        "_images/case_StereoSeq_zebrafish_5hpf_sp_SVC_8_0.png"
+    ),
+    "case/CosMx_SMI_267T_not_sp_SVC": (
+        "_images/case_CosMx_SMI_267T_not_sp_SVC_5_0.png"
+    ),
+    "case/Xenium_sc_SVC_T": "_images/case_Xenium_sc_SVC_T_9_4.png",
+    "case/Xenium_sc_SVC_Fibroblast": (
+        "_images/case_Xenium_sc_SVC_Fibroblast_16_4.png"
+    ),
+    "case/Xenium_sc_SVC_Monocyte": (
+        "_images/case_Xenium_sc_SVC_Monocyte_9_4.png"
+    ),
+    "case/osmFISH_sc_SVC_cluster": (
+        "_images/case_osmFISH_sc_SVC_cluster_10_0.png"
+    ),
+    "case/MERFISH_Allen_VISp_sc_SVC_cluster": (
+        "_images/case_MERFISH_Allen_VISp_sc_SVC_cluster_8_0.png"
+    ),
+    "case/Visium_sc_SVC_mouse_brain": (
+        "_images/case_Visium_sc_SVC_mouse_brain_29_2.png"
+    ),
+}
+
 templates_path = ["source/_templates"] if (DOCS_SOURCE / "source" / "_templates").exists() else []
 exclude_patterns: list[str] = [
     "_build",

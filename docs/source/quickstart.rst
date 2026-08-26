@@ -110,5 +110,6 @@ Next steps
 
 - :doc:`concepts` explains what the three data shapes and two sc-SVC modes
   mean scientifically.
-- :doc:`gallery` lists the preserved benchmark and Application notebook
-  snapshots; it is not a replacement for this current reconstruction entry.
+- :doc:`gallery` indexes the preserved Application notebook snapshots; the
+  Sim2Real-ST Benchmark notebooks remain in their separate navigation section.
+  Neither is a replacement for this current reconstruction entry.

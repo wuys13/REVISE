@@ -25,20 +25,15 @@
 
 .. toctree::
    :caption: Gallery
-   :maxdepth: 1
+   :maxdepth: 2
    :hidden:
 
-   VisiumHD (hST platform) sp-SVC <case/VisiumHD_sp_SVC>
-   Xenium (iST platform) sc-SVC T cells <case/Xenium_sc_SVC_T>
-   Xenium (iST platform) sc-SVC Fibroblast <case/Xenium_sc_SVC_Fibroblast>
-   Xenium (iST platform) sc-SVC Mono/Macro <case/Xenium_sc_SVC_Monocyte>
-   Visium (sST platform) sc-SVC mouse brain <case/Visium_sc_SVC_mouse_brain>
+   Gallery <source/gallery>
 
 .. toctree::
    :caption: Reference
    :maxdepth: 2
    :hidden:
 
-   Gallery <source/gallery>
    Architecture <source/architecture>
    Python API <source/api/index>
