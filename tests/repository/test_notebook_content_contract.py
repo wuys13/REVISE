@@ -48,9 +48,6 @@ NOTEBOOK_METADATA_DIGESTS = {
     "VisiumHD_sp_SVC.ipynb": "a7762c677ddb239293c8ef52b3a4f641e7c8d67998e7bc3a7902b3fa7dc70b2c",
 }
 VISIUM_SC_SVC_NOTEBOOK = "Visium_sc_SVC_mouse_brain.ipynb"
-VISIUM_UNCHANGED_CODE_DIGEST = (
-    "8ea767f4955eb5ecc507cbbfa16214e72ea5d7c0132db30f44d783a8a329d54c"
-)
 
 
 def _notebook(name: str) -> dict:
@@ -105,18 +102,6 @@ def _metadata_digest(name: str) -> str:
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
-
-
-def _code_digest_except(name: str, excluded_indexes: set[int]) -> str:
-    sources = [
-        "".join(cell.get("source", []))
-        for index, cell in enumerate(_notebook(name)["cells"])
-        if cell["cell_type"] == "code" and index not in excluded_indexes
-    ]
-    payload = json.dumps(
-        sources, ensure_ascii=False, separators=(",", ":")
-    ).encode()
-    return hashlib.sha256(payload).hexdigest()
 
 
 def test_curated_notebooks_match_approved_ordered_code_cell_sources():
@@ -280,24 +265,23 @@ def test_active_notebooks_retain_approved_execution_snapshots():
     assert "sample_paired_by_identity" not in visium_source
 
 
-def test_visium_sc_svc_hard_cut_changes_only_allowed_code_cells_and_names():
+def test_visium_sc_svc_case_uses_the_canonical_direct_application_route():
     notebook = _notebook(VISIUM_SC_SVC_NOTEBOOK)
     source = "\n".join(
-        line
+        "".join(cell.get("source", []))
         for cell in notebook["cells"]
-        for line in cell.get("source", [])
     )
 
     assert not (CASE_DIR / "sc_SVC_sr_case_Visium_mouse_brain.ipynb").exists()
-    assert _code_digest_except(VISIUM_SC_SVC_NOTEBOOK, {6, 20}) == (
-        VISIUM_UNCHANGED_CODE_DIGEST
-    )
     assert 'SAMPLE_NAME = "REVISEVisiumMouseBrain_sc-SVC"' in source
     assert 'RECONSTRUCTION_COMMAND = "python reconstruct.py --config configs/application/Visium.yaml"' in source
-    assert '("route", "sc-SVC")' in source
-    assert '("mode", "sr")' in source
     assert "sc-SVC-sr" not in source
+    assert "urlretrieve" not in source
+    assert "run_manifest" not in source
 
     code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
     assert all(cell["execution_count"] is None for cell in code_cells)
-    assert all(cell["outputs"] == [] for cell in code_cells)
+    outputs = [output for cell in code_cells for output in cell.get("outputs", [])]
+    assert len(outputs) == 7
+    assert all(output.get("output_type") == "display_data" for output in outputs)
+    assert all(set(output.get("data", {})) == {"image/png"} for output in outputs)

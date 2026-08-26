@@ -1,4 +1,4 @@
-"""Behavioral style contracts for the six root case-study notebooks.
+"""Behavioral style contracts for the streamlined root case-study notebooks.
 
 These checks intentionally validate notebook behavior and structure rather than
 pinning a whole source digest.  The builders are called only to obtain their
@@ -28,6 +28,7 @@ NOTEBOOKS = (
     "SlideSeq_mouse_colon_sp_SVC.ipynb",
     "SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb",
     "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb",
+    "Visium_sc_SVC_mouse_brain.ipynb",
     "osmFISH_sc_SVC_cluster.ipynb",
 )
 
@@ -37,6 +38,15 @@ PNG_CELL_COUNTS = {
     "SlideSeq_mouse_colon_sp_SVC.ipynb": {9: 1},
     "SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb": {8: 1},
     "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb": {8: 1},
+    "Visium_sc_SVC_mouse_brain.ipynb": {
+        11: 1,
+        16: 1,
+        18: 1,
+        24: 1,
+        26: 1,
+        28: 1,
+        29: 1,
+    },
     "osmFISH_sc_SVC_cluster.ipynb": {10: 3},
 }
 
@@ -60,6 +70,10 @@ BUILDER_SPECS = {
     "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb": (
         CASE_DIR / "stereo_seq" / "build_notebook.py",
         "build_zesta_zf5",
+    ),
+    "Visium_sc_SVC_mouse_brain.ipynb": (
+        CASE_DIR / "visium_mouse_brain" / "build_notebook.py",
+        "build_notebook",
     ),
     "osmFISH_sc_SVC_cluster.ipynb": (
         CASE_DIR / "tacco" / "build_notebooks.py",
@@ -313,6 +327,7 @@ def test_global_anchoring_diagnostics_are_scoped_by_case():
         "SlideSeq_mouse_colon_sp_SVC.ipynb",
         "SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb",
         "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb",
+        "Visium_sc_SVC_mouse_brain.ipynb",
     )
     complete_ga_diagnostics = (
         "MERFISH_Allen_VISp_sc_SVC_cluster.ipynb",
@@ -348,6 +363,22 @@ def test_case_specific_input_and_figure_contracts_are_direct():
     )
     assert stereo.count("subprocess.run(") == 2
     assert 'svc.obs["celltype_new"].reindex(' in stereo
+
+    visium = _code_source(
+        _read_notebook("Visium_sc_SVC_mouse_brain.ipynb")
+    )
+    assert visium.count("subprocess.run(") == 1
+    assert "urlretrieve" not in visium
+    assert "run_manifest" not in visium
+    assert 'raw_reference = ad.read_h5ad(RAW_REFERENCE_PATH)' in visium
+    assert 'spatial.uns["all_cells_in_spot"] = all_cells_in_spot' in visium
+    assert 'pm_on_cell.to_csv(PM_ON_CELL_PATH)' in visium
+    assert (
+        '"python reconstruct.py --config configs/application/Visium.yaml"'
+        in visium
+    )
+    assert "input_embeddings = independent_umaps(" in visium
+    assert "svc_embedding = independent_umap(" in visium
 
     allen = _code_source(
         _read_notebook("MERFISH_Allen_VISp_sc_SVC_cluster.ipynb")

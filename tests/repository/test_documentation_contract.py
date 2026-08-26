@@ -427,7 +427,7 @@ def test_gallery_uses_curated_embedded_thumbnails_and_three_column_cards():
             "_images/case_MERFISH_Allen_VISp_sc_SVC_cluster_8_0.png"
         ),
         "case/Visium_sc_SVC_mouse_brain": (
-            "_images/case_Visium_sc_SVC_mouse_brain_29_2.png"
+            "_images/case_Visium_sc_SVC_mouse_brain_29_0.png"
         ),
     }
     assert "case/MERFISH_human_liver_sc_SVC_cluster" not in thumbnails
@@ -488,8 +488,7 @@ def test_visium_notebook_uses_the_current_name_and_entrypoint():
     assert not old_path.exists()
     assert "python reconstruct.py --config configs/application/Visium.yaml" in source
     assert 'SAMPLE_NAME = "REVISEVisiumMouseBrain_sc-SVC"' in source
-    assert '("route", "sc-SVC")' in source
-    assert '("mode", "sr")' in source
+    assert "sc-SVC in SR mode" in source
     assert "p reconstruct.py" not in source
     assert "sc-SVC-sr" not in source
 
