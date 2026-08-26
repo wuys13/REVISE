@@ -282,6 +282,6 @@ def test_visium_sc_svc_case_uses_the_canonical_direct_application_route():
     code_cells = [cell for cell in notebook["cells"] if cell["cell_type"] == "code"]
     assert all(cell["execution_count"] is None for cell in code_cells)
     outputs = [output for cell in code_cells for output in cell.get("outputs", [])]
-    assert len(outputs) == 7
+    assert len(outputs) == 5
     assert all(output.get("output_type") == "display_data" for output in outputs)
     assert all(set(output.get("data", {})) == {"image/png"} for output in outputs)

@@ -43,10 +43,6 @@ np.random.seed(SEED)
 REPO_ROOT = Path.cwd().resolve()
 DATA_ROOT = REPO_ROOT / "raw_data/visium_mouse_brain"
 CONFIG_PATH = REPO_ROOT / "configs/application/Visium.yaml"
-TACCO_CASE_DIR = REPO_ROOT / "reproduce/case/tacco"
-sys.path.insert(0, str(TACCO_CASE_DIR))
-
-from notebook_utils import independent_umap, independent_umaps, plot_independent_panels
 
 SAMPLE_NAME = "REVISEVisiumMouseBrain_sc-SVC"
 RAW_REFERENCE_PATH = DATA_ROOT / "scRNA_mouse_brain.h5ad"
@@ -82,12 +78,12 @@ def build_notebook():
             create a transparent transcript-count virtual-cell allocation, run
             `reconstruct.py`, and visualize the published SVC object.
 
-            **Direct observation.** Seven retained PNGs show input context,
-            allocation, reference composition, reconstructed cell types, marker
-            maps, and independently fitted expression-space views.
+            **Direct observation.** Five retained historical PNGs show input
+            context, allocation, reference composition, reconstructed cell types,
+            and marker maps.
 
             The earlier six-notebook Phase 1 snapshot did not include this notebook's
-            images. These PNGs come from its separate pre-streamlining execution
+            images. These five PNGs come from its separate pre-streamlining execution
             snapshot; the streamlined code has not been rerun.
 
             **Interpretation boundary.** Visium observations are multi-cell spots.
@@ -558,66 +554,14 @@ def build_notebook():
         ),
         md(
             r'''
-            ### Independently fitted expression-space views
-
-            Reference cells, raw Visium spots, and reconstructed virtual cells are
-            embedded independently with the same seeded recipe. Coordinates,
-            orientation, scale, and distances are not comparable across panels.
-            The raw-spot panel is colored by transcript depth because it has no
-            independent spot-level cell-type truth.
-            '''
-        ),
-        code(
-            r'''
-            input_embeddings = independent_umaps(
-                {"reference": reference, "raw_st": spatial},
-                categorical_labels={
-                    "reference": reference.obs["Level1"].astype(str),
-                    "raw_st": np.repeat("Visium spot", spatial.n_obs),
-                },
-                seed=SEED,
-            )
-            fig = plot_independent_panels(
-                input_embeddings,
-                ["reference", "raw_st"],
-                titles={
-                    "reference": "scRNA-seq reference",
-                    "raw_st": "Visium spots",
-                },
-                raw_source="raw_st",
-                figsize=(14, 5.4),
-            )
-            plt.show()
-            '''
-        ),
-        code(
-            r'''
-            svc_embedding = independent_umap(
-                svc,
-                categorical_labels=svc.obs["cell_type"].astype(str),
-                source_name="reconstructed_svc",
-                seed=SEED,
-            )
-            fig = plot_independent_panels(
-                {"svc": svc_embedding},
-                ["svc"],
-                titles={"svc": "Reconstructed expression space"},
-                figsize=(8, 6),
-            )
-            plt.show()
-            '''
-        ),
-        md(
-            r'''
             ## Interpretation boundary
 
             **Direct observation.** The retained images show the displayed input,
-            allocation, reference, spatial, marker, and expression-space patterns.
+            allocation, reference, spatial, and marker patterns.
 
             **Interpretation boundary.** Virtual-cell identities and expression are
-            reference-guided reconstruction outputs. Shared spot centers do not
-            imply physical cell localization, independently fitted UMAP geometry is
-            not cross-panel geometry, and these figures do not establish biological
+            reference-guided reconstruction outputs. Shared spot centers do not imply
+            physical cell localization, and these figures do not establish biological
             accuracy or reproduce the reconstruction in this checkout.
             '''
         ),

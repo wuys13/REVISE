@@ -23,7 +23,6 @@ def code(source: str):
 SETUP = r'''
 import os
 from pathlib import Path
-import sys
 
 for key in (
     "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
@@ -36,14 +35,9 @@ os.environ["MPLBACKEND"] = "Agg"
 
 import anndata as ad
 import matplotlib.pyplot as plt
+import scanpy as sc
 
 SEED = 42
-MAX_UMAP_OBSERVATIONS = 10_000
-
-REPO_ROOT = Path.cwd().resolve()
-TACCO_CASE_DIR = REPO_ROOT / "reproduce" / "case" / "tacco"
-sys.path.insert(0, str(TACCO_CASE_DIR))
-from notebook_utils import independent_umaps, plot_independent_panels
 
 CASE_ROOT = Path(os.environ["REVISE_COSMX_CASE_ROOT"]).expanduser().resolve()
 ST_PATH = CASE_ROOT / "prepared" / "CosMx_SMI_267T_not_ST.h5ad"
@@ -72,30 +66,36 @@ raw_st_labels = formal_labels.copy()
 
 
 PLOT = r'''
-embeddings = independent_umaps(
-    {
-        "reference": reference,
-        "raw_st": raw_st,
-        "svc": svc,
-    },
-    categorical_labels={
-        "reference": reference_labels,
-        "raw_st": raw_st_labels,
-        "svc": formal_labels,
-    },
-    max_observations=MAX_UMAP_OBSERVATIONS,
-    seed=SEED,
+umap_sources = (
+    ("CRC single-cell reference", reference.copy(), reference_labels),
+    ("Raw CosMx ST | GA Level1", raw_st.copy(), raw_st_labels),
+    ("REVISE sp-SVC | strength 0, graph α 0.8", svc.copy(), formal_labels),
 )
+prepared_sources = []
+for title, prepared, labels in umap_sources:
+    prepared.obs["Level1"] = labels
+    sc.pp.normalize_total(prepared, target_sum=1e4)
+    sc.pp.log1p(prepared)
+    sc.pp.pca(prepared, n_comps=30, random_state=SEED)
+    sc.pp.neighbors(
+        prepared,
+        n_neighbors=15,
+        n_pcs=30,
+        random_state=SEED,
+    )
+    sc.tl.umap(prepared, random_state=SEED)
+    prepared_sources.append((title, prepared))
 
-fig = plot_independent_panels(
-    embeddings,
-    ["reference", "raw_st", "svc"],
-    titles={
-        "reference": "CRC single-cell reference",
-        "raw_st": "Raw CosMx ST | GA Level1",
-        "svc": "REVISE sp-SVC | strength 0, graph α 0.8",
-    },
-)
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+for ax, (title, prepared) in zip(axes, prepared_sources):
+    sc.pl.umap(
+        prepared,
+        color="Level1",
+        ax=ax,
+        show=False,
+        title=title,
+    )
+plt.tight_layout()
 plt.show()
 '''
 
@@ -147,8 +147,8 @@ def build_notebook():
             ## Independently fitted expression-space UMAPs
 
             Each source is normalized, log-transformed, reduced, and embedded on its
-            own. At most 10,000 observations are selected per source with seed 42.
-            Independent panel coordinates are descriptive and are not shared axes.
+            own. Independent panel coordinates are descriptive and are not shared
+            axes.
             '''
         ),
         code(PLOT),

@@ -44,8 +44,6 @@ PNG_CELL_COUNTS = {
         18: 1,
         24: 1,
         26: 1,
-        28: 1,
-        29: 1,
     },
     "osmFISH_sc_SVC_cluster.ipynb": {10: 3},
 }
@@ -112,6 +110,33 @@ FORBIDDEN_CONTROL_PATTERNS = (
     ("cache control", re.compile(r"\bcache\b", re.IGNORECASE)),
     ("reuse control", re.compile(r"\breus(?:e|ing)\b", re.IGNORECASE)),
     ("fallback control", re.compile(r"\bfallback\b", re.IGNORECASE)),
+)
+
+ALLOWED_NOTEBOOK_IMPORT_ROOTS = {
+    # Python standard library
+    "os",
+    "pathlib",
+    "subprocess",
+    "sys",
+    # revise-svc runtime dependencies used by these cases
+    "anndata",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scanpy",
+    "scipy",
+    # Repository modules reached through the documented repository-root entrypoint
+    "reconstruct",
+    "revise",
+}
+
+DIRECT_UMAP_NOTEBOOKS = (
+    "CosMx_SMI_267T_not_sp_SVC.ipynb",
+    "MERFISH_Allen_VISp_sc_SVC_cluster.ipynb",
+    "SlideSeq_mouse_colon_sp_SVC.ipynb",
+    "SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb",
+    "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb",
+    "osmFISH_sc_SVC_cluster.ipynb",
 )
 
 
@@ -219,6 +244,26 @@ def test_root_case_code_cells_parse_without_asserts_or_display_calls():
                 assert not is_display, (
                     f"{name} cell {index} explicitly calls display()"
                 )
+
+
+def test_root_case_notebooks_use_only_direct_packaged_imports():
+    for name in NOTEBOOKS:
+        source = _code_source(_read_notebook(name))
+        assert "notebook_utils" not in source
+        assert "sys.path.insert" not in source
+
+        imported_roots = set()
+        for node in ast.walk(ast.parse(source, filename=name)):
+            if isinstance(node, ast.Import):
+                imported_roots.update(
+                    alias.name.split(".", 1)[0] for alias in node.names
+                )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_roots.add(node.module.split(".", 1)[0])
+        assert imported_roots <= ALLOWED_NOTEBOOK_IMPORT_ROOTS, (
+            f"{name} imports undeclared packages: "
+            f"{sorted(imported_roots - ALLOWED_NOTEBOOK_IMPORT_ROOTS)}"
+        )
 
 
 def test_root_case_code_keeps_runtime_controls_without_audit_scaffolding():
@@ -344,6 +389,34 @@ def test_global_anchoring_diagnostics_are_scoped_by_case():
 
 
 def test_case_specific_input_and_figure_contracts_are_direct():
+    for name in DIRECT_UMAP_NOTEBOOKS:
+        source = _code_source(_read_notebook(name))
+        for call in (
+            "sc.pp.normalize_total(",
+            "sc.pp.log1p(",
+            "sc.pp.pca(",
+            "sc.pp.neighbors(",
+            "sc.tl.umap(",
+            "sc.pl.umap(",
+        ):
+            assert call in source, f"{name} lost direct {call}"
+        assert "target_sum=1e4" in source
+        assert "n_comps=30" in source
+        assert "n_neighbors=15" in source
+        assert "n_pcs=30" in source
+        assert "random_state=SEED" in source
+        for removed_helper in (
+            "assigned_labels",
+            "highly_variable_genes",
+            "independent_umap",
+            "MAX_UMAP_OBSERVATIONS",
+            "max_observations",
+            "plot_independent_panels",
+        ):
+            assert removed_helper not in source, (
+                f"{name} retains {removed_helper}"
+            )
+
     cosmx = _code_source(_read_notebook("CosMx_SMI_267T_not_sp_SVC.ipynb"))
     assert 'os.environ["REVISE_COSMX_CASE_ROOT"]' in cosmx
     assert 'os.environ.get("REVISE_COSMX_CASE_ROOT"' not in cosmx
@@ -355,14 +428,17 @@ def test_case_specific_input_and_figure_contracts_are_direct():
     ):
         source = _code_source(_read_notebook(name))
         assert source.count("subprocess.run(") == 2
-        assert 'svc.obs["Level1"].reindex(' in source
+        assert 'svc_level1 = svc.obs["Level1"].astype(str)' in source
+        assert "svc_level1.loc[raw_for_umap.obs_names]" in source
         assert "formal_ga_level1" not in source
 
     stereo = _code_source(
         _read_notebook("StereoSeq_zebrafish_5hpf_sp_SVC.ipynb")
     )
     assert stereo.count("subprocess.run(") == 2
-    assert 'svc.obs["celltype_new"].reindex(' in stereo
+    assert 'svc.obs.loc[' in stereo
+    assert 'raw_for_umap.obs_names, "celltype_new"' in stereo
+    assert stereo.count("sc.pl.umap(") == 3
 
     visium = _code_source(
         _read_notebook("Visium_sc_SVC_mouse_brain.ipynb")
@@ -377,14 +453,14 @@ def test_case_specific_input_and_figure_contracts_are_direct():
         '"python reconstruct.py --config configs/application/Visium.yaml"'
         in visium
     )
-    assert "input_embeddings = independent_umaps(" in visium
-    assert "svc_embedding = independent_umap(" in visium
+    assert "sc.tl.umap(" not in visium
+    assert "sc.pl.umap(" not in visium
+    assert "independent_umap" not in visium
 
     allen = _code_source(
         _read_notebook("MERFISH_Allen_VISp_sc_SVC_cluster.ipynb")
     )
-    assert "independent_umaps(" not in allen
-    assert "plot_independent_panels(" not in allen
+    assert "= ga_spatial.copy()" in allen
     assert 'for column, key in enumerate(("Level2", "SVC_cluster"))' in allen
 
     osmfish_notebook = _read_notebook("osmFISH_sc_SVC_cluster.ipynb")
@@ -396,3 +472,5 @@ def test_case_specific_input_and_figure_contracts_are_direct():
     assert "sidecar" in osmfish_markdown
     assert "not passed" in osmfish_markdown
     assert "not reconstruction truth" in osmfish_markdown
+    osmfish_source = _code_source(osmfish_notebook)
+    assert "= ga_spatial.copy()" in osmfish_source

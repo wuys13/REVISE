@@ -47,14 +47,10 @@ SEED = 42
 
 import anndata as ad
 import matplotlib.pyplot as plt
+import scanpy as sc
 
 REPO_ROOT = Path.cwd().resolve()
 CASE_DIR = REPO_ROOT / "reproduce/case/stereo_seq"
-TACCO_CASE_DIR = REPO_ROOT / "reproduce/case/tacco"
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(TACCO_CASE_DIR))
-
-from notebook_utils import independent_umaps, plot_independent_panels
 
 DATA_ROOT = Path(os.environ["REVISE_TACCO_DATA_ROOT"]).expanduser().resolve()
 PREPARE_SCRIPT = CASE_DIR / "prepare_zesta_zf5.py"
@@ -126,61 +122,61 @@ def build_zesta_zf5():
 
         Reference cells, raw Stereo-seq bins, and reconstructed SVCs are fitted on their
         own gene axes with the same seeded recipe:
-        `normalize_total(1e4) -> log1p -> <=2,000 HVGs -> <=30 PCs -> 15-neighbor UMAP`.
-        The raw-ST panel uses the source count matrix and the exact formal
-        `svc.obs["celltype_new"]` labels aligned by observation name. Independently fitted
-        UMAP axes, coordinates, orientation, scale, and origin are not comparable across
-        panels.
+        `normalize_total(1e4) -> log1p -> PCA(30) -> neighbors(15) -> UMAP`.
+        The raw-ST panel uses the source count matrix and labels copied from the formal
+        `svc.obs["celltype_new"]` series after alignment by observation name. Independently
+        fitted UMAP axes, coordinates, orientation, scale, and origin are not comparable
+        across panels.
         '''),
         code(r'''
+        reference_for_umap = reference.copy()
         raw_for_umap = raw_st.copy()
-        formal_ga_labels = svc.obs["celltype_new"].reindex(raw_for_umap.obs_names)
-        embeddings = independent_umaps(
-            {"reference": reference, "raw_st": raw_for_umap, "svc": svc},
-            categorical_labels={
-                "reference": reference.obs["celltype_new"],
-                "raw_st": formal_ga_labels,
-                "svc": svc.obs["celltype_new"],
-            },
-            seed=SEED,
+        svc_for_umap = svc.copy()
+        raw_for_umap.obs["celltype_new"] = svc.obs.loc[
+            raw_for_umap.obs_names, "celltype_new"
+        ].to_numpy()
+
+        for dataset in (reference_for_umap, raw_for_umap, svc_for_umap):
+            sc.pp.normalize_total(dataset, target_sum=1e4)
+            sc.pp.log1p(dataset)
+            sc.pp.pca(dataset, n_comps=30, random_state=SEED)
+            sc.pp.neighbors(
+                dataset,
+                n_neighbors=15,
+                n_pcs=30,
+                random_state=SEED,
+            )
+            sc.tl.umap(dataset, random_state=SEED)
+
+        fig, axes = plt.subplots(1, 3, figsize=(13.2, 6.4))
+        sc.pl.umap(
+            reference_for_umap,
+            color="celltype_new",
+            ax=axes[0],
+            show=False,
+            title="Paired scRNA reference",
         )
-        fig = plot_independent_panels(
-            embeddings,
-            ["reference", "raw_st", "svc"],
-            titles={
-                "reference": "Paired scRNA reference",
-                "raw_st": "Raw Stereo-seq | formal GA labels",
-                "svc": "REVISE sp-SVC",
-            },
-            figsize=(13.2, 6.4),
+        sc.pl.umap(
+            raw_for_umap,
+            color="celltype_new",
+            ax=axes[1],
+            show=False,
+            title="Raw Stereo-seq | formal GA labels",
         )
-        panel_axes = fig.axes[:3]
-        legend_handles, legend_labels = panel_axes[0].get_legend_handles_labels()
-        for ax in panel_axes:
-            legend = ax.get_legend()
-            if legend is not None:
-                legend.remove()
-            ax.set_box_aspect(1)
-            ax.title.set_fontsize(12)
+        sc.pl.umap(
+            svc_for_umap,
+            color="celltype_new",
+            ax=axes[2],
+            show=False,
+            title="REVISE sp-SVC",
+        )
         fig.suptitle(
             "ZESTA zf5: independent expression-space UMAPs",
             fontsize=15,
             fontweight="bold",
             y=0.98,
         )
-        fig.legend(
-            legend_handles,
-            legend_labels,
-            loc="lower center",
-            bbox_to_anchor=(0.5, 0.015),
-            ncol=3,
-            frameon=False,
-            fontsize=9,
-            markerscale=2.2,
-            columnspacing=1.8,
-            handletextpad=0.5,
-        )
-        fig.tight_layout(rect=(0.02, 0.20, 0.98, 0.93), w_pad=1.3)
+        fig.tight_layout(rect=(0.02, 0.02, 0.98, 0.93), w_pad=1.3)
         plt.show()
         '''),
         md(r'''

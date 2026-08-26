@@ -427,7 +427,7 @@ def test_gallery_uses_curated_embedded_thumbnails_and_three_column_cards():
             "_images/case_MERFISH_Allen_VISp_sc_SVC_cluster_8_0.png"
         ),
         "case/Visium_sc_SVC_mouse_brain": (
-            "_images/case_Visium_sc_SVC_mouse_brain_29_0.png"
+            "_images/case_Visium_sc_SVC_mouse_brain_26_0.png"
         ),
     }
     assert "case/MERFISH_human_liver_sc_SVC_cluster" not in thumbnails

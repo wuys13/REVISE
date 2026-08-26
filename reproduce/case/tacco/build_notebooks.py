@@ -978,8 +978,6 @@ np.random.seed(SEED)
 
 REPO_ROOT = Path.cwd().resolve()
 TACCO_CASE_DIR = REPO_ROOT / "reproduce/case/tacco"
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(TACCO_CASE_DIR))
 
 DATA_ROOT = Path(os.environ["REVISE_TACCO_DATA_ROOT"]).expanduser().resolve()
 os.environ["REVISE_TACCO_DATA_ROOT"] = str(DATA_ROOT)
@@ -1048,40 +1046,53 @@ def build_olfactory():
         md(r'''
         ## 3. Independent expression-space UMAPs
 
-        Each source is fitted independently with the shared seeded preprocessing
-        recipe.  UMAP coordinates are descriptive and are not comparable across
+        Each source is fitted independently with direct Scanpy preprocessing and
+        UMAP.  UMAP coordinates are descriptive and are not comparable across
         panels.  The raw-ST panel is colored from the formal SVC `Level1` labels,
         not from a second notebook-side global anchoring run.
         '''),
         code(r'''
-        from notebook_utils import assigned_labels, independent_umaps, plot_independent_panels
+        import scanpy as sc
 
         raw_for_umap = raw_st[
             np.asarray(raw_st.X.sum(axis=1)).ravel() >= 50
         ].copy()
-        ga_level1 = svc.obs["Level1"].reindex(raw_for_umap.obs_names).astype(str)
-        embeddings = independent_umaps(
-            {
-                "reference": reference,
-                "raw_st": raw_for_umap,
-                "svc": svc,
-            },
-            categorical_labels={
-                "reference": reference.obs["Level1"].astype(str),
-                "raw_st": ga_level1,
-                "svc": assigned_labels(svc),
-            },
-            seed=SEED,
+        umap_objects = {
+            "reference": reference.copy(),
+            "raw_st": raw_for_umap.copy(),
+            "svc": svc.copy(),
+        }
+        svc_level1 = svc.obs["Level1"].astype(str)
+        umap_objects["raw_st"].obs["Level1"] = (
+            svc_level1.loc[raw_for_umap.obs_names].to_numpy()
         )
-        fig = plot_independent_panels(
-            embeddings,
-            ["reference", "raw_st", "svc"],
-            titles={
-                "reference": "GSE121891 single-cell reference",
-                "raw_st": "Raw OB1 Slide5 ST | formal SVC Level1",
-                "svc": "REVISE reconstructed sp-SVC",
-            },
-        )
+        for adata in umap_objects.values():
+            sc.pp.normalize_total(adata, target_sum=1e4)
+            sc.pp.log1p(adata)
+            sc.pp.pca(adata, n_comps=30, random_state=SEED)
+            sc.pp.neighbors(adata, n_neighbors=15, n_pcs=30, random_state=SEED)
+            sc.tl.umap(adata, random_state=SEED)
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), squeeze=False)
+        for ax, (name, title) in zip(
+            axes.ravel(),
+            (
+                ("reference", "GSE121891 single-cell reference"),
+                ("raw_st", "Raw OB1 Slide5 ST | formal SVC Level1"),
+                ("svc", "REVISE reconstructed sp-SVC"),
+            ),
+        ):
+            sc.pl.umap(
+                umap_objects[name],
+                color="Level1",
+                title=title,
+                size=4,
+                frameon=False,
+                legend_loc="none",
+                ax=ax,
+                show=False,
+            )
+        plt.tight_layout()
         plt.show()
         '''),
         md(r'''
@@ -1158,39 +1169,53 @@ def build_colon():
         md(r'''
         ## 3. Independent expression-space UMAPs
 
-        Each source is fitted independently.  The raw-ST panel uses the formal
+        Each source is fitted independently with direct Scanpy preprocessing and
+        UMAP.  The raw-ST panel uses the formal
         SVC `Level1` labels, with index alignment, and does not repeat complete GA.
         The selected configuration uses `strength = 0.0` and joint-graph `alpha = 0.8`.
         '''),
         code(r'''
-        from notebook_utils import assigned_labels, independent_umaps, plot_independent_panels
+        import scanpy as sc
 
         raw_for_umap = raw_st[
             np.asarray(raw_st.X.sum(axis=1)).ravel() >= 50
         ].copy()
-        ga_level1 = svc.obs["Level1"].reindex(raw_for_umap.obs_names).astype(str)
-        embeddings = independent_umaps(
-            {
-                "reference": reference,
-                "raw_st": raw_for_umap,
-                "svc": svc,
-            },
-            categorical_labels={
-                "reference": reference.obs["Level1"].astype(str),
-                "raw_st": ga_level1,
-                "svc": assigned_labels(svc),
-            },
-            seed=SEED,
+        umap_objects = {
+            "reference": reference.copy(),
+            "raw_st": raw_for_umap.copy(),
+            "svc": svc.copy(),
+        }
+        svc_level1 = svc.obs["Level1"].astype(str)
+        umap_objects["raw_st"].obs["Level1"] = (
+            svc_level1.loc[raw_for_umap.obs_names].to_numpy()
         )
-        fig = plot_independent_panels(
-            embeddings,
-            ["reference", "raw_st", "svc"],
-            titles={
-                "reference": "Normal colon single-cell reference",
-                "raw_st": "Raw normal Slide-seq ST | formal SVC Level1",
-                "svc": "REVISE sp-SVC | strength 0, graph alpha 0.8",
-            },
-        )
+        for adata in umap_objects.values():
+            sc.pp.normalize_total(adata, target_sum=1e4)
+            sc.pp.log1p(adata)
+            sc.pp.pca(adata, n_comps=30, random_state=SEED)
+            sc.pp.neighbors(adata, n_neighbors=15, n_pcs=30, random_state=SEED)
+            sc.tl.umap(adata, random_state=SEED)
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), squeeze=False)
+        for ax, (name, title) in zip(
+            axes.ravel(),
+            (
+                ("reference", "Normal colon single-cell reference"),
+                ("raw_st", "Raw normal Slide-seq ST | formal SVC Level1"),
+                ("svc", "REVISE sp-SVC | strength 0, graph alpha 0.8"),
+            ),
+        ):
+            sc.pl.umap(
+                umap_objects[name],
+                color="Level1",
+                title=title,
+                size=4,
+                frameon=False,
+                legend_loc="none",
+                ax=ax,
+                show=False,
+            )
+        plt.tight_layout()
         plt.show()
         '''),
         md(r'''
@@ -1281,7 +1306,6 @@ def build_osmfish():
         code(r'''
         import scanpy as sc
         import pandas as pd
-        from notebook_utils import independent_umap
         from reconstruct import preprocess_data
         from revise.application.config import compile_application_config, load_application_yaml
         from revise.backend.kernels.ot import OTKernel
@@ -1320,12 +1344,12 @@ def build_osmfish():
             broad: output_paths[broad]["spatial"]
             for broad in ("Pyramidal", "Inhibitory")
         }
-        ga_umap = independent_umap(
-            ga_spatial,
-            categorical_labels=ga_labels,
-            source_name="complete_ga",
-            seed=SEED,
-        )
+        ga_umap = ga_spatial.copy()
+        sc.pp.normalize_total(ga_umap, target_sum=1e4)
+        sc.pp.log1p(ga_umap)
+        sc.pp.pca(ga_umap, n_comps=30, random_state=SEED)
+        sc.pp.neighbors(ga_umap, n_neighbors=15, n_pcs=30, random_state=SEED)
+        sc.tl.umap(ga_umap, random_state=SEED)
         broad_palette = plt.get_cmap("tab20").colors
         broad_colors = {
             label: broad_palette[index % len(broad_palette)]
@@ -1335,33 +1359,19 @@ def build_osmfish():
         sc.pl.umap(
             ga_umap,
             color=app_config.broad_column,
-            palette=[broad_colors[label] for label in broad_order],
             size=10,
             title="All broad cell types after complete GA",
-            legend_fontsize=7,
             frameon=False,
+            legend_loc="none",
             ax=ax,
             show=False,
         )
         coordinates = np.asarray(ga_spatial.obsm["spatial"])
-        ga_counts = ga_labels.value_counts().reindex(broad_order)
-        from matplotlib.lines import Line2D
         fig, ax = plt.subplots(figsize=(7.5, 8.5), constrained_layout=True)
         point_colors = np.asarray([broad_colors[label] for label in ga_labels])
         ax.scatter(
             coordinates[:, 0], coordinates[:, 1], s=2.0, c=point_colors,
             alpha=0.85, linewidths=0, rasterized=True,
-        )
-        ax.legend(
-            handles=[
-                Line2D(
-                    [0], [0], marker="o", linestyle="", color=broad_colors[broad],
-                    markersize=5, label=f"{broad} ({ga_counts.loc[broad]:,})",
-                )
-                for broad in broad_order
-            ],
-            bbox_to_anchor=(1.01, 1), loc="upper left", frameon=False,
-            fontsize=7, title="GA Level1",
         )
         ax.set_title("Spatial localization of complete GA broad classes")
         ax.set_aspect("equal", adjustable="box")
@@ -1382,7 +1392,7 @@ def build_osmfish():
                     selected = labels.to_numpy() == label
                     ax.scatter(
                         coords[selected, 0], coords[selected, 1], s=1.2,
-                        color=palette[index % len(palette)], label=label,
+                        color=palette[index % len(palette)],
                         linewidths=0, rasterized=True,
                     )
                 ax.set_title(f"{broad} | {key}")
@@ -1391,10 +1401,6 @@ def build_osmfish():
                 ax.set_aspect("equal", adjustable="box")
                 ax.set_xticks([])
                 ax.set_yticks([])
-                ax.legend(
-                    bbox_to_anchor=(1.01, 1), loc="upper left", frameon=False,
-                    fontsize=7, markerscale=3,
-                )
         plt.show()
         '''),
         md(r'''
@@ -1489,7 +1495,6 @@ def build_allen_visp_merfish():
         code(r'''
         import scanpy as sc
         import pandas as pd
-        from notebook_utils import independent_umap
         from reconstruct import preprocess_data
         from revise.application.config import compile_application_config, load_application_yaml
         from revise.backend.kernels.ot import OTKernel
@@ -1533,47 +1538,29 @@ def build_allen_visp_merfish():
             label: broad_palette[index % len(broad_palette)]
             for index, label in enumerate(observed_broad)
         }
-        ga_umap = independent_umap(
-            ga_spatial,
-            categorical_labels=ga_labels,
-            source_name="complete_allen_visp_ga",
-            seed=SEED,
-        )
-        ga_umap.obs[app_config.broad_column] = pd.Categorical(
-            ga_umap.obs[app_config.broad_column].astype(str),
-            categories=observed_broad,
-            ordered=True,
-        )
+        ga_umap = ga_spatial.copy()
+        sc.pp.normalize_total(ga_umap, target_sum=1e4)
+        sc.pp.log1p(ga_umap)
+        sc.pp.pca(ga_umap, n_comps=30, random_state=SEED)
+        sc.pp.neighbors(ga_umap, n_neighbors=15, n_pcs=30, random_state=SEED)
+        sc.tl.umap(ga_umap, random_state=SEED)
         fig, ax = plt.subplots(figsize=(7.8, 5.6))
         sc.pl.umap(
             ga_umap,
             color=app_config.broad_column,
-            palette=[broad_colors[label] for label in observed_broad],
             size=12,
             title="Allen VISp MERFISH | complete GA Level1",
             frameon=False,
+            legend_loc="none",
             ax=ax,
             show=False,
         )
         coordinates = np.asarray(ga_spatial.obsm["spatial"])
-        ga_counts = ga_labels.value_counts().reindex(observed_broad)
-        from matplotlib.lines import Line2D
         fig, ax = plt.subplots(figsize=(7.8, 7.8), constrained_layout=True)
         point_colors = np.asarray([broad_colors[label] for label in ga_labels])
         ax.scatter(
             coordinates[:, 0], coordinates[:, 1], s=4, c=point_colors,
             alpha=0.9, linewidths=0, rasterized=True,
-        )
-        ax.legend(
-            handles=[
-                Line2D(
-                    [0], [0], marker="o", linestyle="", color=broad_colors[label],
-                    markersize=5, label=f"{label} ({ga_counts.loc[label]:,})",
-                )
-                for label in observed_broad
-            ],
-            bbox_to_anchor=(1.01, 1), loc="upper left", frameon=False,
-            fontsize=8, title="GA Level1",
         )
         ax.set_title("Allen VISp MERFISH | complete GA spatial map")
         ax.set_aspect("equal", adjustable="box")
@@ -1614,7 +1601,6 @@ def build_allen_visp_merfish():
                         coords[selected, 1],
                         s=4,
                         color=palette[index % len(palette)],
-                        label=label,
                         linewidths=0,
                         rasterized=True,
                     )
@@ -1624,13 +1610,6 @@ def build_allen_visp_merfish():
                 ax.set_aspect("equal", adjustable="box")
                 ax.set_xticks([])
                 ax.set_yticks([])
-                ax.legend(
-                    bbox_to_anchor=(1.01, 1),
-                    loc="upper left",
-                    frameon=False,
-                    fontsize=7,
-                    markerscale=2,
-                )
         plt.show()
         '''),
         md(r'''
