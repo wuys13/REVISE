@@ -12,16 +12,12 @@
    source/installation
 
 .. toctree::
-   :caption: Sim2Real Benchmark
-   :maxdepth: 1
+   :caption: SIM2REAL BENCHMARK
+   :maxdepth: 2
    :hidden:
 
-   segmentation <benchmark/segmentation>
-   bin2cell <benchmark/bin2cell>
-   batch <benchmark/batch>
-   spot <benchmark/spot>
-   imputation_and_dropout <benchmark/imputation_and_dropout>
-   plot_imputation_case <benchmark/plot_imputation_case>
+   SIM2REAL <source/sim2real>
+   REAL DATA <source/real-data>
 
 .. toctree::
    :caption: Gallery

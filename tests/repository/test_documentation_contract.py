@@ -335,11 +335,13 @@ def test_architecture_records_the_application_only_sr_rename_and_failure_contrac
 
 def test_documentation_navigation_has_benchmarks_and_gallery_landing_page():
     index = _read(ROOT / "docs/index.rst")
+    sim2real = _read(ROOT / "docs/source/sim2real.rst")
+    real_data = _read(ROOT / "docs/source/real-data.rst")
     gallery = _read(ROOT / "docs/source/gallery.rst")
 
     assert index.startswith(".. include:: ../README.md\n   :parser: readme_parser\n")
     captions = re.findall(r":caption:\s*(.+?)\s*$", index, flags=re.MULTILINE)
-    assert captions == ["START HERE", "Sim2Real Benchmark", "Gallery", "Reference"]
+    assert captions == ["START HERE", "SIM2REAL BENCHMARK", "Gallery", "Reference"]
     for target in (
         "source/quickstart",
         "source/application-reference",
@@ -348,14 +350,34 @@ def test_documentation_navigation_has_benchmarks_and_gallery_landing_page():
     ):
         assert target in index
 
-    benchmark_block = index.split(":caption: Sim2Real Benchmark", 1)[1].split(":caption: Gallery", 1)[0]
-    assert [line.strip() for line in benchmark_block.splitlines() if "<benchmark/" in line] == [
-        "segmentation <benchmark/segmentation>",
-        "bin2cell <benchmark/bin2cell>",
-        "batch <benchmark/batch>",
-        "spot <benchmark/spot>",
-        "imputation_and_dropout <benchmark/imputation_and_dropout>",
-        "plot_imputation_case <benchmark/plot_imputation_case>",
+    benchmark_block = index.split(":caption: SIM2REAL BENCHMARK", 1)[1].split(
+        ":caption: Gallery", 1
+    )[0]
+    assert [
+        line.strip() for line in benchmark_block.splitlines() if "<source/" in line
+    ] == [
+        "SIM2REAL <source/sim2real>",
+        "REAL DATA <source/real-data>",
+    ]
+    assert "<benchmark/" not in benchmark_block
+
+    assert sim2real.startswith("SIM2REAL\n========\n")
+    assert [
+        line.strip() for line in sim2real.splitlines() if "<../benchmark/" in line
+    ] == [
+        "segmentation <../benchmark/segmentation>",
+        "bin2cell <../benchmark/bin2cell>",
+        "batch <../benchmark/batch>",
+        "spot <../benchmark/spot>",
+        "spot_cross_patient <../benchmark/spot_cross_patient>",
+        "imputation_and_dropout <../benchmark/imputation_and_dropout>",
+        "plot_imputation_case <../benchmark/plot_imputation_case>",
+    ]
+    assert real_data.startswith("REAL DATA\n=========\n")
+    assert [
+        line.strip() for line in real_data.splitlines() if "<../benchmark/" in line
+    ] == [
+        "FAD1 Visium–Xenium benchmark <../benchmark/fad1_visium_xenium>",
     ]
 
     gallery_block = index.split(":caption: Gallery", 1)[1].split(":caption: Reference", 1)[0]
@@ -451,6 +473,8 @@ def test_nblink_inventory_targets_the_current_notebooks():
         "docs/benchmark/bin2cell.nblink": "reproduce/benchmark/bin2cell.ipynb",
         "docs/benchmark/batch.nblink": "reproduce/benchmark/batch.ipynb",
         "docs/benchmark/spot.nblink": "reproduce/benchmark/spot.ipynb",
+        "docs/benchmark/spot_cross_patient.nblink": "reproduce/benchmark/spot_cross_patient.ipynb",
+        "docs/benchmark/fad1_visium_xenium.nblink": "reproduce/benchmark/fad1_visium_xenium.ipynb",
         "docs/benchmark/imputation_and_dropout.nblink": "reproduce/benchmark/imputation_and_dropout.ipynb",
         "docs/benchmark/plot_imputation_case.nblink": "reproduce/benchmark/plot_imputation_case.ipynb",
         "docs/case/VisiumHD_sp_SVC.nblink": "reproduce/case/VisiumHD_sp_SVC.ipynb",
