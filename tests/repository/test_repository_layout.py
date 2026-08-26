@@ -57,6 +57,12 @@ def test_biological_metrics_remain_owned_by_the_analysis_package():
 def test_case_notebooks_are_the_canonical_application_gallery():
     case_dir = ROOT / "reproduce" / "case"
     canonical = {
+        "CosMx_SMI_267T_not_sp_SVC.ipynb",
+        "MERFISH_Allen_VISp_sc_SVC_cluster.ipynb",
+        "SlideSeq_mouse_colon_sp_SVC.ipynb",
+        "SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb",
+        "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb",
+        "osmFISH_sc_SVC_cluster.ipynb",
         "Xenium_sc_SVC_T.ipynb",
         "Xenium_sc_SVC_Fibroblast.ipynb",
         "Xenium_sc_SVC_Monocyte.ipynb",
