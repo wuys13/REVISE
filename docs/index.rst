@@ -12,7 +12,7 @@
    source/installation
 
 .. toctree::
-   :caption: SIM2REAL BENCHMARK
+   :caption: BENCHMARK
    :maxdepth: 2
    :hidden:
 

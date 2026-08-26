@@ -341,7 +341,7 @@ def test_documentation_navigation_has_benchmarks_and_gallery_landing_page():
 
     assert index.startswith(".. include:: ../README.md\n   :parser: readme_parser\n")
     captions = re.findall(r":caption:\s*(.+?)\s*$", index, flags=re.MULTILINE)
-    assert captions == ["START HERE", "SIM2REAL BENCHMARK", "Gallery", "Reference"]
+    assert captions == ["START HERE", "BENCHMARK", "Gallery", "Reference"]
     for target in (
         "source/quickstart",
         "source/application-reference",
@@ -350,7 +350,7 @@ def test_documentation_navigation_has_benchmarks_and_gallery_landing_page():
     ):
         assert target in index
 
-    benchmark_block = index.split(":caption: SIM2REAL BENCHMARK", 1)[1].split(
+    benchmark_block = index.split(":caption: BENCHMARK", 1)[1].split(
         ":caption: Gallery", 1
     )[0]
     assert [
