@@ -378,6 +378,8 @@ def test_documentation_navigation_has_benchmarks_and_gallery_landing_page():
         line.strip() for line in real_data.splitlines() if "<../benchmark/" in line
     ] == [
         "FAD1 Visium–Xenium benchmark <../benchmark/fad1_visium_xenium>",
+        "BRCA Visium–Xenium benchmark <../benchmark/brca_visium_xenium>",
+        "CRC Visium–Xenium benchmark <../benchmark/crc_visium_xenium>",
     ]
 
     gallery_block = index.split(":caption: Gallery", 1)[1].split(":caption: Reference", 1)[0]
@@ -475,6 +477,8 @@ def test_nblink_inventory_targets_the_current_notebooks():
         "docs/benchmark/spot.nblink": "reproduce/benchmark/spot.ipynb",
         "docs/benchmark/spot_cross_patient.nblink": "reproduce/benchmark/spot_cross_patient.ipynb",
         "docs/benchmark/fad1_visium_xenium.nblink": "reproduce/benchmark/fad1_visium_xenium.ipynb",
+        "docs/benchmark/brca_visium_xenium.nblink": "reproduce/benchmark/brca_visium_xenium.ipynb",
+        "docs/benchmark/crc_visium_xenium.nblink": "reproduce/benchmark/crc_visium_xenium.ipynb",
         "docs/benchmark/imputation_and_dropout.nblink": "reproduce/benchmark/imputation_and_dropout.ipynb",
         "docs/benchmark/plot_imputation_case.nblink": "reproduce/benchmark/plot_imputation_case.ipynb",
         "docs/case/VisiumHD_sp_SVC.nblink": "reproduce/case/VisiumHD_sp_SVC.ipynb",
