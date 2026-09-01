@@ -1,6 +1,7 @@
 schema_version: 1
 sample:
   id: P1CRC_VisiumHD
+route_kind: sp_svc
 context:
   h5ad: raw_data/Real_application/P1CRC_HD.h5ad
   level1_column: Level1
@@ -21,12 +22,11 @@ partition_change:
 spatial_region:
   coordinate_unit: pixel
   microns_per_coordinate: 0.27380817798463214
-  base_unit_um: 8.0
-  window_side_length_um: 40.0
-  window_side_lengths_um: [8.0, 16.0, 24.0, 40.0, 56.0, 80.0]
+  cell_equivalent_um: 8.0
+  main_window_multiplier: 5
+  window_multipliers: [1, 2, 3, 5, 7, 10]
   neff_threshold: 2.0
   neff_thresholds: [1.5, 2.0, 2.5, 3.0, 3.5]
-  min_units_per_window: 1
   anatomy_region:
     tumor_label: Tumor
     normal_source_label: Intestinal Epithelial

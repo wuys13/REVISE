@@ -8,6 +8,7 @@ import pytest
 from anndata import AnnData
 
 from revise.analysis.reconstruction_impact import (
+    compute_spatial_impact,
     file_sha256,
     load_reconstruction_impact_config,
     run_partition_analysis,
@@ -56,7 +57,8 @@ output: {dir: output/reconstruction_impact/example}
 
     assert config["partition_change"]["level1_resolution_candidates"] == [0.3, 0.5, 0.8]
     assert config["partition_change"]["within_level1_resolution"] == 0.5
-    assert config["spatial_region"]["window_side_length_um"] == 40.0
+    assert config["spatial_region"]["cell_equivalent_um"] == 8.0
+    assert config["spatial_region"]["main_window_multiplier"] == 5
     assert config["spatial_region"]["anatomy_region"]["tumor_label"] == "Tumor"
     assert config["output"]["dir"] == "output/reconstruction_impact/example"
 
@@ -91,7 +93,39 @@ def test_partition_analysis_uses_raw_level1_ari_resolution_then_shared_resolutio
     assert list(result.comparisons) == ["raw_to_recon_expression"]
 
 
-def test_partition_analysis_uses_fixed_within_level1_resolution_and_final_svc(monkeypatch):
+def test_partition_analysis_accepts_preselected_shared_features(monkeypatch):
+    from revise.analysis import reconstruction_impact
+
+    raw = AnnData(
+        X=np.ones((4, 2)),
+        obs=pd.DataFrame({"Level1": ["A", "A", "B", "B"]}, index=["u0", "u1", "u2", "u3"]),
+        var=pd.DataFrame(index=["g0", "g1"]),
+    )
+    recon = raw.copy()
+    monkeypatch.setattr(reconstruction_impact, "prepare_leiden_graph", lambda adata, **_: adata)
+    monkeypatch.setattr(
+        reconstruction_impact,
+        "leiden_labels",
+        lambda adata, *, resolution, random_state: pd.Series(["0", "0", "1", "1"], index=adata.obs_names),
+    )
+    monkeypatch.setattr(
+        reconstruction_impact,
+        "select_shared_feature_names",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not reselect features")),
+    )
+
+    result = run_partition_analysis(
+        raw,
+        recon,
+        level1_col="Level1",
+        feature_names=["g0", "g1"],
+        resolution_candidates=[0.3],
+    )
+
+    assert result.feature_names == ["g0", "g1"]
+
+
+def test_sc_svc_partition_uses_fixed_resolution_and_omits_identity_expression_edge(monkeypatch):
     from revise.analysis import reconstruction_impact
 
     raw = AnnData(
@@ -113,14 +147,30 @@ def test_partition_analysis_uses_fixed_within_level1_resolution_and_final_svc(mo
         recon,
         level1_col="Level1",
         final_cluster_key="SVC_cluster",
+        route_kind="sc_svc",
         resolution_mode="fixed_within_level1",
         within_level1_resolution=0.5,
     )
 
     assert result.resolution == 0.5
     assert result.resolution_source == "fixed_within_level1"
-    assert set(result.comparisons) == {
-        "raw_to_recon_expression",
-        "recon_expression_to_final_svc",
-        "raw_to_final_svc",
-    }
+    assert list(result.comparisons) == ["raw_to_final_svc"]
+    assert result.representation_audit["spatial_expression_identical"] is True
+
+
+def test_spatial_impact_keeps_window_coordinates_after_anatomy_context_join():
+    ids = pd.Index(["u0", "u1", "u2", "u3"])
+    full_coordinates = pd.DataFrame({"x": [0.0, 1.0, 40.0, 41.0], "y": [0.0, 1.0, 0.0, 1.0]}, index=ids)
+    impact = compute_spatial_impact(
+        full_coordinates=full_coordinates,
+        full_level1_labels=pd.Series(["Tumor", "Intestinal Epithelial", "Other", "Other"], index=ids),
+        paired_coordinates=full_coordinates,
+        raw_labels=pd.Series(["0", "0", "1", "1"], index=ids),
+        reconstructed_labels=pd.Series(["0", "1", "1", "1"], index=ids),
+        unit_changed=pd.Series([False, True, False, False], index=ids),
+        microns_per_coordinate=1.0,
+        cell_equivalent_um=8.0,
+        main_window_multiplier=5,
+    )
+
+    assert {"window_x", "window_y", "level1_region"} <= set(impact.window_metrics.columns)

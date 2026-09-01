@@ -7,9 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 NOTEBOOK_DIR = ROOT / "reproduce" / "case" / "reconstruction_impact"
 NOTEBOOKS = (
-    "01_partition_change.ipynb",
-    "02_spatial_diversity.ipynb",
-    "03_region_and_sensitivity.ipynb",
+    "VisiumHD_sp_SVC_Reconstruction_Impact.ipynb",
+    "Xenium_sc_SVC_Fibroblast_Reconstruction_Impact.ipynb",
 )
 
 
@@ -18,7 +17,7 @@ def _source(path: Path) -> str:
     return "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
 
 
-def test_reconstruction_impact_notebooks_are_new_and_use_internal_authority():
+def test_reconstruction_impact_notebooks_are_route_scoped_and_use_internal_authority():
     for name in NOTEBOOKS:
         path = NOTEBOOK_DIR / name
         assert path.is_file()
@@ -29,19 +28,28 @@ def test_reconstruction_impact_notebooks_are_new_and_use_internal_authority():
             or "revise.analysis.reconstruction_impact" in source
         )
         assert "Evidence boundary" in source
+        assert "## 1. Question and route semantics" in source
+        assert "## 2. Input and spatial-scale audit" in source
+        assert "## 3. Expression-state partition impact" in source
+        assert "## 4. Level1 anatomy candidates" in source
+        assert "## 5. Spatial partition change" in source
+        assert "## 6. Local diversity and Region" in source
+        assert "## 7. Sensitivity and take-home results" in source
         assert "linear_sum_assignment" not in source
         assert "shannon_entropy" not in source
+        assert "Level2" not in source
+        assert "REVISE_ANALYSIS_OUTPUT_ROOT" in source
 
-    region_source = _source(NOTEBOOK_DIR / "03_region_and_sensitivity.ipynb")
-    assert "anatomy_region_map.csv.gz" in region_source
-    assert "High-diversity Region" in region_source
+    visium_source = _source(NOTEBOOK_DIR / NOTEBOOKS[0])
+    xenium_source = _source(NOTEBOOK_DIR / NOTEBOOKS[1])
+    assert "route_kind=CONFIG[\"route_kind\"]" in visium_source
+    assert "deterministic_same_id_sample" in visium_source
+    assert "representation_audit" in xenium_source
+    assert "final SVC" in xenium_source
 
-    diversity_source = _source(NOTEBOOK_DIR / "02_spatial_diversity.ipynb")
-    assert "anatomy_coords" in diversity_source
-    assert "anatomy_windows" in diversity_source
-    assert "anatomy_region_map.csv.gz" in diversity_source
-    assert "index_label='unit_id'" in diversity_source
-    assert "grid_origin" in diversity_source
+    assert not (NOTEBOOK_DIR / "01_partition_change.ipynb").exists()
+    assert not (NOTEBOOK_DIR / "02_spatial_diversity.ipynb").exists()
+    assert not (NOTEBOOK_DIR / "03_region_and_sensitivity.ipynb").exists()
 
 
 def test_reconstruction_impact_docs_and_configs_keep_the_post_analysis_boundary():
@@ -58,3 +66,5 @@ def test_reconstruction_impact_docs_and_configs_keep_the_post_analysis_boundary(
         assert "schema_version: 1" in text
         assert "output/reconstruction_impact" in text
         assert "expr.h5ad" not in text
+        assert "cell_equivalent_um: 8.0" in text
+        assert "main_window_multiplier: 5" in text
