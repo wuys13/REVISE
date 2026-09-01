@@ -208,6 +208,158 @@ def assign_anatomy_candidates(
     return pd.DataFrame(rows)
 
 
+def summarize_anatomy_context(
+    anatomy_unit_assignments: pd.DataFrame,
+    anatomy_windows: pd.DataFrame,
+    *,
+    window_side_length: float,
+) -> pd.DataFrame:
+    """Summarize full-Level1 units and tissue area for each anatomy context."""
+    if "window_id" not in anatomy_unit_assignments:
+        raise KeyError("anatomy_unit_assignments must contain window_id")
+    if not {"window_id", "level1_region"} <= set(anatomy_windows.columns):
+        raise KeyError("anatomy_windows must contain window_id and level1_region")
+    if anatomy_windows["window_id"].duplicated().any():
+        raise ValueError("anatomy_windows must contain one row per window")
+    if window_side_length <= 0:
+        raise ValueError("window_side_length must be positive")
+
+    region_by_window = anatomy_windows.set_index("window_id")["level1_region"]
+    unit_regions = anatomy_unit_assignments["window_id"].map(region_by_window)
+    if unit_regions.isna().any():
+        raise ValueError("Every full-Level1 unit must map to an anatomy window")
+    total_windows = int(anatomy_windows.shape[0])
+    window_area_um2 = float(window_side_length**2)
+    rows = []
+    for region, frame in anatomy_windows.groupby("level1_region", sort=True):
+        area_um2 = float(frame.shape[0] * window_area_um2)
+        rows.append(
+            {
+                "level1_region": region,
+                "full_level1_units": int((unit_regions == region).sum()),
+                "tissue_windows": int(frame.shape[0]),
+                "area_um2": area_um2,
+                "area_mm2": area_um2 / 1_000_000.0,
+                "area_fraction": float(frame.shape[0] / total_windows) if total_windows else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _distribution(values: pd.Series, prefix: str) -> dict[str, float]:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return {
+            f"median_{prefix}": np.nan,
+            f"q1_{prefix}": np.nan,
+            f"q3_{prefix}": np.nan,
+        }
+    return {
+        f"median_{prefix}": float(numeric.median()),
+        f"q1_{prefix}": float(numeric.quantile(0.25)),
+        f"q3_{prefix}": float(numeric.quantile(0.75)),
+    }
+
+
+def _region_frames(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+    return [("Overall", frame)] + [
+        (str(region), group)
+        for region, group in frame.groupby("level1_region", sort=True)
+    ]
+
+
+def summarize_cluster_change_by_anatomy(
+    unit_assignments: pd.DataFrame,
+    window_metrics: pd.DataFrame,
+) -> pd.DataFrame:
+    """Summarize globally matched unit changes and their window distribution."""
+    required_units = {"level1_region", "unit_changed"}
+    required_windows = {
+        "level1_region",
+        "valid_window",
+        "unit_change_fraction",
+    }
+    if missing := required_units - set(unit_assignments.columns):
+        raise KeyError(f"Unit assignments are missing columns: {sorted(missing)}")
+    if missing := required_windows - set(window_metrics.columns):
+        raise KeyError(f"Window metrics are missing columns: {sorted(missing)}")
+
+    unit_groups = dict(_region_frames(unit_assignments))
+    window_groups = dict(_region_frames(window_metrics))
+    rows = []
+    for region, units in unit_groups.items():
+        windows = window_groups[region]
+        valid = windows.loc[windows["valid_window"]]
+        changed_units = int(units["unit_changed"].astype(bool).sum())
+        paired_units = int(units.shape[0])
+        rows.append(
+            {
+                "level1_region": region,
+                "paired_units": paired_units,
+                "changed_units": changed_units,
+                "change_fraction": float(changed_units / paired_units) if paired_units else np.nan,
+                "n_valid_windows": int(valid.shape[0]),
+                **_distribution(valid["unit_change_fraction"], "window_change"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def summarize_diversity_by_anatomy(window_metrics: pd.DataFrame) -> pd.DataFrame:
+    """Summarize Raw, reconstructed and delta Neff with median and IQR."""
+    required = {"level1_region", "valid_window", "neff_raw", "neff_recon", "delta_neff"}
+    if missing := required - set(window_metrics.columns):
+        raise KeyError(f"Window metrics are missing columns: {sorted(missing)}")
+    rows = []
+    for region, frame in _region_frames(window_metrics):
+        valid = frame.loc[frame["valid_window"]]
+        rows.append(
+            {
+                "level1_region": region,
+                "n_valid_windows": int(valid.shape[0]),
+                **_distribution(valid["neff_raw"], "neff_raw"),
+                **_distribution(valid["neff_recon"], "neff_recon"),
+                **_distribution(valid["delta_neff"], "delta_neff"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def summarize_region_extent_by_anatomy(
+    window_metrics: pd.DataFrame,
+    *,
+    window_side_length: float,
+) -> pd.DataFrame:
+    """Summarize high-diversity Region area and unit coverage by anatomy."""
+    required = {"level1_region", "valid_window", "in_region", "n_units"}
+    if missing := required - set(window_metrics.columns):
+        raise KeyError(f"Window metrics are missing columns: {sorted(missing)}")
+    if window_side_length <= 0:
+        raise ValueError("window_side_length must be positive")
+    window_area_um2 = float(window_side_length**2)
+    rows = []
+    for region, frame in _region_frames(window_metrics):
+        valid = frame.loc[frame["valid_window"]]
+        selected = valid.loc[valid["in_region"]]
+        valid_units = int(valid["n_units"].sum())
+        region_units = int(selected["n_units"].sum())
+        region_area_um2 = float(selected.shape[0] * window_area_um2)
+        rows.append(
+            {
+                "level1_region": region,
+                "valid_windows": int(valid.shape[0]),
+                "region_windows": int(selected.shape[0]),
+                "region_area_um2": region_area_um2,
+                "region_area_mm2": region_area_um2 / 1_000_000.0,
+                "area_fraction": float(selected.shape[0] / valid.shape[0]) if not valid.empty else np.nan,
+                "valid_units": valid_units,
+                "region_units": region_units,
+                "unit_fraction": float(region_units / valid_units) if valid_units else np.nan,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def summarize_region(
     window_metrics: pd.DataFrame,
     *,

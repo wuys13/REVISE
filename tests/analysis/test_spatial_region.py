@@ -12,8 +12,12 @@ from revise.analysis.basic.spatial_region import (
     convert_coordinates_to_microns,
     effective_number,
     select_min_parent_support,
+    summarize_anatomy_context,
+    summarize_cluster_change_by_anatomy,
+    summarize_diversity_by_anatomy,
     summarize_region,
     summarize_region_by_anatomy,
+    summarize_region_extent_by_anatomy,
 )
 
 
@@ -170,3 +174,103 @@ def test_anatomy_summary_accepts_metrics_already_annotated_with_context():
     summary = summarize_region_by_anatomy(metrics, anatomy, window_side_length=40.0)
 
     assert summary.loc[0, "level1_region"] == "Tumor"
+
+
+def test_anatomy_context_summary_uses_all_tissue_windows_as_area_denominator():
+    assignments = pd.DataFrame(
+        {"window_id": ["a", "a", "b", "c", "d"]},
+        index=["u0", "u1", "u2", "u3", "u4"],
+    )
+    anatomy = pd.DataFrame(
+        {
+            "window_id": ["a", "b", "c", "d"],
+            "level1_region": ["Tumor", "Normal", "Interface", "Other"],
+        }
+    )
+
+    summary = summarize_anatomy_context(
+        assignments,
+        anatomy,
+        window_side_length=40.0,
+    ).set_index("level1_region")
+
+    assert summary.loc["Tumor", "full_level1_units"] == 2
+    assert summary.loc["Tumor", "tissue_windows"] == 1
+    assert summary.loc["Tumor", "area_um2"] == pytest.approx(1600.0)
+    assert summary.loc["Tumor", "area_mm2"] == pytest.approx(0.0016)
+    assert summary.loc["Tumor", "area_fraction"] == pytest.approx(0.25)
+    assert summary.loc["Other", "area_fraction"] == pytest.approx(0.25)
+
+
+def test_cluster_change_summary_uses_existing_global_mapping_and_valid_window_distribution():
+    units = pd.DataFrame(
+        {
+            "window_id": ["a", "a", "b", "c", "d"],
+            "level1_region": ["Tumor", "Tumor", "Normal", "Interface", "Other"],
+            "unit_changed": [True, False, True, False, True],
+        },
+        index=["u0", "u1", "u2", "u3", "u4"],
+    )
+    windows = pd.DataFrame(
+        {
+            "window_id": ["a", "b", "c", "d"],
+            "level1_region": ["Tumor", "Normal", "Interface", "Other"],
+            "valid_window": [True, True, False, True],
+            "unit_change_fraction": [0.5, 1.0, 0.0, 1.0],
+        }
+    )
+
+    summary = summarize_cluster_change_by_anatomy(units, windows).set_index("level1_region")
+
+    assert summary.loc["Overall", "paired_units"] == 5
+    assert summary.loc["Overall", "changed_units"] == 3
+    assert summary.loc["Overall", "change_fraction"] == pytest.approx(0.6)
+    assert summary.loc["Tumor", "change_fraction"] == pytest.approx(0.5)
+    assert summary.loc["Interface", "n_valid_windows"] == 0
+    assert np.isnan(summary.loc["Interface", "median_window_change"])
+
+
+def test_diversity_summary_reports_median_iqr_and_excludes_invalid_windows():
+    metrics = pd.DataFrame(
+        {
+            "level1_region": ["Tumor", "Tumor", "Normal", "Other"],
+            "valid_window": [True, True, True, False],
+            "neff_raw": [1.0, 3.0, 2.0, 99.0],
+            "neff_recon": [2.0, 4.0, 3.0, 99.0],
+            "delta_neff": [1.0, 1.0, 1.0, 0.0],
+        }
+    )
+
+    summary = summarize_diversity_by_anatomy(metrics).set_index("level1_region")
+
+    assert summary.loc["Overall", "n_valid_windows"] == 3
+    assert summary.loc["Overall", "median_neff_raw"] == pytest.approx(2.0)
+    assert summary.loc["Overall", "q1_neff_raw"] == pytest.approx(1.5)
+    assert summary.loc["Overall", "q3_neff_raw"] == pytest.approx(2.5)
+    assert summary.loc["Tumor", "median_neff_recon"] == pytest.approx(3.0)
+    assert summary.loc["Normal", "median_delta_neff"] == pytest.approx(1.0)
+
+
+def test_region_extent_summary_reports_exact_denominators_and_area_units():
+    metrics = pd.DataFrame(
+        {
+            "level1_region": ["Tumor", "Tumor", "Normal", "Other"],
+            "valid_window": [True, True, True, False],
+            "in_region": [True, False, True, False],
+            "n_units": [4, 6, 5, 100],
+        }
+    )
+
+    summary = summarize_region_extent_by_anatomy(
+        metrics,
+        window_side_length=40.0,
+    ).set_index("level1_region")
+
+    assert summary.loc["Overall", "valid_windows"] == 3
+    assert summary.loc["Overall", "region_windows"] == 2
+    assert summary.loc["Overall", "region_area_um2"] == pytest.approx(3200.0)
+    assert summary.loc["Overall", "region_area_mm2"] == pytest.approx(0.0032)
+    assert summary.loc["Overall", "area_fraction"] == pytest.approx(2 / 3)
+    assert summary.loc["Overall", "valid_units"] == 15
+    assert summary.loc["Overall", "region_units"] == 9
+    assert summary.loc["Overall", "unit_fraction"] == pytest.approx(0.6)

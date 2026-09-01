@@ -28,8 +28,11 @@ from revise.analysis.basic.spatial_region import (
     compute_window_diversity,
     convert_coordinates_to_microns,
     select_min_parent_support,
+    summarize_anatomy_context,
+    summarize_cluster_change_by_anatomy,
+    summarize_diversity_by_anatomy,
     summarize_region,
-    summarize_region_by_anatomy,
+    summarize_region_extent_by_anatomy,
 )
 
 
@@ -80,7 +83,10 @@ class SpatialImpactAnalysis:
     anatomy_unit_assignments: pd.DataFrame
     window_metrics: pd.DataFrame
     anatomy_windows: pd.DataFrame
-    anatomy_summary: pd.DataFrame
+    anatomy_context_summary: pd.DataFrame
+    cluster_change_by_anatomy: pd.DataFrame
+    diversity_by_anatomy: pd.DataFrame
+    region_extent_by_anatomy: pd.DataFrame
     scale_sensitivity: pd.DataFrame
     threshold_sensitivity: pd.DataFrame
 
@@ -254,7 +260,6 @@ def compute_spatial_impact(
     if metrics["level1_region"].isna().any():
         raise ValueError("Every paired window must map to full-cohort anatomy")
     summary, metrics = summarize_region(metrics, threshold=neff_threshold, window_side_length=main_side)
-    anatomy_summary = summarize_region_by_anatomy(metrics, anatomy_windows, window_side_length=main_side)
     unit_assignments = paired_windows.loc[:, ["x", "y", "window_id"]].copy()
     unit_assignments["raw_cluster"] = raw_labels.reindex(unit_assignments.index).astype(str)
     unit_assignments["reconstructed_cluster"] = reconstructed_labels.reindex(unit_assignments.index).astype(str)
@@ -263,6 +268,20 @@ def compute_spatial_impact(
         anatomy_windows.loc[:, ["window_id", "level1_region"]], on="window_id", how="left", validate="many_to_one"
     )
     unit_assignments.index = paired_windows.index
+    anatomy_context_summary = summarize_anatomy_context(
+        anatomy_assignments,
+        anatomy_windows,
+        window_side_length=main_side,
+    )
+    cluster_change_by_anatomy = summarize_cluster_change_by_anatomy(
+        unit_assignments,
+        metrics,
+    )
+    diversity_by_anatomy = summarize_diversity_by_anatomy(metrics)
+    region_extent_by_anatomy = summarize_region_extent_by_anatomy(
+        metrics,
+        window_side_length=main_side,
+    )
 
     threshold_rows = []
     for threshold in neff_thresholds or [1.5, 2.0, 2.5, 3.0, 3.5]:
@@ -304,7 +323,10 @@ def compute_spatial_impact(
         anatomy_unit_assignments=anatomy_assignments,
         window_metrics=metrics,
         anatomy_windows=anatomy_windows,
-        anatomy_summary=anatomy_summary,
+        anatomy_context_summary=anatomy_context_summary,
+        cluster_change_by_anatomy=cluster_change_by_anatomy,
+        diversity_by_anatomy=diversity_by_anatomy,
+        region_extent_by_anatomy=region_extent_by_anatomy,
         scale_sensitivity=scale_sensitivity,
         threshold_sensitivity=threshold_sensitivity,
     )
@@ -421,7 +443,10 @@ def write_spatial_artifacts(output_dir: str | Path, analysis: SpatialImpactAnaly
     analysis.anatomy_unit_assignments.to_csv(destination / "anatomy_unit_window_assignments.csv.gz", compression="gzip")
     analysis.anatomy_windows.to_csv(destination / "anatomy_candidate_map.csv", index=False)
     analysis.window_metrics.to_csv(destination / "window_metrics.csv", index=False)
-    analysis.anatomy_summary.to_csv(destination / "anatomy_region_summary.csv", index=False)
+    analysis.anatomy_context_summary.to_csv(destination / "anatomy_context_summary.csv", index=False)
+    analysis.cluster_change_by_anatomy.to_csv(destination / "cluster_change_by_anatomy.csv", index=False)
+    analysis.diversity_by_anatomy.to_csv(destination / "diversity_by_anatomy.csv", index=False)
+    analysis.region_extent_by_anatomy.to_csv(destination / "region_extent_by_anatomy.csv", index=False)
     analysis.scale_sensitivity.to_csv(destination / "scale_sensitivity.csv", index=False)
     analysis.threshold_sensitivity.to_csv(destination / "threshold_sensitivity.csv", index=False)
     return destination

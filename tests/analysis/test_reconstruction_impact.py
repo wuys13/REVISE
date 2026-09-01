@@ -174,3 +174,10 @@ def test_spatial_impact_keeps_window_coordinates_after_anatomy_context_join():
     )
 
     assert {"window_x", "window_y", "level1_region"} <= set(impact.window_metrics.columns)
+    assert set(impact.anatomy_context_summary["level1_region"]) == {
+        "Interface",
+        "Other",
+    }
+    assert "Overall" in set(impact.cluster_change_by_anatomy["level1_region"])
+    assert "Overall" in set(impact.diversity_by_anatomy["level1_region"])
+    assert "Overall" in set(impact.region_extent_by_anatomy["level1_region"])
