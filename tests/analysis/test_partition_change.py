@@ -8,8 +8,10 @@ from anndata import AnnData
 from revise.analysis.basic.partition_change import (
     align_observation_pairs,
     compare_partitions,
+    select_resolution_for_target_cluster_count,
     select_shared_feature_names,
     select_level1_resolution,
+    summarize_change_by_level1,
 )
 
 
@@ -31,6 +33,49 @@ def test_select_level1_resolution_uses_highest_ari_then_lower_resolution():
 def test_select_level1_resolution_rejects_missing_or_nonfinite_ari():
     with pytest.raises(ValueError, match="ARI"):
         select_level1_resolution(pd.DataFrame({"resolution": [0.3], "ARI": [np.nan]}))
+
+
+def test_target_cluster_resolution_prefers_exact_k_then_lower_resolution():
+    sweep = pd.DataFrame(
+        {
+            "resolution": [0.30, 0.42, 0.50, 0.62],
+            "n_clusters": [5, 6, 6, 7],
+        }
+    )
+
+    selected = select_resolution_for_target_cluster_count(sweep, target_cluster_count=6)
+
+    assert selected["resolution"] == pytest.approx(0.42)
+    assert selected["n_clusters"] == 6
+    assert selected["cluster_count_gap"] == 0
+    assert selected["status"] == "ok"
+
+
+def test_target_cluster_resolution_marks_unmatched_when_gap_exceeds_one():
+    sweep = pd.DataFrame(
+        {"resolution": [0.2, 0.4, 0.6], "n_clusters": [2, 3, 4]}
+    )
+
+    selected = select_resolution_for_target_cluster_count(sweep, target_cluster_count=6)
+
+    assert selected["resolution"] == pytest.approx(0.6)
+    assert selected["cluster_count_gap"] == 2
+    assert selected["status"] == "unmatched_cluster_complexity"
+
+
+def test_change_by_level1_uses_global_assignments_and_wilson_intervals():
+    assignments = pd.DataFrame(
+        {"unit_changed": [True, False, True, False]}, index=["u0", "u1", "u2", "u3"]
+    )
+    level1 = pd.Series(["Tumor", "Tumor", "T", "T"], index=assignments.index)
+
+    summary = summarize_change_by_level1(assignments, level1, min_report_n=3).set_index("level1")
+
+    assert summary.loc["Tumor", "total_units"] == 2
+    assert summary.loc["Tumor", "changed_units"] == 1
+    assert summary.loc["Tumor", "change_fraction"] == pytest.approx(0.5)
+    assert summary.loc["Tumor", "low_sample_size"]
+    assert summary.loc["Overall", "wilson_ci_lower"] < 0.5 < summary.loc["Overall", "wilson_ci_upper"]
 
 
 def test_compare_partitions_is_invariant_to_label_permutation_and_reports_complements():

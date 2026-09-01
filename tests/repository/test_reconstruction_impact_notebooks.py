@@ -33,37 +33,34 @@ def test_reconstruction_impact_notebooks_are_route_scoped_and_use_internal_autho
         )
         assert "Evidence boundary" in source
         headings = [
-            "## 1. Question, route semantics, and endpoint hierarchy",
-            "## 2. Input and spatial-scale audit",
-            "## 3. Cluster representation change",
-            "## 4. Level1 anatomy context",
-            "## 5. Spatial impact and high-diversity Region",
-            "### 5A. Cluster-change localization",
-            "### 5B. Local diversity state and change",
-            "### 5C. High-diversity Region",
-            "## 6. Take-home results",
+            "## 1. Route semantics and carrier audit",
+            "## 2. Partition complexity diagnostic",
+            "## 3. Matched-complexity change and Level1 localization",
+            "## 4. Anatomy overview",
+            "## 5. Fibroblast internal diversity and Regions",
+            "## 6. Mono_Macro internal diversity and Regions",
+            "## 7. T internal diversity and Regions",
+            "## 8. Cross-parent summary and evidence boundary",
         ]
         positions = [source.index(heading) for heading in headings]
         assert positions == sorted(positions)
         assert "linear_sum_assignment" not in source
         assert "shannon_entropy" not in source
         assert "Level2" not in source
-        assert "display(comparison.summary)" not in source
-        assert "display(partition.sweep)" not in source
-        assert "Median [Q1, Q3]" in source
-        assert "Region-on-anatomy" in source
+        assert "Neff≥2" not in source
+        assert "main_window_multiplier" not in source
+        assert "matched-K" in source
+        assert "Raw-Level1 / Recon subtype / Recon−1" in source
+        assert "Raw-Leiden / Recon / Delta" in source
+        assert "State Region" in source
+        assert "Gain Region" in source
         assert "IPython.display import Markdown" in source
 
         notebook = _notebook(path)
         assert all(cell.get("id") for cell in notebook["cells"])
-        cluster_cell = next(
-            "".join(cell.get("source", []))
-            for cell in notebook["cells"]
-            if "06_spatial_cluster_states" in "".join(cell.get("source", []))
-        )
-        assert "axes[0].invert_yaxis()" in cluster_cell
-        assert "Anatomy context" in source
-        assert "Region context" in source
+        assert "invert_yaxis" in source
+        assert "anatomy context" in source.lower()
+        assert "Region" in source
         for cell in notebook["cells"]:
             if cell["cell_type"] != "code":
                 continue
@@ -72,14 +69,15 @@ def test_reconstruction_impact_notebooks_are_route_scoped_and_use_internal_autho
 
     visium_source = _source(NOTEBOOK_DIR / NOTEBOOKS[0])
     xenium_source = _source(NOTEBOOK_DIR / NOTEBOOKS[1])
-    assert "route_kind=CONFIG[\"route_kind\"]" in visium_source
+    assert 'route_kind="sp_svc"' in visium_source
     assert "deterministic_same_id_sample" in visium_source
     assert "USE_FULL_VISIUMHD_COHORT = False" in visium_source
     assert "VISIUMHD_SAMPLE_N_UNITS = 30_000" in visium_source
-    assert "analysis_ids" in visium_source
+    assert "global_ids" in visium_source
     assert "raw_context[reconstructed_ids, partition.feature_names]" not in visium_source
     assert "representation_audit" in xenium_source
-    assert "final SVC" in xenium_source
+    assert all(parent in xenium_source for parent in ("Fibroblast", "Mono_Macro", "T"))
+    assert "expression_h5ad" in xenium_source
 
     assert not (NOTEBOOK_DIR / "01_partition_change.ipynb").exists()
     assert not (NOTEBOOK_DIR / "02_spatial_diversity.ipynb").exists()
@@ -99,9 +97,12 @@ def test_reconstruction_impact_docs_and_configs_keep_the_post_analysis_boundary(
         text = path.read_text(encoding="utf-8")
         assert "schema_version: 1" in text
         assert "output/reconstruction_impact" in text
-        assert "expr.h5ad" not in text
-        assert "cell_equivalent_um: 8.0" in text
-        assert "main_window_multiplier: 5" in text
+        assert "candidate_window_sides_um" in text
+        assert "min_parent_units: 4" in text
+
+    xenium = (ROOT / "configs" / "analysis" / "reconstruction_impact_xenium_p2crc_fibroblast.yaml").read_text(encoding="utf-8")
+    assert all(parent in xenium for parent in ("Fibroblast", "Mono_Macro", "T"))
+    assert "expr.h5ad" in xenium
 
 
 def test_reconstruction_impact_output_contract_names_metric_layers():
@@ -113,5 +114,8 @@ def test_reconstruction_impact_output_contract_names_metric_layers():
         "cluster_change_by_anatomy.csv",
         "diversity_by_anatomy.csv",
         "region_extent_by_anatomy.csv",
+        "gain_region_extent_by_anatomy.csv",
+        "matched_k_resolution_sweep.csv",
+        "change_by_level1.csv",
     ):
         assert filename in source

@@ -8,6 +8,7 @@ import gc
 from pathlib import Path
 from typing import Any, Mapping
 
+import numpy as np
 import pandas as pd
 import yaml
 from anndata import AnnData
@@ -20,18 +21,21 @@ from revise.analysis.basic.partition_change import (
     leiden_labels,
     prepare_leiden_graph,
     select_level1_resolution,
+    select_resolution_for_target_cluster_count,
     select_shared_feature_names,
+    summarize_change_by_level1,
 )
 from revise.analysis.basic.spatial_region import (
     assign_anatomy_candidates,
     assign_square_windows,
     compute_window_diversity,
+    compute_rarefied_window_diversity,
     convert_coordinates_to_microns,
-    select_min_parent_support,
+    select_region_threshold,
+    select_window_scale,
     summarize_anatomy_context,
     summarize_cluster_change_by_anatomy,
     summarize_diversity_by_anatomy,
-    summarize_region,
     summarize_region_extent_by_anatomy,
 )
 
@@ -46,11 +50,10 @@ DEFAULTS: dict[str, Any] = {
     "spatial_region": {
         "coordinate_unit": "pixel",
         "cell_equivalent_um": 8.0,
-        "main_window_multiplier": 5,
-        "window_multipliers": [1, 2, 3, 5, 7, 10],
-        "neff_threshold": 2.0,
-        "neff_thresholds": [1.5, 2.0, 2.5, 3.0, 3.5],
-        "min_units_per_window": 1,
+        "candidate_window_sides_um": [16.0, 24.0, 32.0, 40.0, 56.0, 80.0],
+        "min_parent_units": 4,
+        "rarefaction_draws": 200,
+        "threshold_bootstraps": 500,
         "anatomy_region": {
             "tumor_label": "Tumor",
             "normal_source_label": "Intestinal Epithelial",
@@ -70,6 +73,11 @@ class PartitionAnalysis:
     comparisons: dict[str, PartitionComparison]
     representation_audit: dict[str, int | bool]
     feature_names: list[str]
+    complexity_comparisons: dict[str, PartitionComparison]
+    complexity_sweep: pd.DataFrame
+    complexity_resolution: float
+    change_by_level1: pd.DataFrame
+    matched_cluster_status: str
 
 
 @dataclass(frozen=True)
@@ -77,7 +85,7 @@ class SpatialImpactAnalysis:
     """Spatial tables resolved for one route at the declared physical scale."""
 
     scale_audit: dict[str, float | int | str | None]
-    support_selection: dict[str, int | str | None]
+    support_selection: dict[str, float | int | str | None]
     support_sensitivity: pd.DataFrame
     unit_assignments: pd.DataFrame
     anatomy_unit_assignments: pd.DataFrame
@@ -89,6 +97,11 @@ class SpatialImpactAnalysis:
     region_extent_by_anatomy: pd.DataFrame
     scale_sensitivity: pd.DataFrame
     threshold_sensitivity: pd.DataFrame
+    gain_region_extent_by_anatomy: pd.DataFrame
+    state_threshold: dict[str, float | int | str | None]
+    gain_threshold: dict[str, float | int | str | None]
+    state_threshold_bootstrap: pd.DataFrame
+    gain_threshold_bootstrap: pd.DataFrame
 
 
 def run_partition_analysis(
@@ -105,13 +118,7 @@ def run_partition_analysis(
     n_top_genes: int = 2000,
     feature_names: list[str] | None = None,
 ) -> PartitionAnalysis:
-    """Build the one scientifically applicable comparison edge for a route.
-
-    A multi-Level1 scope calibrates one resolution on Raw's Level1 ARI.  A
-    single-Level1 scope uses the fixed internal resolution.  Both expression
-    nodes share the same observation IDs and feature names before their own
-    PCA/neighbor graphs are constructed.
-    """
+    """Separate same-resolution complexity diagnostics from matched-K change."""
     if route_kind not in {"sp_svc", "sc_svc"}:
         raise ValueError("route_kind must be sp_svc or sc_svc")
     if level1_col not in raw.obs:
@@ -151,18 +158,57 @@ def run_partition_analysis(
         selected = select_level1_resolution(sweep)
         resolution = float(selected["resolution"])
         raw_labels = labels_by_resolution[resolution]
-        resolution_source = "raw_level1_ari"
     else:
         resolution = float(within_level1_resolution)
         raw_labels = leiden_labels(raw_graph, resolution=resolution, random_state=random_state)
         sweep = pd.DataFrame(columns=["resolution", "ARI"])
-        resolution_source = "fixed_within_level1"
 
     representation_audit: dict[str, int | bool] = {}
+    complexity_comparisons: dict[str, PartitionComparison]
+    complexity_sweep = pd.DataFrame()
+
+    def matched_sweep(graph: AnnData, target: int) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
+        coarse = np.round(np.arange(0.1, 1.5 + 0.001, 0.1), 2).tolist()
+        labels_by_resolution: dict[float, pd.Series] = {}
+        rows: list[dict[str, float | int | str]] = []
+        for value in coarse:
+            labels = leiden_labels(graph, resolution=value, random_state=random_state)
+            labels_by_resolution[value] = labels
+            rows.append({"resolution": value, "n_clusters": int(labels.nunique()), "stage": "coarse"})
+        coarse_selected = select_resolution_for_target_cluster_count(
+            pd.DataFrame(rows), target_cluster_count=target
+        )
+        lower = max(0.02, float(coarse_selected["resolution"]) - 0.1)
+        upper = float(coarse_selected["resolution"]) + 0.1
+        fine = np.round(np.arange(lower, upper + 0.001, 0.02), 2).tolist()
+        for value in fine:
+            if value in labels_by_resolution:
+                continue
+            labels = leiden_labels(graph, resolution=value, random_state=random_state)
+            labels_by_resolution[value] = labels
+            rows.append({"resolution": value, "n_clusters": int(labels.nunique()), "stage": "fine"})
+        sweep_frame = pd.DataFrame(rows).sort_values("resolution", kind="stable").reset_index(drop=True)
+        selected = select_resolution_for_target_cluster_count(
+            sweep_frame, target_cluster_count=target
+        )
+        sweep_frame["target_cluster_count"] = int(target)
+        sweep_frame["cluster_count_gap"] = (sweep_frame["n_clusters"] - int(target)).abs()
+        return labels_by_resolution[float(selected["resolution"])], sweep_frame, selected
+
     if route_kind == "sp_svc":
         recon_graph = prepare_leiden_graph(recon_work, feature_names=features)
-        recon_expression_labels = leiden_labels(
+        recon_complexity_labels = leiden_labels(
             recon_graph, resolution=resolution, random_state=random_state
+        )
+        complexity_comparisons = {
+            "raw_to_recon_same_resolution": compare_partitions(
+                raw_labels,
+                recon_complexity_labels,
+                comparison_edge="raw_to_recon_same_resolution",
+            )
+        }
+        recon_expression_labels, complexity_sweep, matched = matched_sweep(
+            recon_graph, int(raw_labels.nunique())
         )
         comparisons = {
             "raw_to_recon_expression": compare_partitions(
@@ -171,6 +217,7 @@ def run_partition_analysis(
                 comparison_edge="raw_to_recon_expression",
             )
         }
+        matched_resolution = float(matched["resolution"])
     else:
         if final_cluster_key is None:
             raise ValueError("sc_svc requires final_cluster_key")
@@ -186,6 +233,14 @@ def run_partition_analysis(
             "spatial_expression_identical": difference_nnz == 0,
             "expression_difference_nnz": difference_nnz,
         }
+        complexity_comparisons = {
+            "raw_to_final_svc_complexity_diagnostic": compare_partitions(
+                raw_labels,
+                final_labels,
+                comparison_edge="raw_to_final_svc_complexity_diagnostic",
+            )
+        }
+        raw_labels, complexity_sweep, matched = matched_sweep(raw_graph, int(final_labels.nunique()))
         comparisons = {
             "raw_to_final_svc": compare_partitions(
                 raw_labels,
@@ -193,8 +248,21 @@ def run_partition_analysis(
                 comparison_edge="raw_to_final_svc",
             )
         }
+        matched_resolution = float(matched["resolution"])
+    matched_comparison = next(iter(comparisons.values()))
     return PartitionAnalysis(
-        resolution, resolution_source, sweep, audit, comparisons, representation_audit, features
+        matched_resolution,
+        "matched_cluster_count",
+        complexity_sweep,
+        audit,
+        comparisons,
+        representation_audit,
+        features,
+        complexity_comparisons,
+        sweep,
+        resolution,
+        summarize_change_by_level1(matched_comparison.assignments, level1),
+        str(matched["status"]),
     )
 
 
@@ -207,17 +275,14 @@ def compute_spatial_impact(
     reconstructed_labels: pd.Series,
     unit_changed: pd.Series,
     microns_per_coordinate: float,
-    cell_equivalent_um: float = 8.0,
-    main_window_multiplier: int = 5,
-    window_multipliers: list[int] | None = None,
-    neff_threshold: float = 2.0,
-    neff_thresholds: list[float] | None = None,
+    candidate_window_sides_um: list[float] | None = None,
+    min_parent_units: int = 4,
+    rarefaction_draws: int = 200,
+    threshold_bootstraps: int = 500,
     tumor_label: str = "Tumor",
     normal_source_label: str = "Intestinal Epithelial",
 ) -> SpatialImpactAnalysis:
-    """Compute fixed-anatomy context and diversity changes on physical windows."""
-    if cell_equivalent_um <= 0 or main_window_multiplier <= 0:
-        raise ValueError("cell_equivalent_um and main_window_multiplier must be positive")
+    """Compute parent-specific rarefied diversity and data-driven State/Gain Regions."""
     paired_ids = paired_coordinates.index
     for name, labels in (("Raw", raw_labels), ("Reconstructed", reconstructed_labels), ("unit_changed", unit_changed)):
         if not labels.index.is_unique or set(labels.index) != set(paired_ids):
@@ -228,7 +293,17 @@ def compute_spatial_impact(
     full_um = convert_coordinates_to_microns(full_coordinates, microns_per_coordinate=microns_per_coordinate)
     paired_um = convert_coordinates_to_microns(paired_coordinates, microns_per_coordinate=microns_per_coordinate)
     origin = (float(full_um["x"].min()), float(full_um["y"].min()))
-    main_side = float(cell_equivalent_um * main_window_multiplier)
+    candidates = candidate_window_sides_um or [16.0, 24.0, 32.0, 40.0, 56.0, 80.0]
+    support_selection, support_sensitivity = select_window_scale(
+        paired_um,
+        candidate_window_sides=candidates,
+        min_parent_units=min_parent_units,
+        origin=origin,
+    )
+    main_side = support_selection["window_side_length"]
+    if main_side is None:
+        main_side = float(min(candidates))
+    main_side = float(main_side)
     anatomy_assignments = assign_square_windows(full_um, window_side_length=main_side, origin=origin)
     anatomy_windows = assign_anatomy_candidates(
         anatomy_assignments,
@@ -237,15 +312,12 @@ def compute_spatial_impact(
         normal_source_label=normal_source_label,
     )
     paired_windows = assign_square_windows(paired_um, window_side_length=main_side, origin=origin)
-    support_selection, support_sensitivity = select_min_parent_support(paired_windows)
-    minimum = support_selection["min_parent_units"]
-    if minimum is None:
-        minimum = int(paired_windows.shape[0]) + 1
-    metrics = compute_window_diversity(
+    metrics = compute_rarefied_window_diversity(
         paired_windows,
         raw_labels,
         reconstructed_labels,
-        min_units_per_window=int(minimum),
+        min_parent_units=min_parent_units,
+        n_draws=rarefaction_draws,
     )
     changed = unit_changed.astype(bool).reindex(paired_windows.index)
     window_change = (
@@ -259,7 +331,25 @@ def compute_spatial_impact(
     metrics = metrics.merge(anatomy_context, on="window_id", how="left", validate="one_to_one")
     if metrics["level1_region"].isna().any():
         raise ValueError("Every paired window must map to full-cohort anatomy")
-    summary, metrics = summarize_region(metrics, threshold=neff_threshold, window_side_length=main_side)
+    valid_metrics = metrics.loc[metrics["valid_window"]]
+    state_threshold, state_bootstrap = select_region_threshold(
+        valid_metrics["neff_recon"].to_numpy(),
+        n_bootstrap=threshold_bootstraps,
+    )
+    gain_threshold, gain_bootstrap = select_region_threshold(
+        valid_metrics.loc[valid_metrics["delta_neff"] > 0, "delta_neff"].to_numpy(),
+        n_bootstrap=threshold_bootstraps,
+    )
+    metrics["in_state_region"] = pd.Series(pd.NA, index=metrics.index, dtype="boolean")
+    metrics["in_gain_region"] = pd.Series(pd.NA, index=metrics.index, dtype="boolean")
+    if state_threshold["status"] == "ok":
+        metrics.loc[:, "in_state_region"] = (
+            metrics["valid_window"] & (metrics["neff_recon"] >= float(state_threshold["threshold"]))
+        )
+    if gain_threshold["status"] == "ok":
+        metrics.loc[:, "in_gain_region"] = (
+            metrics["valid_window"] & (metrics["delta_neff"] >= float(gain_threshold["threshold"]))
+        )
     unit_assignments = paired_windows.loc[:, ["x", "y", "window_id"]].copy()
     unit_assignments["raw_cluster"] = raw_labels.reindex(unit_assignments.index).astype(str)
     unit_assignments["reconstructed_cluster"] = reconstructed_labels.reindex(unit_assignments.index).astype(str)
@@ -278,40 +368,52 @@ def compute_spatial_impact(
         metrics,
     )
     diversity_by_anatomy = summarize_diversity_by_anatomy(metrics)
+    metrics["in_region"] = metrics["in_state_region"]
     region_extent_by_anatomy = summarize_region_extent_by_anatomy(
         metrics,
         window_side_length=main_side,
     )
-
-    threshold_rows = []
-    for threshold in neff_thresholds or [1.5, 2.0, 2.5, 3.0, 3.5]:
-        threshold_summary, _ = summarize_region(metrics, threshold=float(threshold), window_side_length=main_side)
-        threshold_rows.append(threshold_summary)
-    threshold_sensitivity = pd.concat(threshold_rows, ignore_index=True)
-
+    metrics["in_region"] = metrics["in_gain_region"]
+    gain_region_extent_by_anatomy = summarize_region_extent_by_anatomy(
+        metrics,
+        window_side_length=main_side,
+    )
+    metrics = metrics.drop(columns=["in_region"])
+    threshold_sensitivity = pd.concat(
+        [
+            pd.DataFrame([state_threshold | {"region_type": "state"}]),
+            pd.DataFrame([gain_threshold | {"region_type": "gain"}]),
+        ],
+        ignore_index=True,
+    )
     scale_rows = []
-    for multiplier in window_multipliers or [1, 2, 3, 5, 7, 10]:
-        side = float(cell_equivalent_um * multiplier)
+    for side in candidates:
         assignments = assign_square_windows(paired_um, window_side_length=side, origin=origin)
         scale_metrics = compute_window_diversity(
             assignments,
             raw_labels,
             reconstructed_labels,
-            min_units_per_window=int(minimum),
+            min_units_per_window=min_parent_units,
         )
-        scale_summary, _ = summarize_region(scale_metrics, threshold=neff_threshold, window_side_length=side)
-        scale_summary["window_multiplier"] = int(multiplier)
-        scale_rows.append(scale_summary)
-        del assignments, scale_metrics, scale_summary
+        valid = scale_metrics.loc[scale_metrics["valid_window"]]
+        scale_rows.append(
+            {
+                "window_side_length": float(side),
+                "n_valid_windows": int(valid.shape[0]),
+                "median_neff_recon": float(valid["neff_recon"].median()) if not valid.empty else np.nan,
+                "median_delta_neff": float(valid["delta_neff"].median()) if not valid.empty else np.nan,
+            }
+        )
+        del assignments, scale_metrics
         gc.collect()
-    scale_sensitivity = pd.concat(scale_rows, ignore_index=True)
+    scale_sensitivity = pd.DataFrame(scale_rows)
     scale_audit = {
         "coordinate_unit": "coordinate",
         "microns_per_coordinate": float(microns_per_coordinate),
-        "cell_equivalent_um": float(cell_equivalent_um),
-        "main_window_multiplier": int(main_window_multiplier),
         "main_window_side_um": main_side,
         "main_window_area_um2": main_side**2,
+        "min_parent_units": int(min_parent_units),
+        "rarefaction_draws": int(rarefaction_draws),
         "origin_x_um": origin[0],
         "origin_y_um": origin[1],
     }
@@ -329,6 +431,11 @@ def compute_spatial_impact(
         region_extent_by_anatomy=region_extent_by_anatomy,
         scale_sensitivity=scale_sensitivity,
         threshold_sensitivity=threshold_sensitivity,
+        gain_region_extent_by_anatomy=gain_region_extent_by_anatomy,
+        state_threshold=state_threshold,
+        gain_threshold=gain_threshold,
+        state_threshold_bootstrap=state_bootstrap,
+        gain_threshold_bootstrap=gain_bootstrap,
     )
 
 
@@ -419,7 +526,13 @@ def write_partition_artifacts(output_dir: str | Path, analysis: PartitionAnalysi
         normalized.to_csv(destination / f"{edge}_contingency_normalized.csv")
         comparison.assignments.to_csv(destination / f"{edge}_unit_assignments.csv.gz", index=False, compression="gzip")
     pd.concat(summaries, ignore_index=True).to_csv(destination / "partition_summary.csv", index=False)
-    analysis.sweep.to_csv(destination / "resolution_sweep.csv", index=False)
+    analysis.complexity_sweep.to_csv(destination / "complexity_raw_resolution_sweep.csv", index=False)
+    analysis.sweep.to_csv(destination / "matched_k_resolution_sweep.csv", index=False)
+    analysis.change_by_level1.to_csv(destination / "change_by_level1.csv", index=False)
+    for edge, comparison in analysis.complexity_comparisons.items():
+        comparison.summary.to_csv(destination / f"{edge}_summary.csv", index=False)
+        comparison.mapping.to_csv(destination / f"{edge}_mapping.csv", index=False)
+        comparison.contingency.to_csv(destination / f"{edge}_contingency_absolute.csv")
     pd.DataFrame([analysis.audit | analysis.representation_audit]).to_csv(
         destination / "partition_audit.csv", index=False
     )
@@ -447,6 +560,15 @@ def write_spatial_artifacts(output_dir: str | Path, analysis: SpatialImpactAnaly
     analysis.cluster_change_by_anatomy.to_csv(destination / "cluster_change_by_anatomy.csv", index=False)
     analysis.diversity_by_anatomy.to_csv(destination / "diversity_by_anatomy.csv", index=False)
     analysis.region_extent_by_anatomy.to_csv(destination / "region_extent_by_anatomy.csv", index=False)
+    analysis.gain_region_extent_by_anatomy.to_csv(
+        destination / "gain_region_extent_by_anatomy.csv", index=False
+    )
     analysis.scale_sensitivity.to_csv(destination / "scale_sensitivity.csv", index=False)
     analysis.threshold_sensitivity.to_csv(destination / "threshold_sensitivity.csv", index=False)
+    analysis.state_threshold_bootstrap.to_csv(
+        destination / "state_threshold_bootstrap.csv", index=False
+    )
+    analysis.gain_threshold_bootstrap.to_csv(
+        destination / "gain_threshold_bootstrap.csv", index=False
+    )
     return destination

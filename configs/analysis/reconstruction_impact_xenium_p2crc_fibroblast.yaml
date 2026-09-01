@@ -1,6 +1,6 @@
 schema_version: 1
 sample:
-  id: P2CRC_Xenium_Fibroblast
+  id: P2CRC_Xenium_ThreeParents
 route_kind: sc_svc
 context:
   h5ad: raw_data/Real_application/P2CRC_Xenium.h5ad
@@ -20,16 +20,32 @@ partition_change:
       reconstructed_cluster_key: SVC_cluster
       level1_column: Level1
       spatial_key: spatial
+      expression_h5ad: results/sc_SVC_case/P2CRC_Xenium/Fibroblast/expr.h5ad
+    - name: Mono_Macro
+      level1_value: Mono_Macro
+      raw_h5ad: raw_data/Real_application/P2CRC_Xenium.h5ad
+      reconstructed_spatial_h5ad: results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/spatial.h5ad
+      reconstructed_cluster_key: SVC_cluster
+      level1_column: Level1
+      spatial_key: spatial
+      expression_h5ad: results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/expr.h5ad
+    - name: T
+      level1_value: T
+      raw_h5ad: raw_data/Real_application/P2CRC_Xenium.h5ad
+      reconstructed_spatial_h5ad: results/sc_SVC_case/P2CRC_Xenium/T/spatial.h5ad
+      reconstructed_cluster_key: SVC_cluster
+      level1_column: Level1
+      spatial_key: spatial
+      expression_h5ad: results/sc_SVC_case/P2CRC_Xenium/T/expr.h5ad
 spatial_region:
   coordinate_unit: pixel
   microns_per_coordinate: 0.2125
-  cell_equivalent_um: 8.0
-  main_window_multiplier: 5
-  window_multipliers: [1, 2, 3, 5, 7, 10]
-  neff_threshold: 2.0
-  neff_thresholds: [1.5, 2.0, 2.5, 3.0, 3.5]
+  candidate_window_sides_um: [16.0, 24.0, 32.0, 40.0, 56.0, 80.0]
+  min_parent_units: 4
+  rarefaction_draws: 200
+  threshold_bootstraps: 500
   anatomy_region:
     tumor_label: Tumor
     normal_source_label: Intestinal Epithelial
 output:
-  dir: output/reconstruction_impact/P2CRC_Xenium_Fibroblast
+  dir: output/reconstruction_impact/P2CRC_Xenium_ThreeParents

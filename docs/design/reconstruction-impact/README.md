@@ -1,77 +1,67 @@
-# Reconstruction Impact analysis
+# Reconstruction Impact analysis (internal v2)
 
-This post-reconstruction analysis describes two endpoint families for observation-paired
-spatial units: **Cluster Representation Change** and **Spatial Impact and Region**. It is not a
-reconstruction route, does not change the reconstruction engine, and does not
-establish biological mechanism or ground-truth biological validity.
+This post-reconstruction analysis describes paired representation and local
+spatial-pattern changes. It does not alter the reconstruction engine and does
+not establish biological mechanism, ground truth, or clinical relevance.
 
-The branch has exactly two route notebooks: P1CRC VisiumHD `sp-SVC` and P2CRC
-Xenium Fibroblast `sc-SVC`. Raw and reconstructed spatial-side inputs must have
-exactly the same observation IDs. The sc-SVC expression-side H5AD is not
-observation-paired and is excluded from ST-unit matching.
+Two notebooks cover P1CRC VisiumHD `sp-SVC` and P2CRC Xenium `sc-SVC`. Both
+evaluate the internal diversity of Fibroblast, Mono_Macro and T. Xenium's
+`expr.h5ad` is recorded as an expression-side carrier only: it is excluded from
+observation pairing, Leiden, spatial coordinates, and diversity calculations.
 
-The VisiumHD notebook exposes `USE_FULL_VISIUMHD_COHORT` at the beginning. Its
-default is `False`, so partition and spatial-impact metrics use the same
-deterministic 30,000 paired IDs. Setting it to `True` switches both layers to
-the full paired cohort. The fixed Level1 anatomy context remains full-tissue in
-either mode.
+## Partition evidence
 
-## Partition definition
+The analysis deliberately distinguishes two questions.
 
-For a multi-Level1 scope, candidate Leiden resolutions `0.3`, `0.5`, and `0.8`
-are evaluated on the Raw representation. The selected value has the highest ARI
-against Raw `Level1`; equal ARIs choose the lower resolution. That one value is
-then applied to Raw and reconstructed expression graphs. Within a single Level1
-parent, the fixed resolution is `0.5`.
+- The **complexity diagnostic** holds the Raw resolution definition fixed. It
+  shows whether reconstructed expression produces more clusters and altered
+  cluster-size/split patterns. VisiumHD global Raw chooses from `0.3/0.5/0.8`
+  by its Level1 ARI; parent Raw uses `0.5`.
+- The **matched-K comparison** independently scans the other graph (or Raw for
+  sc-SVC) to match the target cluster count. It then performs one Hungarian
+  alignment and reports ST-unit change, balanced change, ARI, and Level1 change
+  fractions with Wilson intervals. If the closest count differs by more than
+  one, the result is retained as `unmatched_cluster_complexity`, not a headline
+  change estimate.
 
-sp-SVC reports only Raw-to-Reconstructed-expression. sc-SVC audits the Raw and
-spatial-carrier expression matrices; when they are identical, it reports only
-Raw Leiden-to-Final-SVC rather than labelling the identity edge as an impact.
-Hungarian matching makes cluster labels comparable. The notebook reports
-ST-unit change and balanced cluster change as primary metrics, with ARI as the
-visible agreement diagnostic. AMI/NMI/VI and complete mappings remain in the
-saved artifacts.
+Thus “partition is finer” and “assignment changed” cannot be conflated. The
+Level1 and spatial results reuse that one global matched-K mapping; they never
+re-match inside a region.
 
-## Spatial definition
+## Parent diversity and Regions
 
-Spatial windows are non-overlapping squares anchored at the full Raw-context
-coordinate minimum; the paired diversity cohort and the anatomy map use this
-same grid. Coordinates are first converted to microns. VisiumHD uses the
-verified 0.273808 um per coordinate and Xenium uses 0.2125 um per morphology
-pixel ([Xenium file format](https://cf.10xgenomics.com/supp/xenium/xenium_documentation.html);
+Each parent has two separate diversity baselines.
+
+- **Revealed subtype diversity:** Raw is one uniform Level1 label, so its Neff
+  is one by construction. `Raw-Level1 / Recon subtype / Recon−1` describes
+  internal structure exposed after reconstruction, not a fair effect size.
+- **Reconstruction-associated diversity change:** Raw and reconstructed/final
+  labels are the matched-K partitions. `Raw-Leiden / Recon / Delta` is the
+  comparable local change view and supplies the Gain Region input.
+
+Candidate square sides are 16, 24, 32, 40, 56, and 80 um. A parent chooses one
+only from its coordinates and occupancy: it retains windows with at least four
+parent units and takes the chord-distance knee of retained units against log
+window side. The grid is anchored at the full Raw Level1 coordinate minimum.
+Within every valid window, Raw and Recon use the same four sampled parent units
+for each of 200 deterministic draws; Neff is their draw mean. This controls
+density-driven diversity inflation.
+
+State Region derives from rarefied reconstructed Neff. Gain Region derives from
+positive matched-K Delta Neff. Each threshold is estimated independently from
+a survival-curve segmented breakpoint and 500 window bootstraps. Insufficient,
+edge, or wide-interval estimates are labelled `no_stable_threshold` and produce
+no binary mask. Region fractions are therefore not cross-platform effect sizes.
+
+Anatomy remains a separate fixed Level1 context: Tumor, Normal (current source
+`Intestinal Epithelial`), Interface, and Other. It never tunes K, scale, or a
+threshold. VisiumHD coordinates use 0.273808 um per coordinate and Xenium uses
+0.2125 um per morphology pixel ([Xenium file format](https://cf.10xgenomics.com/supp/xenium/xenium_documentation.html),
 [Space Ranger spatial outputs](https://www.10xgenomics.com/support/software/space-ranger/latest/analysis/spatial-outputs)).
-Both routes use an explicit 8 um cell-equivalent scale, with a 5x = 40 um main
-window and 1/2/3/5/7/10x sensitivity. Parent support is selected at the main
-scale from the retained-unit curve's chord-distance knee, then held fixed for
-scale sensitivity. The Region is valid windows with reconstructed `Neff >= 2`;
-threshold sensitivity spans 1.5--3.5. Its area is selected-window count times
-window area, with valid windows as the area-fraction denominator. Invalid
-windows remain `NaN`.
 
-Anatomy is a separate Level1-derived window assignment on the same spatial
-grid. It records binary Tumor and Normal (`Intestinal Epithelial`) candidates,
-their 0/1/2 union score, and the categorical Tumor, Normal, Interface, or Other
-context. The notebooks show one categorical overview plus focused Tumor,
-Normal, and Interface maps; Other remains the whole-tissue background and
-denominator. Anatomy never changes partitions, `Neff`, or high-diversity
-Region membership. `Intestinal Epithelial` is the current source label for
-Normal; this is a spatial convention, not a new single-cell annotation claim.
+The VisiumHD notebook exposes `USE_FULL_VISIUMHD_COHORT`. Its default samples
+30,000 global paired IDs and at most 30,000 IDs per parent; setting it to `True`
+removes both limits. Mono_Macro and T are already below that parent limit.
 
-## Notebook evidence hierarchy
-
-Each route notebook follows the final metrics rather than the computation
-batch. Cluster representation change is shown first with a normalized
-contingency and a compact metric table. Fixed Level1 anatomy then establishes
-the spatial context. Spatial impact is reported as three layers: globally
-matched cluster-change localization, Raw/Reconstructed/Delta `Neff`, and the
-high-diversity Region overlaid on anatomy. Supporting resolution, parent
-support, scale, and threshold checks remain adjacent to the metric they
-validate and are visually secondary.
-
-Continuous window summaries use median and interquartile range. Region
-summaries retain exact numerator/denominator counts, area, area fraction, and
-unit fraction. Notebook observations are generated from the executed values
-and remain descriptive rather than mechanistic.
-
-See [outputs-and-test-plan.md](outputs-and-test-plan.md) for the output
-contract and verification boundary.
+See [outputs-and-test-plan.md](outputs-and-test-plan.md) for the artifact and
+test contract.

@@ -9,8 +9,11 @@ from revise.analysis.basic.spatial_region import (
     assign_square_windows,
     assign_anatomy_regions,
     compute_window_diversity,
+    compute_rarefied_window_diversity,
     convert_coordinates_to_microns,
     effective_number,
+    select_region_threshold,
+    select_window_scale,
     select_min_parent_support,
     summarize_anatomy_context,
     summarize_cluster_change_by_anatomy,
@@ -50,6 +53,53 @@ def test_coordinate_conversion_uses_explicit_platform_scale_without_mutation():
     assert converted.loc["b", "x"] == pytest.approx(8.0)
     assert converted.loc["b", "y"] == pytest.approx(40.0)
     assert coordinates.loc["b", "x"] == pytest.approx(37.6470588)
+
+
+def test_window_scale_knee_uses_occupancy_only_and_lower_tie_break():
+    coordinates = pd.DataFrame(
+        {"x": [0, 1, 2, 3, 20, 21, 22, 23], "y": [0] * 8},
+        index=[f"u{i}" for i in range(8)],
+    )
+
+    selected, sensitivity = select_window_scale(
+        coordinates,
+        candidate_window_sides=[4.0, 8.0, 16.0],
+        min_parent_units=4,
+        origin=(0.0, 0.0),
+    )
+
+    assert selected["status"] == "ok"
+    assert selected["window_side_length"] in {4.0, 8.0, 16.0}
+    assert sensitivity["retained_parent_unit_fraction"].between(0, 1).all()
+    assert set(sensitivity["window_side_length"]) == {4.0, 8.0, 16.0}
+
+
+def test_paired_rarefaction_is_deterministic_and_keeps_uniform_level1_at_one():
+    windows = pd.DataFrame(
+        {"window_id": ["a"] * 6 + ["b"] * 4, "x": range(10), "y": [0] * 10},
+        index=[f"u{i}" for i in range(10)],
+    )
+    raw = pd.Series(["Fibroblast"] * 10, index=windows.index)
+    recon = pd.Series(["a", "a", "b", "b", "c", "c", "a", "b", "a", "b"], index=windows.index)
+
+    first = compute_rarefied_window_diversity(
+        windows, raw, recon, min_parent_units=4, n_draws=25, random_state=42
+    )
+    second = compute_rarefied_window_diversity(
+        windows, raw, recon, min_parent_units=4, n_draws=25, random_state=42
+    )
+
+    pd.testing.assert_frame_equal(first, second)
+    assert (first.loc[first["valid_window"], "neff_raw"] == 1.0).all()
+    assert (first.loc[first["valid_window"], "neff_recon"] >= 1.0).all()
+
+
+def test_region_threshold_refuses_small_or_unstable_window_sets():
+    selected, bootstrap = select_region_threshold(np.linspace(1.0, 3.0, 50), n_bootstrap=20)
+
+    assert selected["status"] == "no_stable_threshold"
+    assert selected["threshold"] is None
+    assert bootstrap.empty
 
 
 def test_parent_support_knee_uses_lower_tie_and_never_returns_less_than_two():

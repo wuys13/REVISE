@@ -1,43 +1,34 @@
-# Reconstruction Impact output and test contract
+# Reconstruction Impact output and test contract (internal v2)
 
-Each route writes to `output/reconstruction_impact/<sample_id>/` (or the
-`REVISE_ANALYSIS_OUTPUT_ROOT` override). The root contains
-`resolved_config.yaml`, `manifest.json`, and `input_audit.csv`.
+Each route writes to `output/reconstruction_impact/<sample_id>/` or the
+`REVISE_ANALYSIS_OUTPUT_ROOT` override. The root has the resolved config,
+manifest (input SHA, sampling, carrier role, selected scale and threshold
+status), and a compact input audit.
 
-`st_unit/` contains a partition summary, one Hungarian mapping and contingency
-table per scientifically applicable comparison edge, and per-unit assignments. Every partition output
-contains `comparison_edge`; the summary also records the chosen resolution,
-resolution source, pairing audit, and shared-gene count.
+For each global or parent scope, `st_unit/` contains the matched-K partition
+summary, mapping, normalized and absolute contingency, unit assignments,
+`matched_k_resolution_sweep.csv`, `complexity_raw_resolution_sweep.csv`, and
+`change_by_level1.csv`. Same-resolution complexity diagnostic tables are
+separate from the matched-K headline tables.
 
-`spatial/` contains scale and support-selection audits, a matched-cohort
-unit-to-window map, a separate full-Level1 anatomy unit-to-window map and
-anatomy candidate map, and per-window Raw / Recon / delta `Neff`. Its visible
-metric layers have separate summaries:
+Each parent `spatial/` directory contains:
 
-- `anatomy_context_summary.csv` for full-Level1 units and tissue-window area;
-- `cluster_change_by_anatomy.csv` for globally matched unit change and its
-  window distribution;
-- `diversity_by_anatomy.csv` for Raw, reconstructed, and delta `Neff` median/IQR;
-- `region_extent_by_anatomy.csv` for exact Region windows, area, and unit
-  coverage.
+- occupancy scale-knee audit and selected physical side;
+- paired unit/window assignments, full-Level1 anatomy assignments and map;
+- rarefied Raw/Recon/Delta window metrics and anatomy summaries;
+- State and Gain threshold bootstrap tables and separate anatomy-stratified
+  extent tables;
+- all-scale continuous diversity sensitivity.
 
-Full threshold and scale sensitivity tables remain available. Main Region area
-uses non-overlapping 40 um windows, so each selected window contributes 1600
-um2; notebooks additionally display area in mm2.
+`region_extent_by_anatomy.csv` refers to State and
+`gain_region_extent_by_anatomy.csv` refers to Gain. If a threshold is not
+stable, their Region numerators/fractions remain `NaN` rather than being forced
+to zero. Area uses exact um2 in artifacts and mm2 in notebooks.
 
-Automated tests cover strict pairing/reordering, label permutation, Hungarian
-metric complements, rare and unmatched clusters, Level1-ARI resolution choice,
-fixed within-Level1 resolution, deterministic feature selection, coordinate to
-micron conversion, boundary window assignment, support-selection knees, `Neff`,
-invalid windows, anatomy candidates/context denominators, median/IQR summaries,
-globally mapped anatomy-stratified changes, Region area/fractions, config
-carrier-role validation, and notebook content boundaries. Existing
-canonical case notebooks are protected separately and are not modified by this
-work.
-
-The default real-data acceptance run is P2CRC Xenium Fibroblast full cohort plus
-P1CRC VisiumHD's deterministic same-ID 30k partition and spatial-impact cohort,
-with full-tissue Level1 anatomy context. The VisiumHD notebook switch can run
-the full paired cohort when required. Successful execution demonstrates reproducible
-representation/partition and Region calculations only; it is not biological or
-mechanistic validation.
+Tests cover strict observation pairing, matching count selection and its tie/
+failure status, complexity-vs-change separation, Hungarian metric complements,
+Wilson Level1 intervals, coordinate conversion, occupancy-only scale selection,
+paired deterministic rarefaction, uniform-Level1 Neff, identical Delta,
+unstable thresholds, anatomy isolation, artifact naming, notebook hierarchy,
+and unchanged canonical case notebooks. Real execution verifies both source
+notebooks without errors before their executed copies replace prior outputs.

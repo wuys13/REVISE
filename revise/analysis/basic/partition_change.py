@@ -49,6 +49,83 @@ def select_level1_resolution(sweep: pd.DataFrame) -> pd.Series:
     return candidates.sort_values(["ARI", "resolution"], ascending=[False, True]).iloc[0]
 
 
+def select_resolution_for_target_cluster_count(
+    sweep: pd.DataFrame,
+    *,
+    target_cluster_count: int,
+) -> pd.Series:
+    """Choose the lowest resolution with the closest observed cluster count."""
+    if target_cluster_count < 1:
+        raise ValueError("target_cluster_count must be at least one")
+    required = {"resolution", "n_clusters"}
+    missing = required - set(sweep.columns)
+    if missing:
+        raise KeyError(f"Cluster-count sweep is missing columns: {sorted(missing)}")
+    candidates = sweep.copy()
+    candidates["resolution"] = pd.to_numeric(candidates["resolution"], errors="coerce")
+    candidates["n_clusters"] = pd.to_numeric(candidates["n_clusters"], errors="coerce")
+    candidates = candidates.loc[
+        np.isfinite(candidates["resolution"])
+        & (candidates["resolution"] > 0)
+        & np.isfinite(candidates["n_clusters"])
+        & (candidates["n_clusters"] >= 1)
+    ].copy()
+    if candidates.empty:
+        raise ValueError("Cluster-count sweep has no finite candidates")
+    candidates["n_clusters"] = candidates["n_clusters"].astype(int)
+    candidates["cluster_count_gap"] = (candidates["n_clusters"] - target_cluster_count).abs()
+    selected = candidates.sort_values(
+        ["cluster_count_gap", "resolution"], ascending=[True, True]
+    ).iloc[0].copy()
+    selected["target_cluster_count"] = int(target_cluster_count)
+    selected["status"] = (
+        "ok" if int(selected["cluster_count_gap"]) <= 1 else "unmatched_cluster_complexity"
+    )
+    return selected
+
+
+def summarize_change_by_level1(
+    assignments: pd.DataFrame,
+    level1_labels: pd.Series,
+    *,
+    min_report_n: int = 30,
+    z_value: float = 1.96,
+) -> pd.DataFrame:
+    """Summarize an already-global Hungarian change call by Raw Level1 labels."""
+    if "unit_changed" not in assignments:
+        raise KeyError("assignments must contain unit_changed")
+    if min_report_n < 1:
+        raise ValueError("min_report_n must be at least one")
+    if not assignments.index.is_unique or not level1_labels.index.is_unique:
+        raise ValueError("assignments and Level1 labels must have unique unit IDs")
+    if set(assignments.index) != set(level1_labels.index):
+        raise ValueError("assignments and Level1 labels must contain the same unit IDs")
+
+    work = pd.DataFrame(
+        {
+            "level1": level1_labels.reindex(assignments.index).astype(str),
+            "unit_changed": assignments["unit_changed"].astype(bool),
+        }
+    )
+    grouped = work.groupby("level1", sort=True)["unit_changed"].agg(
+        total_units="size", changed_units="sum"
+    )
+    grouped.loc["Overall"] = [int(work.shape[0]), int(work["unit_changed"].sum())]
+    grouped = grouped.reset_index()
+    grouped["changed_units"] = grouped["changed_units"].astype(int)
+    grouped["change_fraction"] = grouped["changed_units"] / grouped["total_units"]
+
+    n = grouped["total_units"].astype(float)
+    p = grouped["change_fraction"].astype(float)
+    denominator = 1 + z_value**2 / n
+    center = (p + z_value**2 / (2 * n)) / denominator
+    half_width = z_value * np.sqrt((p * (1 - p) + z_value**2 / (4 * n)) / n) / denominator
+    grouped["wilson_ci_lower"] = center - half_width
+    grouped["wilson_ci_upper"] = center + half_width
+    grouped["low_sample_size"] = grouped["total_units"] < min_report_n
+    return grouped
+
+
 def align_observation_pairs(
     raw: AnnData,
     reconstructed: AnnData,
@@ -145,7 +222,15 @@ def leiden_labels(
         raise ValueError("resolution must be positive and finite")
     work = graph_adata.copy()
     key = "reconstruction_impact_leiden"
-    sc.tl.leiden(work, resolution=float(resolution), key_added=key, random_state=random_state)
+    sc.tl.leiden(
+        work,
+        resolution=float(resolution),
+        key_added=key,
+        random_state=random_state,
+        flavor="igraph",
+        n_iterations=2,
+        directed=False,
+    )
     return work.obs[key].astype(str).rename(key)
 
 

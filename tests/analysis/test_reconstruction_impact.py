@@ -57,13 +57,13 @@ output: {dir: output/reconstruction_impact/example}
 
     assert config["partition_change"]["level1_resolution_candidates"] == [0.3, 0.5, 0.8]
     assert config["partition_change"]["within_level1_resolution"] == 0.5
-    assert config["spatial_region"]["cell_equivalent_um"] == 8.0
-    assert config["spatial_region"]["main_window_multiplier"] == 5
+    assert config["spatial_region"]["candidate_window_sides_um"] == [16.0, 24.0, 32.0, 40.0, 56.0, 80.0]
+    assert config["spatial_region"]["min_parent_units"] == 4
     assert config["spatial_region"]["anatomy_region"]["tumor_label"] == "Tumor"
     assert config["output"]["dir"] == "output/reconstruction_impact/example"
 
 
-def test_partition_analysis_uses_raw_level1_ari_resolution_then_shared_resolution(monkeypatch):
+def test_partition_analysis_keeps_level1_ari_complexity_diagnostic_separate_from_matched_k(monkeypatch):
     from revise.analysis import reconstruction_impact
 
     raw = AnnData(
@@ -87,9 +87,11 @@ def test_partition_analysis_uses_raw_level1_ari_resolution_then_shared_resolutio
 
     result = run_partition_analysis(raw, recon, level1_col="Level1", resolution_candidates=[0.3, 0.5])
 
-    assert result.resolution == 0.5
-    assert result.resolution_source == "raw_level1_ari"
-    assert result.sweep["ARI"].tolist() == [pytest.approx(-0.5), pytest.approx(1.0)]
+    assert result.complexity_resolution == 0.5
+    assert result.sweep["target_cluster_count"].iloc[0] == 2
+    assert result.resolution_source == "matched_cluster_count"
+    assert result.sweep["n_clusters"].iloc[0] == 2
+    assert list(result.complexity_comparisons) == ["raw_to_recon_same_resolution"]
     assert list(result.comparisons) == ["raw_to_recon_expression"]
 
 
@@ -152,8 +154,8 @@ def test_sc_svc_partition_uses_fixed_resolution_and_omits_identity_expression_ed
         within_level1_resolution=0.5,
     )
 
-    assert result.resolution == 0.5
-    assert result.resolution_source == "fixed_within_level1"
+    assert result.complexity_resolution == 0.5
+    assert result.resolution_source == "matched_cluster_count"
     assert list(result.comparisons) == ["raw_to_final_svc"]
     assert result.representation_audit["spatial_expression_identical"] is True
 
@@ -169,8 +171,10 @@ def test_spatial_impact_keeps_window_coordinates_after_anatomy_context_join():
         reconstructed_labels=pd.Series(["0", "1", "1", "1"], index=ids),
         unit_changed=pd.Series([False, True, False, False], index=ids),
         microns_per_coordinate=1.0,
-        cell_equivalent_um=8.0,
-        main_window_multiplier=5,
+        candidate_window_sides_um=[40.0],
+        min_parent_units=2,
+        rarefaction_draws=5,
+        threshold_bootstraps=5,
     )
 
     assert {"window_x", "window_y", "level1_region"} <= set(impact.window_metrics.columns)
@@ -181,3 +185,35 @@ def test_spatial_impact_keeps_window_coordinates_after_anatomy_context_join():
     assert "Overall" in set(impact.cluster_change_by_anatomy["level1_region"])
     assert "Overall" in set(impact.diversity_by_anatomy["level1_region"])
     assert "Overall" in set(impact.region_extent_by_anatomy["level1_region"])
+    assert "in_state_region" in impact.window_metrics
+    assert "in_gain_region" in impact.window_metrics
+
+
+def test_gain_region_threshold_only_uses_positive_matched_delta(monkeypatch):
+    from revise.analysis import reconstruction_impact
+
+    captured = []
+
+    def record_threshold(values, **_kwargs):
+        captured.append(np.asarray(values))
+        return {"status": "no_stable_threshold", "threshold": None, "n_windows": len(values), "n_valid_bootstrap": 0}, pd.DataFrame()
+
+    monkeypatch.setattr(reconstruction_impact, "select_region_threshold", record_threshold)
+    ids = pd.Index([f"u{i}" for i in range(8)])
+    coordinates = pd.DataFrame({"x": np.arange(8), "y": np.zeros(8)}, index=ids)
+    compute_spatial_impact(
+        full_coordinates=coordinates,
+        full_level1_labels=pd.Series(["Tumor"] * 8, index=ids),
+        paired_coordinates=coordinates,
+        raw_labels=pd.Series(["a"] * 8, index=ids),
+        reconstructed_labels=pd.Series(["a", "a", "b", "b", "a", "a", "b", "b"], index=ids),
+        unit_changed=pd.Series([False] * 8, index=ids),
+        microns_per_coordinate=1.0,
+        candidate_window_sides_um=[16.0],
+        min_parent_units=4,
+        rarefaction_draws=5,
+        threshold_bootstraps=5,
+    )
+
+    assert len(captured) == 2
+    assert (captured[1] > 0).all()

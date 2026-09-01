@@ -107,6 +107,202 @@ def compute_window_diversity(
     return metrics.reset_index()
 
 
+def select_window_scale(
+    coordinates: pd.DataFrame,
+    *,
+    candidate_window_sides: Sequence[float],
+    min_parent_units: int = 4,
+    origin: tuple[float, float] | None = None,
+) -> tuple[dict[str, float | int | str | None], pd.DataFrame]:
+    """Select a parent-specific square side from occupancy-only retention curves."""
+    if min_parent_units < 1:
+        raise ValueError("min_parent_units must be at least one")
+    candidates = sorted({float(side) for side in candidate_window_sides})
+    if not candidates or any(not np.isfinite(side) or side <= 0 for side in candidates):
+        raise ValueError("candidate_window_sides must contain positive finite values")
+    if coordinates.empty:
+        return {"status": "insufficient_support", "window_side_length": None, "min_parent_units": min_parent_units}, pd.DataFrame()
+
+    rows: list[dict[str, float | int]] = []
+    total_units = int(coordinates.shape[0])
+    for side in candidates:
+        assigned = assign_square_windows(coordinates, window_side_length=side, origin=origin)
+        occupancy = assigned.groupby("window_id", sort=True).size()
+        retained = occupancy.loc[occupancy >= min_parent_units]
+        rows.append(
+            {
+                "window_side_length": side,
+                "n_tissue_windows": int(occupancy.size),
+                "n_valid_windows": int(retained.size),
+                "valid_window_fraction": float(retained.size / occupancy.size) if occupancy.size else np.nan,
+                "retained_parent_units": int(retained.sum()),
+                "retained_parent_unit_fraction": float(retained.sum() / total_units),
+            }
+        )
+    sensitivity = pd.DataFrame(rows)
+    if not (sensitivity["n_valid_windows"] > 0).any():
+        return {
+            "status": "insufficient_support",
+            "window_side_length": None,
+            "min_parent_units": min_parent_units,
+        }, sensitivity
+
+    x = np.log(sensitivity["window_side_length"].to_numpy(dtype=float))
+    y = sensitivity["retained_parent_unit_fraction"].to_numpy(dtype=float)
+    x0, y0, x1, y1 = x[0], y[0], x[-1], y[-1]
+    denominator = float(np.hypot(y1 - y0, x1 - x0))
+    if denominator == 0:
+        distances = np.zeros_like(x)
+    else:
+        distances = np.abs((y1 - y0) * x - (x1 - x0) * y + x1 * y0 - y1 * x0) / denominator
+    sensitivity["knee_distance"] = distances
+    maximum = float(sensitivity["knee_distance"].max())
+    selected_side = float(
+        sensitivity.loc[np.isclose(sensitivity["knee_distance"], maximum), "window_side_length"].min()
+    )
+    return {
+        "status": "ok",
+        "window_side_length": selected_side,
+        "min_parent_units": min_parent_units,
+    }, sensitivity
+
+
+def compute_rarefied_window_diversity(
+    window_assignments: pd.DataFrame,
+    raw_labels: pd.Series,
+    reconstructed_labels: pd.Series,
+    *,
+    min_parent_units: int = 4,
+    n_draws: int = 200,
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """Estimate paired local diversity after equal within-window unit sampling."""
+    if min_parent_units < 1 or n_draws < 1:
+        raise ValueError("min_parent_units and n_draws must be at least one")
+    if "window_id" not in window_assignments:
+        raise KeyError("window_assignments must contain window_id")
+    raw = _align_labels(raw_labels, window_assignments.index, "Raw")
+    recon = _align_labels(reconstructed_labels, window_assignments.index, "Reconstructed")
+    raw_codes = pd.Series(pd.factorize(raw, sort=True)[0], index=raw.index)
+    recon_codes = pd.Series(pd.factorize(recon, sort=True)[0], index=recon.index)
+
+    def diversity_from_codes(codes: np.ndarray) -> float:
+        counts = np.bincount(codes)
+        probabilities = counts[counts > 0] / codes.size
+        return float(np.exp(-(probabilities * np.log(probabilities)).sum()))
+
+    generator = np.random.default_rng(random_state)
+    rows: list[dict[str, float | int | bool | str]] = []
+    for window_id, frame in window_assignments.groupby("window_id", sort=True):
+        raw_values_for_window = raw_codes.reindex(frame.index).to_numpy(dtype=int)
+        recon_values_for_window = recon_codes.reindex(frame.index).to_numpy(dtype=int)
+        n_units = int(frame.shape[0])
+        row: dict[str, float | int | bool | str] = {
+            "window_id": str(window_id),
+            "window_x": float(frame["x"].mean()),
+            "window_y": float(frame["y"].mean()),
+            "n_units": n_units,
+            "valid_window": n_units >= min_parent_units,
+        }
+        if n_units < min_parent_units:
+            row.update({"neff_raw": np.nan, "neff_recon": np.nan, "delta_neff": np.nan, "neff_raw_sd": np.nan, "neff_recon_sd": np.nan, "delta_neff_sd": np.nan})
+            rows.append(row)
+            continue
+        raw_values: list[float] = []
+        recon_values: list[float] = []
+        for _ in range(n_draws):
+            sampled = generator.choice(n_units, size=min_parent_units, replace=False)
+            raw_values.append(diversity_from_codes(raw_values_for_window[sampled]))
+            recon_values.append(diversity_from_codes(recon_values_for_window[sampled]))
+        raw_array = np.asarray(raw_values)
+        recon_array = np.asarray(recon_values)
+        delta_array = recon_array - raw_array
+        row.update(
+            {
+                "neff_raw": float(raw_array.mean()),
+                "neff_recon": float(recon_array.mean()),
+                "delta_neff": float(delta_array.mean()),
+                "neff_raw_sd": float(raw_array.std(ddof=0)),
+                "neff_recon_sd": float(recon_array.std(ddof=0)),
+                "delta_neff_sd": float(delta_array.std(ddof=0)),
+            }
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def select_region_threshold(
+    values: Sequence[float] | np.ndarray,
+    *,
+    n_bootstrap: int = 500,
+    random_state: int = 42,
+) -> tuple[dict[str, float | int | str | None], pd.DataFrame]:
+    """Find a stable survival-curve breakpoint, or explicitly decline a Region mask."""
+    observed = np.asarray(values, dtype=float)
+    observed = observed[np.isfinite(observed)]
+    if observed.size < 200 or n_bootstrap < 1:
+        return {
+            "status": "no_stable_threshold",
+            "threshold": None,
+            "n_windows": int(observed.size),
+            "n_valid_bootstrap": 0,
+        }, pd.DataFrame()
+
+    def breakpoint(sample: np.ndarray) -> float | None:
+        unique = np.unique(np.quantile(sample, np.linspace(0.0, 1.0, 81)))
+        if unique.size < 5:
+            return None
+        survival = np.asarray([(sample >= value).mean() for value in unique])
+        low = int(np.ceil(unique.size * 0.10))
+        high = int(np.floor(unique.size * 0.90))
+        candidates = range(max(1, low), min(unique.size - 1, high) + 1)
+        best: tuple[float, float] | None = None
+        for index in candidates:
+            left_x, left_y = unique[: index + 1], np.log(survival[: index + 1])
+            right_x, right_y = unique[index:], np.log(survival[index:])
+            if left_x.size < 2 or right_x.size < 2:
+                continue
+            left_fit = np.polyfit(left_x, left_y, deg=1)
+            right_fit = np.polyfit(right_x, right_y, deg=1)
+            error = float(((left_y - np.polyval(left_fit, left_x)) ** 2).sum() + ((right_y - np.polyval(right_fit, right_x)) ** 2).sum())
+            candidate = (error, float(unique[index]))
+            if best is None or candidate < best:
+                best = candidate
+        return None if best is None else best[1]
+
+    point = breakpoint(observed)
+    if point is None:
+        return {
+            "status": "no_stable_threshold",
+            "threshold": None,
+            "n_windows": int(observed.size),
+            "n_valid_bootstrap": 0,
+        }, pd.DataFrame()
+    generator = np.random.default_rng(random_state)
+    bootstrap_values = [breakpoint(generator.choice(observed, size=observed.size, replace=True)) for _ in range(n_bootstrap)]
+    valid = np.asarray([value for value in bootstrap_values if value is not None], dtype=float)
+    audit = pd.DataFrame({"bootstrap_threshold": valid})
+    if valid.size < int(np.ceil(n_bootstrap * 0.80)):
+        return {
+            "status": "no_stable_threshold",
+            "threshold": None,
+            "n_windows": int(observed.size),
+            "n_valid_bootstrap": int(valid.size),
+        }, audit
+    lower, upper = np.quantile(valid, [0.025, 0.975])
+    value_range = float(observed.max() - observed.min())
+    stable = value_range > 0 and (upper - lower) <= 0.25 * value_range
+    return {
+        "status": "ok" if stable else "no_stable_threshold",
+        "threshold": float(np.median(valid)) if stable else None,
+        "point_threshold": float(point),
+        "ci_lower": float(lower),
+        "ci_upper": float(upper),
+        "n_windows": int(observed.size),
+        "n_valid_bootstrap": int(valid.size),
+    }, audit
+
+
 def select_min_parent_support(
     window_assignments: pd.DataFrame,
 ) -> tuple[dict[str, int | str | None], pd.DataFrame]:
@@ -340,21 +536,23 @@ def summarize_region_extent_by_anatomy(
     rows = []
     for region, frame in _region_frames(window_metrics):
         valid = frame.loc[frame["valid_window"]]
-        selected = valid.loc[valid["in_region"]]
+        available = valid["in_region"].notna().any()
+        selected = valid.loc[valid["in_region"].fillna(False).astype(bool)]
         valid_units = int(valid["n_units"].sum())
-        region_units = int(selected["n_units"].sum())
-        region_area_um2 = float(selected.shape[0] * window_area_um2)
+        region_units = int(selected["n_units"].sum()) if available else np.nan
+        region_area_um2 = float(selected.shape[0] * window_area_um2) if available else np.nan
         rows.append(
             {
                 "level1_region": region,
                 "valid_windows": int(valid.shape[0]),
-                "region_windows": int(selected.shape[0]),
+                "region_windows": int(selected.shape[0]) if available else np.nan,
                 "region_area_um2": region_area_um2,
                 "region_area_mm2": region_area_um2 / 1_000_000.0,
-                "area_fraction": float(selected.shape[0] / valid.shape[0]) if not valid.empty else np.nan,
+                "area_fraction": float(selected.shape[0] / valid.shape[0]) if available and not valid.empty else np.nan,
                 "valid_units": valid_units,
                 "region_units": region_units,
-                "unit_fraction": float(region_units / valid_units) if valid_units else np.nan,
+                "unit_fraction": float(region_units / valid_units) if available and valid_units else np.nan,
+                "region_available": bool(available),
             }
         )
     return pd.DataFrame(rows)

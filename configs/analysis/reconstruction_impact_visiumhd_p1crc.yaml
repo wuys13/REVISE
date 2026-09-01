@@ -13,6 +13,8 @@ partition_change:
   random_state: 42
   n_top_genes: 2000
   sample_n_units: 30000
+  parent_sample_n_units: 30000
+  parent_values: [Fibroblast, Mono_Macro, T]
   comparisons:
     - name: global
       raw_h5ad: raw_data/Real_application/P1CRC_HD.h5ad
@@ -22,11 +24,10 @@ partition_change:
 spatial_region:
   coordinate_unit: pixel
   microns_per_coordinate: 0.27380817798463214
-  cell_equivalent_um: 8.0
-  main_window_multiplier: 5
-  window_multipliers: [1, 2, 3, 5, 7, 10]
-  neff_threshold: 2.0
-  neff_thresholds: [1.5, 2.0, 2.5, 3.0, 3.5]
+  candidate_window_sides_um: [16.0, 24.0, 32.0, 40.0, 56.0, 80.0]
+  min_parent_units: 4
+  rarefaction_draws: 200
+  threshold_bootstraps: 500
   anatomy_region:
     tumor_label: Tumor
     normal_source_label: Intestinal Epithelial
