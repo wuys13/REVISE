@@ -27,7 +27,5 @@ output:
   ist_mapping: paired # paired | mean | random
 execution:
   seed: 42
-analysis:
-  partition: {}
-  spatial_diversity: {}
-  spatial_regions: {}
+# Only explicitly configured aspects run. See analysis-example.yaml.
+analysis: {}
