@@ -6,6 +6,17 @@ context:
   h5ad: raw_data/Real_application/P2CRC_Xenium.h5ad
   level1_column: Level1
   spatial_key: spatial
+raw_level2_mapping:
+  reference_h5ad: raw_data/Real_application/adata_sc_all_reanno.h5ad
+  method: tacco
+  level1_column: Level1
+  level2_column: Level2
+  reference_filter:
+    column: Patient
+    value: P2CRC
+  tacco:
+    multi_center: 1
+    lamb: 0.001
 partition_change:
   mode: fixed_within_level1
   level1_resolution_candidates: [0.3, 0.5, 0.8]
@@ -49,3 +60,4 @@ spatial_region:
     normal_source_label: Intestinal Epithelial
 output:
   dir: output/reconstruction_impact/P2CRC_Xenium_ThreeParents
+  final_notebook: notebook/Xenium_sc_SVC_Fibroblast_Reconstruction_Impact.ipynb

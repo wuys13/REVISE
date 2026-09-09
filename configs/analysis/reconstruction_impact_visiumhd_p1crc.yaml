@@ -6,12 +6,24 @@ context:
   h5ad: raw_data/Real_application/P1CRC_HD.h5ad
   level1_column: Level1
   spatial_key: spatial
+raw_level2_mapping:
+  reference_h5ad: raw_data/Real_application/adata_sc_all_reanno.h5ad
+  method: pot
+  level1_column: Level1
+  level2_column: Level2
+  pot:
+    reg: 0.1
+    reg_m: 0.0
+    reg_type: entropy
 partition_change:
   mode: level1_ari
   level1_resolution_candidates: [0.3, 0.5, 0.8]
   within_level1_resolution: 0.5
   random_state: 42
   n_top_genes: 2000
+  raw_qc_min_genes: 50
+  raw_qc_min_cells: 3
+  feature_selection: raw_canonical_seurat_v3_shared
   sample_n_units: 30000
   parent_sample_n_units: 30000
   parent_values: [Fibroblast, Mono_Macro, T]
@@ -33,3 +45,4 @@ spatial_region:
     normal_source_label: Intestinal Epithelial
 output:
   dir: output/reconstruction_impact/P1CRC_VisiumHD
+  final_notebook: notebook/VisiumHD_sp_SVC_Reconstruction_Impact.ipynb
