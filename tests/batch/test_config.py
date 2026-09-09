@@ -48,6 +48,25 @@ def test_chain_detects_added_removed_and_changed_configuration(tmp_path):
     assert resolve_sample(path, sample).config_chain == first.config_chain
 
 
+def test_analysis_resources_resolve_relative_to_declaring_yaml(tmp_path):
+    from revise.batch.config import resolve_sample
+    path = project(tmp_path)
+    write(tmp_path / 'ST/batch.yaml', {
+        'analysis': {'partition': {'resources': {'project': 'resources/project.csv'}}},
+    })
+    write(tmp_path / 'ST/CRC/batch.yaml', {
+        'analysis': {'partition': {'resources': {
+            'group': 'resources/group.csv', 'project': 'resources/override.csv',
+        }}},
+    })
+    result = resolve_sample(path, tmp_path / 'ST/CRC/S01')
+    resources = result.document['analysis']['partition']['resources']
+    assert resources == {
+        'project': str(tmp_path / 'ST/CRC/resources/override.csv'),
+        'group': str(tmp_path / 'ST/CRC/resources/group.csv'),
+    }
+
+
 @pytest.mark.parametrize('override', [{'schema_version': 2}, {'input_root': 'x'}, {'output_root': 'x'},
                                      {'inputs': {'st': {'path': 'x'}}}, {'enabled': 'false'},
                                      {'preparation': {}}, {'unknown': 1}, {'coordinates': None}])

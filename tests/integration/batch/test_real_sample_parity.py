@@ -97,7 +97,7 @@ def _sample(root, modality):
 
 
 @pytest.mark.parametrize('modality', ['hST', 'iST', 'sST'])
-def test_real_batch_matches_direct_single_run(tmp_path, modality):
+def test_real_batch_matches_direct_single_run(tmp_path, modality, monkeypatch):
     from reconstruct import run_application
     from revise.application.config import compile_application_config, load_application_yaml
     from revise.application.publication import output_paths
@@ -140,3 +140,44 @@ def test_real_batch_matches_direct_single_run(tmp_path, modality):
         assert ('spatial' in actual.obsm) == ('spatial' in expected.obsm)
         if 'spatial' in actual.obsm:
             np.testing.assert_array_equal(actual.obsm['spatial'], expected.obsm['spatial'])
+
+    # Exercise the public file API and a real adapter on the same published data.
+    from revise.batch import run_analysis_task, run_reconstruction_task
+    from revise.batch.analysis import run_analysis_batch
+
+    sample_id = f'CRC/{modality}'
+    cell_type = 'T' if modality == 'iST' else None
+    single = run_reconstruction_task(batch_path, sample_id, cell_type=cell_type)
+    assert single['status'] == 'reused'
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3] / 'configs' / 'batch'))
+    current = yaml.safe_load(batch_path.read_text())
+    current['analysis'] = {
+        'carrier_inventory': {'entrypoint': 'analysis_example:run', 'version': '1'},
+    }
+    batch_path.write_text(yaml.safe_dump(current))
+    assert run_reconstruction_task(batch_path, sample_id, cell_type=cell_type)['status'] == 'reused'
+    analysis = run_analysis_task(batch_path, sample_id, 'carrier_inventory', cell_type=cell_type)
+    assert analysis['status'] == 'succeeded'
+    assert (batch_root / 'analysis' / 'carrier_inventory' / 'carriers.csv').read_text().startswith('role,')
+    assert run_analysis_batch(batch_path)['summary']['reused'] == 1
+
+    from revise.batch.inputs import AnalysisInputs
+
+    views = AnalysisInputs.from_reconstruction(handoff)
+    if modality == 'sST':
+        baseline = views.sst_baseline()
+        assert baseline.observation_ids.equals(views.spatial().observation_ids)
+        raw = views.raw()
+        for spot in baseline.covered_raw_spots:
+            rows = baseline.adata.obs['spot_name'].eq(spot).to_numpy()
+            expected = raw.adata[[spot], :].X
+            expected = expected.toarray() if sparse.issparse(expected) else expected
+            np.testing.assert_allclose(np.asarray(baseline.X[rows].sum(axis=0)), expected)
+    else:
+        aligned = views.aligned_raw()
+        assert aligned.observation_ids.equals(views.spatial().observation_ids)
+        if modality == 'iST':
+            paired = views.paired()
+            means, _ = paired.cluster_means()
+            assert paired.map_to_spatial(means).shape[0] == aligned.adata.n_obs
+    views.close()

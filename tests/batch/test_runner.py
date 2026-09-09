@@ -104,8 +104,8 @@ def test_default_types_nested_discovery_and_safe_reuse(tmp_path, fake_solver, mo
     assert handoff['pairing']['status'] == 'available'
     assert handoff['outputs']['expression']['observation_role'] == 'reference_expression'
     assert handoff['analysis']['status'] == 'not_run'
-    assert (result_root(root) / 'T' / 'analysis' / 'partition').is_dir()
-    assert not (result_root(root) / 'T' / 'analysis' / 'partition' / 'raw').exists()
+    assert (result_root(root) / 'T' / 'analysis').is_dir()
+    assert not (result_root(root) / 'T' / 'analysis' / 'partition').exists()
     assert run_batch(config)['summary'] == {'succeeded': 0, 'failed': 0, 'reused': 3}
     assert len(fake_solver) == 3
     (result_root(root) / 'T' / 'spatial.h5ad').write_bytes(b'corrupt')
@@ -318,21 +318,23 @@ def test_blocked_sample_destination_does_not_stop_other_samples(tmp_path, fake_s
     assert report['summary'] == {'succeeded': 1, 'failed': 1, 'reused': 0}
 
 
-@pytest.mark.parametrize('change', ['add', 'remove', 'edit'])
-def test_ancestor_configuration_changes_invalidate_reuse(tmp_path, fake_solver, change):
+def test_configuration_changes_follow_effective_settings(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     root = tmp_path / 'data' / 'CRC' / 'one'
     make_sample(root, cell_types=['T'])
     parent = root.parent / 'batch.yaml'
-    if change != 'add':
-        parent.write_text('execution: {seed: 1}\n')
     config = batch_config(tmp_path)
     run_batch(config)
     assert run_batch(config)['summary']['reused'] == 1
-    if change == 'remove':
-        parent.unlink()
-    else:
-        parent.write_text('execution: {seed: 2}\n')
+
+    # The sample-level seed masks changes at the ancestor level, so the
+    # effective reconstruction configuration is unchanged and remains reusable.
+    parent.write_text('execution: {seed: 1}\n')
+    assert run_batch(config)['summary']['reused'] == 1
+
+    document = yaml.safe_load((root / 'batch.yaml').read_text())
+    document['execution']['seed'] = 7
+    (root / 'batch.yaml').write_text(yaml.safe_dump(document))
     assert run_batch(config)['summary']['succeeded'] == 1
 
 
@@ -387,3 +389,15 @@ def test_project_yaml_symlink_is_rejected_before_writing(tmp_path, fake_solver):
     with pytest.raises(ValueError, match='symlink'):
         run_batch(alias)
     assert not (tmp_path / 'results').exists()
+
+
+def test_analysis_configuration_does_not_invalidate_reconstruction(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    root = tmp_path / 'data' / 'one'
+    document = make_sample(root, cell_types=['T'])
+    config = batch_config(tmp_path)
+    assert run_batch(config)['summary']['succeeded'] == 1
+    document['analysis'] = {'partition': {'entrypoint': 'example:run', 'version': '1'}}
+    (root / 'batch.yaml').write_text(yaml.safe_dump(document))
+    assert run_batch(config)['summary'] == {'succeeded': 0, 'failed': 0, 'reused': 1}
+    assert fake_solver == ['T']

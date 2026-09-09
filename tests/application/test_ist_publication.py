@@ -105,6 +105,19 @@ def test_overflow_does_not_publish_nonfinite_mean(tmp_path):
     assert not output_paths(cfg)['svc'].exists()
 
 
+@pytest.mark.parametrize('mapping', ['mean', 'random'])
+def test_ist_assembly_rejects_duplicate_expression_genes_for_all_mappings(mapping):
+    from revise.application.ist_assembly import assemble_ist
+
+    inputs = carriers()
+    inputs['sc_svc_expr'].var_names = ['g1', 'g1']
+    with pytest.raises(ValueError, match='expression var_names must be unique'):
+        assemble_ist(
+            inputs['sc_svc_spatial'], inputs['sc_svc_expr'],
+            mapping=mapping, seed=42,
+        )
+
+
 def test_bad_cluster_sets_do_not_replace_prior_outputs(tmp_path):
     cfg = config(tmp_path, 'mean')
     inputs = carriers()

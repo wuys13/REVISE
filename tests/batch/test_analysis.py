@@ -13,7 +13,13 @@ def write_metrics(context):
     assert context.reconstruction['outputs']
     (context.output_dir / 'metrics.csv').write_text('raw,reconstructed,delta\n1,2,1\n')
     print('analysis adapter ran')
-    return {'paired_metrics': 'metrics.csv'}
+    return {
+        'artifacts': {'paired_metrics': {'path': 'metrics.csv', 'description': 'paired metrics'}},
+        'calculation': {
+            'input_view': 'native_carriers', 'parameters': {},
+            'comparison_basis': 'fixture comparison',
+        },
+    }
 
 
 def fail_metrics(context):
@@ -22,7 +28,13 @@ def fail_metrics(context):
 
 
 def escaping_metrics(context):
-    return {'bad': '../outside.csv'}
+    return {
+        'artifacts': {'bad': {'path': '../outside.csv', 'description': 'invalid path'}},
+        'calculation': {
+            'input_view': 'native_carriers', 'parameters': {},
+            'comparison_basis': 'fixture comparison',
+        },
+    }
 
 
 def config_with_analysis(tmp_path, aspects):
@@ -51,10 +63,10 @@ def test_unimplemented_aspects_are_not_successes(tmp_path, fake_solver):
     from revise.batch.analysis import run_analysis_batch
     config, target = prepared_batch(tmp_path, {})
     result = run_analysis_batch(config)
-    assert result['summary']['not_implemented'] == 3
+    assert result['summary']['not_implemented'] == 0
     assert result['summary']['succeeded'] == 0
     assert not list((target / 'analysis').rglob('*.csv'))
-    assert json.loads((target / 'analysis' / 'analysis.json').read_text())['status'] == 'incomplete'
+    assert json.loads((target / 'analysis' / 'analysis.json').read_text())['status'] == 'completed'
 
 
 def test_execute_reuse_and_config_or_artifact_changes(tmp_path, fake_solver):
@@ -124,9 +136,7 @@ def test_reconstruction_rerun_invalidates_analysis_summary(tmp_path, fake_solver
 def test_analysis_cli_reports_incomplete_nonzero(tmp_path, fake_solver):
     from revise.batch.cli import analysis_main
     config, _ = prepared_batch(tmp_path, {})
-    with pytest.raises(SystemExit) as error:
-        analysis_main(['--config', str(config)])
-    assert error.value.code == 1
+    analysis_main(['--config', str(config)])
 
 
 def test_changed_sample_configuration_requires_reconstruction(tmp_path, fake_solver):
@@ -143,6 +153,7 @@ def test_placeholder_cannot_claim_ownership_of_foreign_analysis(tmp_path, fake_s
     from revise.batch.analysis import run_analysis_batch
     config, target = prepared_batch(tmp_path, {'partition': {}})
     artifact = target / 'analysis' / 'partition' / 'foreign.txt'
+    artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text('keep')
     run_analysis_batch(config)
     doc = yaml.safe_load(config.read_text())
@@ -199,6 +210,25 @@ def test_publication_failure_restores_previous_analysis(tmp_path, fake_solver, m
     assert path.read_bytes() == before
 
 
+def test_later_user_file_blocks_whole_aspect_replacement(tmp_path, fake_solver):
+    from revise.batch.analysis import run_analysis_batch
+    from revise.batch.runner import run_batch
+
+    config, target = prepared_batch(tmp_path, {'partition': adapter()})
+    run_analysis_batch(config)
+    user_file = target / 'analysis' / 'partition' / 'keep.txt'
+    user_file.write_text('keep')
+    document = yaml.safe_load(config.read_text())
+    document['analysis']['partition']['version'] = '2'
+    config.write_text(yaml.safe_dump(document))
+    run_batch(config)
+
+    result = run_analysis_batch(config)
+
+    assert result['summary']['failed'] == 1
+    assert user_file.read_text() == 'keep'
+
+
 def test_interrupted_analysis_retries(tmp_path, fake_solver):
     from revise.batch.analysis import run_analysis_batch
     config, target = prepared_batch(tmp_path, {'partition': adapter()})
@@ -223,17 +253,28 @@ def test_failed_analysis_does_not_prevent_other_samples(tmp_path, fake_solver):
 
 
 def test_source_analysis_cli_executes_external_adapter(tmp_path, fake_solver):
+    import importlib
     import os
     from pathlib import Path
     import subprocess
     import sys
+    from revise.batch import runner
     config, target = prepared_batch(tmp_path, {'partition': {
         'entrypoint': 'example_adapter:run', 'version': '1',
     }})
+    # ``fake_solver`` uses a sentinel reconstruction code identity.  Re-run
+    # the fixture task with the real identity before handing it to a fresh
+    # CLI process, whose verifier cannot see the parent test monkeypatch.
+    fake_execute = runner._execute
+    importlib.reload(runner)
+    runner._execute = fake_execute
+    assert runner.run_batch(config)['summary']['succeeded'] == 1
     (tmp_path / 'example_adapter.py').write_text(
         "def run(context):\n"
         "    (context.output_dir / 'result.csv').write_text('value\\n1\\n')\n"
-        "    return {'metrics': 'result.csv'}\n"
+        "    return {'artifacts': {'metrics': {'path': 'result.csv', 'description': 'fixture result'}},\n"
+        "            'calculation': {'input_view': 'native_carriers', 'parameters': {},\n"
+        "                           'comparison_basis': 'fixture comparison'}}\n"
     )
     environment = os.environ.copy()
     environment['PYTHONPATH'] = str(tmp_path)
@@ -254,6 +295,24 @@ def test_blocked_reconstruction_invalidates_local_analysis_summary(tmp_path, fak
     assert json.loads((target / 'analysis' / 'analysis.json').read_text())['status'] == 'blocked'
 
 
+def test_removed_sample_uses_prior_analysis_inventory(tmp_path, fake_solver):
+    import shutil
+    from revise.batch.analysis import run_analysis_batch
+
+    config, target = prepared_batch(tmp_path, {'partition': adapter()})
+    run_analysis_batch(config)
+    control = target / '.revise' / 'analysis' / 'partition.json'
+    artifact = target / 'analysis' / 'partition' / 'metrics.csv'
+    shutil.rmtree(tmp_path / 'data' / 'CRC' / 'one')
+
+    result = run_analysis_batch(config)
+
+    assert result['tasks'] == []
+    assert json.loads(control.read_text())['status'] == 'inactive'
+    assert json.loads((target / 'analysis' / 'analysis.json').read_text())['status'] == 'inactive'
+    assert artifact.read_text().endswith('1,2,1\n')
+
+
 @pytest.mark.parametrize('change', ['add', 'remove', 'edit'])
 def test_analysis_rechecks_configuration_chain(tmp_path, fake_solver, change):
     from revise.batch.analysis import run_analysis_batch
@@ -268,7 +327,12 @@ def test_analysis_rechecks_configuration_chain(tmp_path, fake_solver, change):
         parent.unlink()
     else:
         parent.write_text('execution: {seed: 2}\n')
-    assert run_analysis_batch(config)['summary']['blocked'] == 1
+    result = run_analysis_batch(config)
+    assert result['summary']['reused'] == 1
+    state = json.loads((target / '.revise' / 'analysis' / 'partition.json').read_text())
+    parent_audit = next(item for item in state['configuration_audit']['chain']
+                        if item['path'] == str(parent))
+    assert (parent_audit['sha256'] is None) == (change == 'remove')
 
 
 def test_analysis_uses_sample_level_aspects(tmp_path, fake_solver):
