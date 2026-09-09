@@ -42,9 +42,15 @@ def make_sample(root, *, sample_id='sample', modality='iST', cell_types=None):
     return document
 
 
+def result_root(root):
+    parts = list(root.parts)
+    parts[parts.index('data')] = 'results'
+    return type(root)(*parts)
+
+
 def batch_config(tmp_path):
     path = tmp_path / 'batch.yaml'
-    path.write_text(yaml.safe_dump({'schema_version': 1, 'data_root': 'data'}))
+    path.write_text(yaml.safe_dump({'schema_version': 1, 'input_root': 'data', 'output_root': 'results'}))
     return path
 
 
@@ -94,17 +100,17 @@ def test_default_types_nested_discovery_and_safe_reuse(tmp_path, fake_solver, mo
     result = run_batch(config)
     assert result['summary'] == {'succeeded': 3, 'failed': 0, 'reused': 0}
     assert fake_solver == ['T', 'Macro', 'Fibroblast']
-    handoff = json.loads((root / 'T' / 'reconstruction.json').read_text())
+    handoff = json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())
     assert handoff['status'] == 'succeeded'
     assert handoff['ist_mapping'] == 'paired'
     assert handoff['pairing']['status'] == 'available'
     assert handoff['outputs']['expression']['observation_role'] == 'reference_expression'
     assert handoff['analysis']['status'] == 'not_run'
-    assert (root / 'T' / 'analysis' / 'partition').is_dir()
-    assert not (root / 'T' / 'analysis' / 'partition' / 'raw').exists()
+    assert (result_root(root) / 'T' / 'analysis' / 'partition').is_dir()
+    assert not (result_root(root) / 'T' / 'analysis' / 'partition' / 'raw').exists()
     assert run_batch(config)['summary'] == {'succeeded': 0, 'failed': 0, 'reused': 3}
     assert len(fake_solver) == 3
-    (root / 'T' / 'spatial.h5ad').write_bytes(b'corrupt')
+    (result_root(root) / 'T' / 'spatial.h5ad').write_bytes(b'corrupt')
     assert run_batch(config)['summary'] == {'succeeded': 1, 'failed': 0, 'reused': 2}
 
 
@@ -123,7 +129,7 @@ def test_failure_isolated_and_stale_success_invalidated(tmp_path, fake_solver):
         assert runner.run_batch(config)['summary']['failed'] == 3
     finally:
         runner._execute = original
-    assert json.loads((root / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
     assert runner.run_batch(config)['summary'] == {'succeeded': 2, 'failed': 1, 'reused': 0}
 
 
@@ -142,8 +148,8 @@ def test_non_ist_output_and_pairing_roles(tmp_path, fake_solver, modality):
     root = tmp_path / 'data' / 'one'
     make_sample(root, modality=modality)
     assert run_batch(batch_config(tmp_path))['summary']['succeeded'] == 1
-    assert (root / 'SVC.h5ad').exists()
-    handoff = json.loads((root / 'reconstruction.json').read_text())
+    assert (result_root(root) / 'SVC.h5ad').exists()
+    handoff = json.loads((result_root(root) / 'reconstruction.json').read_text())
     assert handoff['pairing']['status'] == ('unavailable' if modality == 'sST' else 'available')
 
 
@@ -153,7 +159,7 @@ def test_interrupted_task_and_changed_code_rerun(tmp_path, fake_solver, monkeypa
     make_sample(root, cell_types=['T'])
     config = batch_config(tmp_path)
     runner.run_batch(config)
-    state_path = root / 'T' / '.revise' / 'task.json'
+    state_path = result_root(root) / 'T' / '.revise' / 'task.json'
     state = json.loads(state_path.read_text())
     state['status'] = 'running'
     state_path.write_text(json.dumps(state))
@@ -179,7 +185,7 @@ def test_preparation_failure_invalidates_old_handoff(tmp_path, fake_solver):
     run_batch(config)
     (root / 'source.h5ad').unlink()
     assert run_batch(config)['summary']['failed'] == 1
-    assert json.loads((root / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
 
 
 def test_renamed_sample_and_removed_types_do_not_reuse_old_handoffs(tmp_path, fake_solver):
@@ -192,9 +198,9 @@ def test_renamed_sample_and_removed_types_do_not_reuse_old_handoffs(tmp_path, fa
     doc['local_refinement']['cell_types'] = ['T']
     (root / 'sample.yaml').write_text(yaml.safe_dump(doc))
     assert run_batch(config)['summary']['succeeded'] == 1
-    assert json.loads((root / 'T' / 'reconstruction.json').read_text())['sample_id'] == 'renamed'
-    assert json.loads((root / 'Macro' / 'reconstruction.json').read_text())['status'] == 'inactive'
-    assert (root / 'Macro' / 'spatial.h5ad').exists()
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['sample_id'] == 'renamed'
+    assert json.loads((result_root(root) / 'Macro' / 'reconstruction.json').read_text())['status'] == 'inactive'
+    assert (result_root(root) / 'Macro' / 'spatial.h5ad').exists()
 
 
 @pytest.mark.parametrize('obstruction', ['file', 'symlink'])
@@ -204,10 +210,11 @@ def test_bad_task_directory_does_not_stop_other_tasks(tmp_path, fake_solver, obs
     make_sample(root, cell_types=['T', 'Macro'])
     external = tmp_path / 'external'
     external.mkdir()
+    result_root(root).mkdir(parents=True)
     if obstruction == 'file':
-        (root / 'T').write_text('keep me')
+        (result_root(root) / 'T').write_text('keep me')
     else:
-        (root / 'T').symlink_to(external, target_is_directory=True)
+        (result_root(root) / 'T').symlink_to(external, target_is_directory=True)
     assert run_batch(batch_config(tmp_path))['summary'] == {'succeeded': 1, 'failed': 1, 'reused': 0}
     assert list(external.iterdir()) == []
 
@@ -220,9 +227,9 @@ def test_publication_cannot_overwrite_original_input(tmp_path, fake_solver):
     doc['inputs']['st']['path'] = 'SVC.h5ad'
     (root / 'sample.yaml').write_text(yaml.safe_dump(doc))
     original = (root / 'SVC.h5ad').read_bytes()
-    assert run_batch(batch_config(tmp_path))['summary']['failed'] == 1
+    assert run_batch(batch_config(tmp_path))['summary']['succeeded'] == 1
     assert (root / 'SVC.h5ad').read_bytes() == original
-    assert not fake_solver
+    assert (result_root(root) / 'SVC.h5ad').exists()
 
 
 def test_cli_nonzero_for_partial_failure(tmp_path, fake_solver):
@@ -241,7 +248,8 @@ def test_sample_status_symlink_does_not_write_outside_package(tmp_path, fake_sol
     make_sample(root, cell_types=['T'])
     external = tmp_path / 'external'
     external.mkdir()
-    (root / '.revise').symlink_to(external, target_is_directory=True)
+    result_root(root).mkdir(parents=True)
+    (result_root(root) / '.revise').symlink_to(external, target_is_directory=True)
     result = run_batch(batch_config(tmp_path))
     assert result['summary']['failed'] == 1
     assert not list(external.iterdir())
@@ -260,7 +268,7 @@ def test_changed_input_during_reconstruction_is_not_published_as_success(tmp_pat
         return result
     monkeypatch.setattr(runner, '_execute', changing_source)
     assert runner.run_batch(batch_config(tmp_path))['summary']['failed'] == 1
-    assert json.loads((root / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
 
 
 def test_task_config_failure_invalidates_previous_success(tmp_path, fake_solver):
@@ -272,7 +280,7 @@ def test_task_config_failure_invalidates_previous_success(tmp_path, fake_solver)
     document['output']['name'] = 'forbidden'
     (root / 'sample.yaml').write_text(yaml.safe_dump(document))
     assert run_batch(config)['summary']['failed'] == 1
-    assert json.loads((root / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
 
 
 def test_symlink_sample_yaml_cannot_relocate_package(tmp_path, fake_solver):
@@ -285,3 +293,34 @@ def test_symlink_sample_yaml_cannot_relocate_package(tmp_path, fake_solver):
     assert run_batch(batch_config(tmp_path))['summary']['failed'] == 1
     assert not (external / 'inputs').exists()
     assert not fake_solver
+
+
+def test_reconstruction_writes_only_prepared_inputs_to_input_tree(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    root = tmp_path / 'data' / 'CRC' / 'one'
+    make_sample(root)
+    run_batch(batch_config(tmp_path))
+    assert sorted(p.name for p in root.iterdir()) == ['inputs', 'reference.h5ad', 'sample.yaml', 'source.h5ad']
+    assert not (tmp_path / 'data' / 'batch_status.json').exists()
+    assert (tmp_path / 'results' / 'batch_status.json').is_file()
+
+
+@pytest.mark.parametrize('output', ['data', 'data/results', '.'])
+def test_input_output_roots_must_not_overlap(tmp_path, fake_solver, output):
+    from revise.batch.runner import run_batch
+    make_sample(tmp_path / 'data' / 'one')
+    config = batch_config(tmp_path)
+    config.write_text(yaml.safe_dump({'schema_version': 1, 'input_root': 'data', 'output_root': output}))
+    with pytest.raises(ValueError, match='overlap'):
+        run_batch(config)
+    assert not fake_solver
+
+
+def test_blocked_sample_destination_does_not_stop_other_samples(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    make_sample(tmp_path / 'data' / 'one', sample_id='one', cell_types=['T'])
+    make_sample(tmp_path / 'data' / 'two', sample_id='two', cell_types=['T'])
+    (tmp_path / 'results').mkdir()
+    (tmp_path / 'results' / 'one').write_text('keep')
+    report = run_batch(batch_config(tmp_path))
+    assert report['summary'] == {'succeeded': 1, 'failed': 1, 'reused': 0}

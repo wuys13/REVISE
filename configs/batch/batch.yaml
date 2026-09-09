@@ -1,3 +1,14 @@
 schema_version: 1
-# Relative to this YAML, independent of the command's launch directory.
-data_root: ../../data
+# Both roots are relative to this YAML. They must be separate, non-overlapping trees.
+input_root: ../../data/input
+output_root: ../../data/output
+# No algorithms are connected by default; these report not_implemented.
+analysis:
+  partition: {}
+  spatial_diversity: {}
+  spatial_regions: {}
+# To connect an installed analysis module, replace an aspect's {} with:
+#   entrypoint: project_impact.partition:run
+#   version: "1"  # Bump when algorithm dependencies change.
+#   requires_pairing: true
+#   parameters: {}

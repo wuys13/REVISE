@@ -91,7 +91,7 @@ def _cell_types(document: dict) -> list[str | None]:
     return labels
 
 
-def application_document(sample, cell_type: str | None) -> dict:
+def application_document(sample, cell_type: str | None, output_root: Path) -> dict:
     """Translate package paths to the unchanged single-run root-path contract."""
     doc = deepcopy(sample.document)
     for field in ('sample', 'preparation'):
@@ -111,8 +111,8 @@ def application_document(sample, cell_type: str | None) -> dict:
     local.pop('cell_types', None)
     output = doc.setdefault('output', {})
     if set(output) - {'ist_mapping'}:
-        raise ValueError('sample output only accepts ist_mapping; output locations are package-owned')
-    output['dir'] = str(sample.root).lstrip('/')
+        raise ValueError('sample output only accepts ist_mapping; output locations are batch-owned')
+    output['dir'] = str(output_root).lstrip('/')
     if sample.modality == 'iST':
         local['select_cell_type'] = cell_type
         output.setdefault('ist_mapping', 'paired')
@@ -193,17 +193,17 @@ def _handoff(sample, config, paths: dict, fingerprint: str) -> dict:
         'coordinates': sample.metadata['coordinates'], 'pairing': pairing,
         'expression_semantics': ('reference_expression_by_cluster_' + mapping
                                  if mapping in {'mean', 'random'} else 'native_reconstruction_carriers'),
-        'analysis': {'status': 'not_run', 'aspects': {name: f'analysis/{name}' for name in ANALYSIS_ASPECTS},
+        'analysis': {'status': 'not_run', 'state_path': 'analysis/analysis.json', 'aspects': {name: f'analysis/{name}' for name in ANALYSIS_ASPECTS},
                      'storage': 'paired observations/windows share tables; independent axes use separate files',
                      'current_ist_spatial_carrier_contract': mapping == 'paired' if sample.modality == 'iST' else None},
     }
 
 
-def _run_task(sample, cell_type: str | None, code: dict) -> dict:
+def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> dict:
     from revise.application.config import compile_application_config, load_application_yaml
     from revise.application.publication import output_paths
 
-    root = sample.root / cell_type if cell_type is not None else sample.root
+    root = output_root / cell_type if cell_type is not None else output_root
     control = root / '.revise'
     state_path = control / 'task.json'
     handoff_path = root / 'reconstruction.json'
@@ -212,9 +212,9 @@ def _run_task(sample, cell_type: str | None, code: dict) -> dict:
     writable = False
     try:
         for directory in (root, control, root / 'analysis'):
-            if directory.is_symlink() or not directory.resolve().is_relative_to(sample.root):
+            if directory.is_symlink() or not directory.resolve().is_relative_to(output_root):
                 raise ValueError(f'Package output directory must not be a symlink: {directory}')
-        document = application_document(sample, cell_type)
+        document = application_document(sample, cell_type, output_root)
         source_paths = [Path(item['path']) for item in sample.metadata['sources'].values()]
         source_paths.extend((sample.st_path, sample.reference_path))
         prior = document['inputs'].get('pm_on_cell')
@@ -235,7 +235,7 @@ def _run_task(sample, cell_type: str | None, code: dict) -> dict:
         config_path.write_text(yaml.safe_dump(document, sort_keys=False))
         source, loaded = load_application_yaml(config_path)
         config = compile_application_config(loaded, source=source)
-        identities = {'spatial': file_identity(sample.st_path), 'reference': file_identity(sample.reference_path)}
+        identities = {'sample_yaml': file_identity(sample.root / 'sample.yaml'), 'spatial': file_identity(sample.st_path), 'reference': file_identity(sample.reference_path)}
         if config.pm_on_cell_path is not None:
             identities['pm_on_cell'] = file_identity(config.pm_on_cell_path)
         fingerprint = _digest({'sample': sample.document['sample'], 'inputs': identities, 'preparation': sample.metadata,
@@ -244,6 +244,7 @@ def _run_task(sample, cell_type: str | None, code: dict) -> dict:
             return dict(result, status='reused')
         state.update(fingerprint=fingerprint, code=code, inputs=identities)
         _json(state_path, state)
+        _json(root / 'analysis' / 'analysis.json', {'status': 'not_run', 'reconstruction_fingerprint': fingerprint})
         _json(handoff_path, dict(result, schema_version=1, status='running'))
         returncode = _execute(config_path, control / 'reconstruction.log')
         if returncode:
@@ -268,7 +269,7 @@ def _run_task(sample, cell_type: str | None, code: dict) -> dict:
             _json(state_path, dict(state, status='failed', error=error))
             _json(handoff_path, dict(result, schema_version=1, status='failed', error=error))
         else:
-            _invalidate_handoffs(sample.root, status='failed', only=root)
+            _invalidate_handoffs(output_root, status='failed', only=root)
         return dict(result, status='failed', error=error)
 
 
@@ -301,29 +302,54 @@ def _batch_lock(root: Path):
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise RuntimeError('Another batch is already using this data_root') from exc
+            raise RuntimeError('Another batch is already using this output_root') from exc
         try:
             yield
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def run_batch(config_path: str | Path) -> dict:
-    """Prepare samples and run each task; return the persisted batch report."""
+def load_batch_config(config_path: str | Path) -> tuple[dict, Path, Path]:
+    """Resolve separate input/output trees independently of the working directory."""
     config_path = Path(config_path).resolve()
     batch = yaml.safe_load(config_path.read_text())
-    if (not isinstance(batch, dict) or batch.get('schema_version') != 1
-            or set(batch) != {'schema_version', 'data_root'} or not isinstance(batch['data_root'], str)):
-        raise ValueError('batch YAML requires schema_version: 1 and data_root')
-    root = Path(batch['data_root'])
-    root = (config_path.parent / root).resolve() if not root.is_absolute() else root.resolve()
+    required = {'schema_version', 'input_root', 'output_root'}
+    if (not isinstance(batch, dict) or type(batch.get('schema_version')) is not int
+            or batch['schema_version'] != 1 or not required <= set(batch)
+            or set(batch) - required - {'analysis'}):
+        raise ValueError('batch YAML requires schema_version: 1, input_root and output_root; optional analysis')
+    roots = []
+    for key in ('input_root', 'output_root'):
+        value = batch[key]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f'{key} must be a non-empty path')
+        roots.append((config_path.parent / value).resolve())
+    root, output = roots
+    if root.is_relative_to(output) or output.is_relative_to(root):
+        raise ValueError('input_root and output_root must not overlap')
     if not root.is_dir():
-        raise ValueError(f'data_root is not a directory: {root}')
-    with _batch_lock(root):
-        return _run_samples(root)
+        raise ValueError(f'input_root is not a directory: {root}')
+    return batch, root, output
 
 
-def _run_samples(root: Path) -> dict:
+def _output_directory(output: Path, relative: Path) -> Path:
+    directory = output
+    for part in relative.parts:
+        directory = directory / part
+        if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+            raise ValueError(f'Output directory must be an ordinary directory: {directory}')
+    return directory
+
+
+def run_batch(config_path: str | Path) -> dict:
+    """Prepare inputs and reconstruct into a separate output tree."""
+    _, root, output = load_batch_config(config_path)
+    output.mkdir(parents=True, exist_ok=True)
+    with _batch_lock(output):
+        return _run_samples(root, output)
+
+
+def _run_samples(root: Path, output: Path) -> dict:
     paths = sorted(root.rglob('sample.yaml'))
     if not paths:
         raise ValueError(f'No sample.yaml files under {root}')
@@ -340,13 +366,17 @@ def _run_samples(root: Path) -> dict:
         except Exception as exc:
             entries.append((path, None, None, f'{type(exc).__name__}: {exc}'))
     counts = Counter(item[2] for item in entries if item[2] is not None)
-    report = {'schema_version': 1, 'status': 'running', 'data_root': str(root), 'tasks': [], 'summary': {}}
-    report_path = root / 'batch_status.json'
+    report = {'schema_version': 1, 'status': 'running', 'input_root': str(root), 'output_root': str(output), 'tasks': [], 'summary': {}}
+    report_path = output / 'batch_status.json'
     _json(report_path, report)
     code = _code_identity()
     for path, document, sample_id, error in entries:
+        destination = output / path.parent.relative_to(root)
+        sample_control = destination / '.revise'
+        safe_destination = False
         try:
-            sample_control = path.parent / '.revise'
+            _output_directory(output, path.parent.relative_to(root))
+            safe_destination = True
             if sample_control.is_symlink() or (sample_control.exists() and not sample_control.is_dir()):
                 raise ValueError(f'Sample control directory must be an ordinary directory: {sample_control}')
             if error:
@@ -360,15 +390,16 @@ def _run_samples(root: Path) -> dict:
         except Exception as exc:
             task = {'sample_id': sample_id, 'sample_yaml': str(path), 'status': 'failed', 'error': f'{type(exc).__name__}: {exc}'}
             report['tasks'].append(task)
-            _invalidate_handoffs(path.parent, status='failed')
-            if not sample_control.is_symlink() and (not sample_control.exists() or sample_control.is_dir()):
+            if safe_destination:
+                _invalidate_handoffs(destination, status='failed')
+            if safe_destination and not sample_control.is_symlink() and (not sample_control.exists() or sample_control.is_dir()):
                 _json(sample_control / 'sample.json', task)
         else:
-            active = {sample.root / label if label is not None else sample.root for label in labels}
-            _invalidate_handoffs(sample.root, status='inactive', active=active)
-            _json(path.parent / '.revise' / 'sample.json', {'sample_id': sample_id, 'status': 'prepared'})
+            active = {destination / label if label is not None else destination for label in labels}
+            _invalidate_handoffs(destination, status='inactive', active=active)
+            _json(sample_control / 'sample.json', {'sample_id': sample_id, 'status': 'prepared'})
             for label in labels:
-                report['tasks'].append(_run_task(sample, label, code))
+                report['tasks'].append(_run_task(sample, label, code, destination))
                 _json(report_path, report)
         _json(report_path, report)
     summary = Counter(task['status'] for task in report['tasks'])

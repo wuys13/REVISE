@@ -35,8 +35,8 @@ def test_build_and_ci_do_not_reference_removed_maintenance_surfaces():
         assert removed not in ci
 
 
-def test_repository_root_exposes_single_and_batch_reconstruction_scripts():
-    assert {path.name for path in ROOT.glob("*.py")} == {"reconstruct.py", "batch_reconstruct.py"}
+def test_repository_root_exposes_single_reconstruction_and_batch_scripts():
+    assert {path.name for path in ROOT.glob("*.py")} == {"reconstruct.py", "batch_reconstruct.py", "batch_analyze.py"}
     assert not (ROOT / "benchmark_main.sh").exists()
 
 

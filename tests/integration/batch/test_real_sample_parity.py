@@ -108,22 +108,24 @@ def test_real_batch_matches_direct_single_run(tmp_path, modality):
 
     sample_path = _sample(tmp_path / 'data' / 'CRC' / modality, modality)
     batch_path = tmp_path / 'batch.yaml'
-    batch_path.write_text(yaml.safe_dump({'schema_version': 1, 'data_root': 'data'}))
+    batch_path.write_text(yaml.safe_dump({'schema_version': 1, 'input_root': 'data', 'output_root': 'results'}))
     report = run_batch(batch_path)
     if report['summary']['failed']:
-        logs = {str(path): path.read_text()[-12000:] for path in sample_path.parent.rglob('reconstruction.log')}
+        logs = {str(path): path.read_text()[-12000:] for path in (tmp_path / 'results').rglob('reconstruction.log')}
         pytest.fail(f'Actual batch route failed: {json.dumps(report)}\nLogs: {logs}')
     assert report['summary'] == {'succeeded': 1, 'failed': 0, 'reused': 0}
 
     prepared = prepare_sample(sample_path)
-    document = deepcopy(application_document(prepared, 'T' if modality == 'iST' else None))
+    document = deepcopy(application_document(prepared, 'T' if modality == 'iST' else None, tmp_path / 'direct'))
     document['output']['dir'] = str(tmp_path / 'direct').lstrip('/')
     direct_yaml = tmp_path / 'direct.yaml'
     direct_yaml.write_text(yaml.safe_dump(document))
     run_application(direct_yaml)
     source, loaded = load_application_yaml(direct_yaml)
     direct_config = compile_application_config(loaded, source=source)
-    batch_root = sample_path.parent / 'T' if modality == 'iST' else sample_path.parent
+    batch_root = tmp_path / 'results' / 'CRC' / modality
+    if modality == 'iST':
+        batch_root /= 'T'
     handoff = json.loads((batch_root / 'reconstruction.json').read_text())
     assert handoff['analysis']['status'] == 'not_run'
     for role, direct_path in output_paths(direct_config).items():

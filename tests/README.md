@@ -85,6 +85,7 @@ environment variables documented in their modules and CI jobs.
 | `application/test_ist_publication.py` | iST publication | Paired identity, mean/random assembly and transactional switching | Output-mode edits | Small synthetic carriers only |
 | `batch/test_sample.py` | Standard packages | Explicit metadata, source preservation and preparation reuse | Intake edits | H5AD fixtures and isolated SpatialData-reader boundary |
 | `batch/test_runner.py` | Batch execution and handoff | Failure isolation, invalidation, path safety and pairing roles | Batch lifecycle edits | Solver stand-in; no scientific validation |
+| `batch/test_analysis.py` | Analysis adapters | Execution, reuse, prerequisites, failures and rollback | Analysis framework edits | Actual fixture adapters; no impact algorithms |
 | `batch/test_cli.py` | Batch entrypoints | Source help and installed script declarations | CLI/package edits | Declaration and launch behavior |
 | `integration/batch/test_real_sample_parity.py` | Real route integration | Batch/direct parity for hST, iST, sST | Batch/application integration | Opt-in bounded real subsets; not full protocols |
 | `repository/test_case_notebook_style_contract.py` | Case notebook source | Static presentation and workflow contract | Notebook edits | No execution evidence |

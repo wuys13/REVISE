@@ -50,6 +50,7 @@ dependencies = [
 [project.scripts]
 revise-reconstruct = "reconstruct:main"
 revise-batch-reconstruct = "revise.batch.cli:main"
+revise-batch-analyze = "revise.batch.cli:analysis_main"
 revise-prepare-sample = "revise.batch.cli:prepare_main"
 revise-build-histology-priors = "revise.preprocess.cli:main"
 revise-prepare-sim2real-pseudospots = "revise.preprocess.sim2real_pseudospot.cli:main"

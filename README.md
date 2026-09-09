@@ -20,11 +20,11 @@ workflows used to study reconstruction under controlled confounding factors.
 
 ## Install
 
-The `revise-2.0` branch also supports [batch reconstruction and analysis
-handoff](docs/source/batch-reconstruction.rst): one `sample.yaml` per spatial
-sample, explicit references, and resumable per-type iST tasks. Start with the
-[batch templates](configs/batch/). This framework prepares analysis inputs and
-directories; it does not run reconstruction-impact analysis.
+The `revise-2.0` branch also supports [batch reconstruction and analysis](docs/source/batch-reconstruction.rst):
+separate standard input and output trees, one `sample.yaml` per spatial sample,
+resumable reconstruction and configurable analysis adapters. Start with the
+[batch templates](configs/batch/). Reconstruction-impact algorithms remain in
+their development branch; missing adapters are reported as `not_implemented`.
 
 REVISE supports Python 3.10 and 3.11.
 

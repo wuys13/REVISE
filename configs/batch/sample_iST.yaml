@@ -1,4 +1,4 @@
-# Copy this file to <data_root>/<optional classification>/<sample>/sample.yaml.
+# Copy this file to <input_root>/<optional classification>/<sample>/sample.yaml.
 schema_version: 1
 sample:
   id: sample_001 # EDIT: unique within the batch.
