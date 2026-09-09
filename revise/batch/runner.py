@@ -1,0 +1,378 @@
+"""Sequential reconstruction of explicit sample packages, with verified reuse."""
+from __future__ import annotations
+
+from collections import Counter
+from contextlib import contextmanager
+from copy import deepcopy
+from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from tempfile import NamedTemporaryFile
+import traceback
+
+import yaml
+
+from .sample import file_identity, prepare_sample
+
+
+DEFAULT_CELL_TYPES = ['T', 'Macro', 'Fibroblast']
+ANALYSIS_ASPECTS = ('partition', 'spatial_diversity', 'spatial_regions')
+ROUTES = {'hST': {'svc_type': 'sp-SVC'},
+          'iST': {'svc_type': 'sc-SVC', 'mode': 'cluster'},
+          'sST': {'svc_type': 'sc-SVC', 'mode': 'sr'}}
+
+
+def _json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with NamedTemporaryFile(mode='w', dir=path.parent, delete=False, encoding='utf-8') as handle:
+            temporary = Path(handle.name)
+            json.dump(value, handle, indent=2, allow_nan=False)
+            handle.write('\n')
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text())
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _digest(value) -> str:
+    return sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _code_identity() -> dict:
+    """Hash installed/source runtime files, including uncommitted edits."""
+    package = Path(__file__).resolve().parents[1]
+    files = sorted(package.rglob('*.py')) + sorted(package.rglob('*.yaml'))
+    import reconstruct
+    files.append(Path(reconstruct.__file__).resolve())
+    digest = sha256()
+    for path in files:
+        digest.update(str(path.relative_to(package.parent)).encode())
+        digest.update(path.read_bytes())
+    dependencies = {}
+    for name in ('numpy', 'scipy', 'anndata', 'scanpy', 'POT', 'tacco', 'igraph', 'leidenalg'):
+        try:
+            dependencies[name] = version(name)
+        except PackageNotFoundError:
+            dependencies[name] = None
+    return {'sha256': digest.hexdigest(), 'python': sys.version, 'dependencies': dependencies}
+
+
+def _cell_types(document: dict) -> list[str | None]:
+    modality = document['sample']['modality']
+    if modality not in ROUTES:
+        raise ValueError('sample.modality must be hST, iST, or sST')
+    if modality != 'iST':
+        return [None]
+    labels = document.get('local_refinement', {}).get('cell_types', DEFAULT_CELL_TYPES)
+    if not isinstance(labels, list) or not labels:
+        raise ValueError('local_refinement.cell_types must be a non-empty list')
+    reserved = {'inputs', 'analysis', '.', '..', '.revise'}
+    for label in labels:
+        if (not isinstance(label, str) or not label.strip() or label != label.strip()
+                or '/' in label or '\\' in label or any(ord(c) < 32 for c in label)
+                or label.casefold() in reserved or label.startswith('.')):
+            raise ValueError(f'Unsafe cell type directory: {label!r}; use an explicit label mapping')
+    if len({label.casefold() for label in labels}) != len(labels):
+        raise ValueError('cell_types contain duplicate or colliding directory names')
+    return labels
+
+
+def application_document(sample, cell_type: str | None) -> dict:
+    """Translate package paths to the unchanged single-run root-path contract."""
+    doc = deepcopy(sample.document)
+    for field in ('sample', 'preparation'):
+        doc.pop(field, None)
+    doc['application'] = dict(ROUTES[sample.modality])
+    doc['paths'] = {'root_dir': '/'}
+    doc['inputs']['st'] = {'path': str(sample.st_path).lstrip('/'), 'format': 'h5ad'}
+    doc['inputs']['reference']['path'] = str(sample.reference_path).lstrip('/')
+    doc['inputs']['reference']['format'] = 'h5ad'
+    prior = doc['inputs'].get('pm_on_cell')
+    if prior is not None:
+        source = Path(prior['path'])
+        if not source.is_absolute():
+            source = sample.root / source
+        prior['path'] = str(source.resolve()).lstrip('/')
+    local = doc['local_refinement']
+    local.pop('cell_types', None)
+    output = doc.setdefault('output', {})
+    if set(output) - {'ist_mapping'}:
+        raise ValueError('sample output only accepts ist_mapping; output locations are package-owned')
+    output['dir'] = str(sample.root).lstrip('/')
+    if sample.modality == 'iST':
+        local['select_cell_type'] = cell_type
+        output.setdefault('ist_mapping', 'paired')
+    else:
+        output['name'] = 'SVC'
+    return doc
+
+
+def _execute(config_path: Path, log_path: Path) -> int:
+    environment = os.environ.copy()
+    package_root = str(Path(__file__).resolve().parents[2])
+    environment['PYTHONPATH'] = os.pathsep.join(filter(None, (package_root, environment.get('PYTHONPATH'))))
+    with log_path.open('w') as log:
+        process = subprocess.run(
+            [sys.executable, '-m', 'reconstruct', '--config', str(config_path)],
+            stdout=log, stderr=subprocess.STDOUT, env=environment,
+        )
+    return process.returncode
+
+
+def _reusable(state: dict, fingerprint: str) -> bool:
+    if state.get('status') != 'succeeded' or state.get('fingerprint') != fingerprint:
+        return False
+    artifacts = state.get('artifacts', [])
+    if not artifacts:
+        return False
+    try:
+        return all(file_identity(Path(item['path'])) == item for item in artifacts)
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def _handoff(sample, config, paths: dict, fingerprint: str) -> dict:
+    import anndata as ad
+    import numpy as np
+
+    outputs = {}
+    provenance = {}
+    spatial_path = paths.get('spatial', paths.get('svc'))
+    with_source = ad.read_h5ad(sample.st_path, backed='r')
+    raw_ids = with_source.obs_names.copy()
+    raw_coordinates = np.asarray(with_source.obsm['spatial'])
+    with_source.file.close()
+    pairing = {'status': 'unavailable', 'reason': 'generated_spatial_units' if sample.modality == 'sST' else 'unverified',
+               'raw_observations': len(raw_ids), 'id_key': 'obs_names'}
+    for role, path in paths.items():
+        data = ad.read_h5ad(path, backed='r')
+        try:
+            record = file_identity(path)
+            record.update(shape=list(data.shape), observation_role=(
+                'reference_expression' if role == 'expression' else
+                'generated_spatial_units' if sample.modality == 'sST' else 'spatial_units'))
+            outputs[role] = record
+            metadata = data.uns.get('revise_reconstruction', {})
+            manifest = metadata.get('run_manifest')
+            if manifest:
+                provenance[role] = file_identity(Path(manifest))
+            if path == spatial_path and sample.modality != 'sST':
+                ids = data.obs_names
+                indexer = raw_ids.get_indexer(ids)
+                coordinates = data.obsm.get('spatial')
+                paired = (ids.is_unique and len(ids) > 0 and (indexer >= 0).all()
+                          and coordinates is not None
+                          and np.asarray(coordinates).shape == raw_coordinates[indexer].shape
+                          and np.array_equal(np.asarray(coordinates), raw_coordinates[indexer]))
+                pairing.update(status='available' if paired else 'unavailable',
+                               reason='same_ids_and_coordinates' if paired else 'ids_or_coordinates_not_preserved',
+                               reconstructed_observations=len(ids),
+                               observation_ids_sha256=_digest(ids.tolist()))
+        finally:
+            data.file.close()
+    mapping = config.ist_mapping if sample.modality == 'iST' else None
+    return {
+        'schema_version': 1, 'status': 'succeeded', 'sample_id': sample.sample_id,
+        'modality': sample.modality, 'cell_type': config.select_cell_type,
+        'ist_mapping': mapping, 'fingerprint': fingerprint,
+        'inputs': sample.metadata, 'outputs': outputs, 'provenance': provenance,
+        'coordinates': sample.metadata['coordinates'], 'pairing': pairing,
+        'expression_semantics': ('reference_expression_by_cluster_' + mapping
+                                 if mapping in {'mean', 'random'} else 'native_reconstruction_carriers'),
+        'analysis': {'status': 'not_run', 'aspects': {name: f'analysis/{name}' for name in ANALYSIS_ASPECTS},
+                     'storage': 'paired observations/windows share tables; independent axes use separate files',
+                     'current_ist_spatial_carrier_contract': mapping == 'paired' if sample.modality == 'iST' else None},
+    }
+
+
+def _run_task(sample, cell_type: str | None, code: dict) -> dict:
+    from revise.application.config import compile_application_config, load_application_yaml
+    from revise.application.publication import output_paths
+
+    root = sample.root / cell_type if cell_type is not None else sample.root
+    control = root / '.revise'
+    state_path = control / 'task.json'
+    handoff_path = root / 'reconstruction.json'
+    result = {'sample_id': sample.sample_id, 'cell_type': cell_type, 'directory': str(root)}
+    state = dict(result, status='running')
+    writable = False
+    try:
+        for directory in (root, control, root / 'analysis'):
+            if directory.is_symlink() or not directory.resolve().is_relative_to(sample.root):
+                raise ValueError(f'Package output directory must not be a symlink: {directory}')
+        document = application_document(sample, cell_type)
+        source_paths = [Path(item['path']) for item in sample.metadata['sources'].values()]
+        source_paths.extend((sample.st_path, sample.reference_path))
+        prior = document['inputs'].get('pm_on_cell')
+        if prior is not None:
+            source_paths.append(Path('/') / prior['path'])
+        targets = [root / name for name in ('SVC.h5ad', 'spatial.h5ad', 'expr.h5ad', 'reconstruction.json')]
+        for original in source_paths:
+            if original.is_relative_to(control):
+                raise ValueError(f'Original input is inside task control directory: {original}')
+            for target in targets:
+                if (target.resolve() == original.resolve()
+                        or (original.is_dir() and target.resolve().is_relative_to(original.resolve()))
+                        or (target.exists() and original.exists() and os.path.samefile(target, original))):
+                    raise ValueError(f'Publication destination aliases original input: {original}')
+        control.mkdir(parents=True, exist_ok=True)
+        writable = True
+        config_path = control / 'application.yaml'
+        config_path.write_text(yaml.safe_dump(document, sort_keys=False))
+        source, loaded = load_application_yaml(config_path)
+        config = compile_application_config(loaded, source=source)
+        identities = {'spatial': file_identity(sample.st_path), 'reference': file_identity(sample.reference_path)}
+        if config.pm_on_cell_path is not None:
+            identities['pm_on_cell'] = file_identity(config.pm_on_cell_path)
+        fingerprint = _digest({'sample': sample.document['sample'], 'inputs': identities, 'preparation': sample.metadata,
+                               'config': document, 'code': code})
+        if _reusable(_read_json(state_path), fingerprint):
+            return dict(result, status='reused')
+        state.update(fingerprint=fingerprint, code=code, inputs=identities)
+        _json(state_path, state)
+        _json(handoff_path, dict(result, schema_version=1, status='running'))
+        returncode = _execute(config_path, control / 'reconstruction.log')
+        if returncode:
+            raise RuntimeError(f'Reconstruction exited {returncode}; see {control / "reconstruction.log"}')
+        if any(file_identity(Path(item['path'])) != item for item in identities.values()):
+            raise ValueError('Input changed during reconstruction; retry with stable inputs')
+        paths = output_paths(config)
+        handoff = _handoff(sample, config, paths, fingerprint)
+        for name in ANALYSIS_ASPECTS:
+            (root / 'analysis' / name).mkdir(parents=True, exist_ok=True)
+        _json(handoff_path, handoff)
+        artifacts = [file_identity(path) for path in paths.values()]
+        artifacts.extend(handoff['provenance'].values())
+        artifacts.append(file_identity(handoff_path))
+        _json(state_path, dict(state, status='succeeded', artifacts=artifacts))
+        return dict(result, status='succeeded')
+    except Exception as exc:
+        error = f'{type(exc).__name__}: {exc}'
+        if writable:
+            with (control / 'reconstruction.log').open('a') as log:
+                traceback.print_exc(file=log)
+            _json(state_path, dict(state, status='failed', error=error))
+            _json(handoff_path, dict(result, schema_version=1, status='failed', error=error))
+        else:
+            _invalidate_handoffs(sample.root, status='failed', only=root)
+        return dict(result, status='failed', error=error)
+
+
+def _invalidate_handoffs(root: Path, *, status: str, active: set[Path] | None = None,
+                         only: Path | None = None) -> None:
+    """Invalidate tracked results without deleting scientific data or foreign files."""
+    for handoff in [root / 'reconstruction.json', *root.glob('*/reconstruction.json')]:
+        if only is not None and handoff.parent != only:
+            continue
+        if active is not None and handoff.parent in active:
+            continue
+        if handoff.is_symlink() or handoff.parent.is_symlink():
+            continue
+        state_path = handoff.parent / '.revise' / 'task.json'
+        if state_path.parent.is_symlink():
+            continue
+        record = _read_json(handoff)
+        state = _read_json(state_path)
+        if record.get('schema_version') == 1 and state.get('directory') == str(handoff.parent):
+            record.update(status=status, reason='sample_preparation_failed' if status == 'failed' else 'task_no_longer_requested')
+            state['status'] = status
+            _json(handoff, record)
+            _json(state_path, state)
+
+
+@contextmanager
+def _batch_lock(root: Path):
+    import fcntl
+    with (root / '.revise-batch.lock').open('a') as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError('Another batch is already using this data_root') from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def run_batch(config_path: str | Path) -> dict:
+    """Prepare samples and run each task; return the persisted batch report."""
+    config_path = Path(config_path).resolve()
+    batch = yaml.safe_load(config_path.read_text())
+    if (not isinstance(batch, dict) or batch.get('schema_version') != 1
+            or set(batch) != {'schema_version', 'data_root'} or not isinstance(batch['data_root'], str)):
+        raise ValueError('batch YAML requires schema_version: 1 and data_root')
+    root = Path(batch['data_root'])
+    root = (config_path.parent / root).resolve() if not root.is_absolute() else root.resolve()
+    if not root.is_dir():
+        raise ValueError(f'data_root is not a directory: {root}')
+    with _batch_lock(root):
+        return _run_samples(root)
+
+
+def _run_samples(root: Path) -> dict:
+    paths = sorted(root.rglob('sample.yaml'))
+    if not paths:
+        raise ValueError(f'No sample.yaml files under {root}')
+    entries = []
+    for path in paths:
+        try:
+            if path.is_symlink():
+                raise ValueError('sample.yaml must not be a symlink')
+            document = yaml.safe_load(path.read_text())
+            sample_id = document['sample']['id']
+            if not isinstance(sample_id, str) or not sample_id.strip():
+                raise ValueError('sample.id must be a non-empty string')
+            entries.append((path, document, sample_id, None))
+        except Exception as exc:
+            entries.append((path, None, None, f'{type(exc).__name__}: {exc}'))
+    counts = Counter(item[2] for item in entries if item[2] is not None)
+    report = {'schema_version': 1, 'status': 'running', 'data_root': str(root), 'tasks': [], 'summary': {}}
+    report_path = root / 'batch_status.json'
+    _json(report_path, report)
+    code = _code_identity()
+    for path, document, sample_id, error in entries:
+        try:
+            sample_control = path.parent / '.revise'
+            if sample_control.is_symlink() or (sample_control.exists() and not sample_control.is_dir()):
+                raise ValueError(f'Sample control directory must be an ordinary directory: {sample_control}')
+            if error:
+                raise ValueError(error)
+            if counts[sample_id] > 1:
+                raise ValueError(f'Duplicate sample.id: {sample_id}')
+            if any(other != path and other.parent in path.parent.parents for other in paths):
+                raise ValueError('A sample directory cannot be nested inside another sample directory')
+            labels = _cell_types(document)
+            sample = prepare_sample(path)
+        except Exception as exc:
+            task = {'sample_id': sample_id, 'sample_yaml': str(path), 'status': 'failed', 'error': f'{type(exc).__name__}: {exc}'}
+            report['tasks'].append(task)
+            _invalidate_handoffs(path.parent, status='failed')
+            if not sample_control.is_symlink() and (not sample_control.exists() or sample_control.is_dir()):
+                _json(sample_control / 'sample.json', task)
+        else:
+            active = {sample.root / label if label is not None else sample.root for label in labels}
+            _invalidate_handoffs(sample.root, status='inactive', active=active)
+            _json(path.parent / '.revise' / 'sample.json', {'sample_id': sample_id, 'status': 'prepared'})
+            for label in labels:
+                report['tasks'].append(_run_task(sample, label, code))
+                _json(report_path, report)
+        _json(report_path, report)
+    summary = Counter(task['status'] for task in report['tasks'])
+    report['summary'] = {status: summary[status] for status in ('succeeded', 'failed', 'reused')}
+    report['status'] = 'completed_with_failures' if summary['failed'] else 'completed'
+    _json(report_path, report)
+    return report

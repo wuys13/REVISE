@@ -3,11 +3,13 @@ include README.md
 include pyproject.toml
 include MANIFEST.in
 include reconstruct.py
+include batch_reconstruct.py
 include reproduce/benchmark_main.py
 include reproduce/benchmark_main.sh
 recursive-include revise *.py
 recursive-include revise/application/templates *.yaml
 recursive-include configs/application *.yaml
+recursive-include configs/batch *.yaml
 recursive-include revise/benchmark/templates *.yaml
 recursive-include configs/benchmark *.yaml
 recursive-include constraints *.txt

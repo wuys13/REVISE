@@ -82,6 +82,13 @@ environment variables documented in their modules and CI jobs.
 | `integration/distribution/test_artifacts.py` | Build metadata and artifacts | Exact wheel/sdist contents and clean installation | Release candidate | Packaging only |
 | `integration/solvers/test_tacco_solver_smoke.py` | Optional TACCO installation | Real TACCO 0.5.0 GA/LR smoke and import order | TACCO/CI release gate | Tiny solver smoke; no parity claim |
 | `integration/solvers/test_local_refinement_solver_smoke.py` | Installed POT/TACCO | Real posterior-conditioned local OT candidate | Local-refinement solver/release gate | Tiny matrices; skipped solvers are not evidence |
+| `application/test_ist_publication.py` | iST publication | Paired identity, mean/random assembly and transactional switching | Output-mode edits | Small synthetic carriers only |
+| `batch/test_sample.py` | Standard packages | Explicit metadata, source preservation and preparation reuse | Intake edits | H5AD fixtures and isolated SpatialData-reader boundary |
+| `batch/test_runner.py` | Batch execution and handoff | Failure isolation, invalidation, path safety and pairing roles | Batch lifecycle edits | Solver stand-in; no scientific validation |
+| `batch/test_cli.py` | Batch entrypoints | Source help and installed script declarations | CLI/package edits | Declaration and launch behavior |
+| `integration/batch/test_real_sample_parity.py` | Real route integration | Batch/direct parity for hST, iST, sST | Batch/application integration | Opt-in bounded real subsets; not full protocols |
+| `repository/test_case_notebook_style_contract.py` | Case notebook source | Static presentation and workflow contract | Notebook edits | No execution evidence |
+| `preprocess/test_sim2real_pseudospot_contract.py` | Pseudospot preparation | Mapping and preparation contracts | Preprocessing edits | Synthetic fixtures |
 
 When adding a test module, place it under its production owner, add it to this
 table, and state both what it detects and what it cannot prove.

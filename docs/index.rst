@@ -8,6 +8,7 @@
 
    source/quickstart
    source/application-reference
+   source/batch-reconstruction
    source/concepts
    source/installation
 

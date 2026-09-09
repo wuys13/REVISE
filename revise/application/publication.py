@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Mapping
@@ -13,6 +14,9 @@ from .config import ApplicationConfig
 
 
 def output_paths(config: ApplicationConfig) -> dict[str, Path]:
+    if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired":
+        filename = f"{config.output_name}.h5ad" if config.output_name else "SVC.h5ad"
+        return {"svc": config.output_dir / filename}
     if config.mode == "cluster":
         prefix = f"{config.output_name}_" if config.output_name else ""
         return {
@@ -88,6 +92,8 @@ def application_metadata(
         },
         "execution": {"seed": config.seed},
     }
+    if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired":
+        effective_request["output"]["ist_mapping"] = config.ist_mapping
     return {
         "source_path": config.source_path,
         "source_sha256": config.config_sha256,
@@ -121,11 +127,60 @@ def _published_artifacts(config: ApplicationConfig, svc) -> list[tuple[str, Any]
         raise RuntimeError(
             f"{config.svc_type} did not produce required output(s): {', '.join(missing)}"
         )
+    if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired":
+        from .ist_assembly import assemble_ist
+
+        assembled = assemble_ist(
+            outputs["sc_svc_spatial"], outputs["sc_svc_expr"],
+            mapping=config.ist_mapping, seed=config.seed,
+        )
+        return [("svc", assembled)]
     return [(role, outputs[key]) for role, key in required]
 
 
+def _owned_alternatives(config, paths):
+    """Find only same-name application outputs superseded by a mode switch."""
+    if config.mode != "cluster" or not isinstance(config, ApplicationConfig):
+        return []
+    import h5py
+
+    alternatives = {}
+    for mapping in ("paired", "mean"):
+        alternatives.update(output_paths(replace(config, ist_mapping=mapping)))
+    owned = []
+    for path in set(alternatives.values()) - set(paths.values()):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            with h5py.File(path, "r") as handle:
+                metadata = handle["uns/revise_reconstruction"]
+                mode = metadata["application_mode"].asstr()[()]
+                selected = metadata["selected_cell_type"].asstr()[()]
+                if mode != "cluster" or selected != config.select_cell_type:
+                    continue
+                if Path(metadata["output_dir"].asstr()[()]).resolve() != config.output_dir.resolve():
+                    continue
+                if Path(metadata["output_root"].asstr()[()]).resolve() != config.output_root.resolve():
+                    continue
+                role = metadata["output_role"].asstr()[()]
+                recorded_path = metadata["output_paths"][role].asstr()[()]
+                if Path(recorded_path).resolve() != path.resolve():
+                    continue
+                recorded_inputs = metadata.get("resolved_inputs")
+                if recorded_inputs is not None and any(
+                    name in recorded_inputs
+                    and Path(recorded_inputs[name].asstr()[()]).resolve() != Path(value).resolve()
+                    for name, value in config.resolved_inputs.items()
+                ):
+                    continue
+                owned.append(path)
+        except (OSError, KeyError, TypeError, AttributeError):
+            continue
+    return owned
+
+
 def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
-    """Publish the exact artifact objects and return those same references."""
+    """Publish pipeline carriers or assembled iST output transactionally."""
     artifacts = _published_artifacts(config, ctx.svc)
     config.output_dir.mkdir(parents=True, exist_ok=True)
     metadata = dict(ctx.application_config_metadata)
@@ -143,7 +198,12 @@ def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
     temporary: list[tuple[Path, Path]] = []
     try:
         for role, adata in artifacts:
-            adata.uns["revise_reconstruction"] = dict(metadata, output_role=role)
+            assembly = (
+                adata.uns.get("revise_reconstruction", {})
+                if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired"
+                else {}
+            )
+            adata.uns["revise_reconstruction"] = dict(metadata, **assembly, output_role=role)
             target = paths[role]
             with NamedTemporaryFile(
                 dir=config.output_dir,
@@ -182,7 +242,8 @@ def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
         if manages_publication:
             ctx.set_pending_publication(commit=commit, rollback=rollback)
         try:
-            for _, target in temporary:
+            targets = [target for _, target in temporary] + _owned_alternatives(config, paths)
+            for target in targets:
                 if target.exists():
                     with NamedTemporaryFile(
                         dir=config.output_dir,
@@ -213,7 +274,7 @@ def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
             temporary_path.unlink(missing_ok=True)
 
     values = tuple(adata for _, adata in artifacts)
-    return values if config.mode == "cluster" else values[0]
+    return values if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") == "paired" else values[0]
 
 
 __all__ = ["application_metadata", "output_paths", "publish_outputs"]

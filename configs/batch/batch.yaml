@@ -1,0 +1,3 @@
+schema_version: 1
+# Relative to this YAML, independent of the command's launch directory.
+data_root: ../../data

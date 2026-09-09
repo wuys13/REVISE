@@ -73,6 +73,7 @@ class ApplicationConfig:
     output_dir: Path
     output_name: str | None
     seed: int | None
+    ist_mapping: str = "paired"
 
     @property
     def source_path(self) -> str:
@@ -597,7 +598,12 @@ def compile_application_config(
             strength = _number(refinement["strength"], "local_refinement.strength")
 
     output = _mapping(document["output"], "output")
-    _reject_unknown(output, {"dir", "name"}, "output")
+    _reject_unknown(output, {"dir", "name", "ist_mapping"}, "output")
+    if "ist_mapping" in output and (svc_type != "sc-SVC" or mode != "cluster"):
+        raise ApplicationConfigError("output.ist_mapping is only valid for sc-SVC cluster")
+    ist_mapping = _string(output.get("ist_mapping", "paired"), "output.ist_mapping")
+    if ist_mapping not in {"paired", "mean", "random"}:
+        raise ApplicationConfigError("output.ist_mapping must be paired, mean, or random")
     output_root = _relative_child(resolved_root, _required(output, "dir", "output"), "output.dir")
     output_dir = output_root / select if mode == "cluster" else output_root
     output_name = _optional_string(output.get("name"), "output.name")
@@ -659,6 +665,7 @@ def compile_application_config(
         output_dir=output_dir,
         output_name=output_name,
         seed=seed,
+        ist_mapping=ist_mapping,
     )
 
 

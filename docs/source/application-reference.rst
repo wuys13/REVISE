@@ -159,7 +159,13 @@ files live under an ``output/`` directory; case-notebook analysis artifacts
 use ``output/`` separately.
 
 ``sp-SVC`` and ``sc-SVC`` SR mode each publish one H5AD. ``sc-SVC`` cluster
-mode publishes a fixed pair.
+mode publishes a fixed pair by default (``output.ist_mapping: paired``).
+Cluster mode also accepts ``output.ist_mapping: mean | random`` to publish one
+assembled ``SVC.h5ad`` (or ``<name>.h5ad``). This only changes final assembly:
+``mean`` assigns cluster means, while ``random`` samples within-cluster donors
+using the execution seed and records donor IDs. GA/LR are unchanged. Other
+routes reject this key. See :doc:`batch-reconstruction` for carrier semantics
+and batch directory conventions. The table below shows the default modes.
 
 .. list-table::
    :header-rows: 1
