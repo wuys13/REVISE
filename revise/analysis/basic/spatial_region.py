@@ -172,61 +172,116 @@ def compute_rarefied_window_diversity(
     raw_labels: pd.Series,
     reconstructed_labels: pd.Series,
     *,
+    raw_level2_labels: pd.Series | None = None,
     min_parent_units: int = 4,
     n_draws: int = 200,
     random_state: int = 42,
 ) -> pd.DataFrame:
-    """Estimate paired local diversity after equal within-window unit sampling."""
+    """Estimate local partition diversity from identical within-window draws."""
     if min_parent_units < 1 or n_draws < 1:
         raise ValueError("min_parent_units and n_draws must be at least one")
     if "window_id" not in window_assignments:
         raise KeyError("window_assignments must contain window_id")
     raw = _align_labels(raw_labels, window_assignments.index, "Raw")
     recon = _align_labels(reconstructed_labels, window_assignments.index, "Reconstructed")
+    level2 = (
+        _align_labels(raw_level2_labels, window_assignments.index, "Raw Level2")
+        if raw_level2_labels is not None
+        else None
+    )
     raw_codes = pd.Series(pd.factorize(raw, sort=True)[0], index=raw.index)
     recon_codes = pd.Series(pd.factorize(recon, sort=True)[0], index=recon.index)
+    level2_codes = (
+        pd.Series(pd.factorize(level2, sort=True)[0], index=level2.index)
+        if level2 is not None
+        else None
+    )
 
-    def diversity_from_codes(codes: np.ndarray) -> float:
+    def composition_from_codes(codes: np.ndarray) -> tuple[float, float, float, float]:
         counts = np.bincount(codes)
         probabilities = counts[counts > 0] / codes.size
-        return float(np.exp(-(probabilities * np.log(probabilities)).sum()))
+        k_obs = float(probabilities.size)
+        entropy = float(-(probabilities * np.log(probabilities)).sum())
+        neff = float(np.exp(entropy))
+        return k_obs, entropy, neff, float(neff / k_obs)
 
     generator = np.random.default_rng(random_state)
     rows: list[dict[str, float | int | bool | str]] = []
-    for window_id, frame in window_assignments.groupby("window_id", sort=True):
+    for fallback_index, (window_id, frame) in enumerate(
+        window_assignments.groupby("window_id", sort=True)
+    ):
         raw_values_for_window = raw_codes.reindex(frame.index).to_numpy(dtype=int)
         recon_values_for_window = recon_codes.reindex(frame.index).to_numpy(dtype=int)
+        level2_values_for_window = (
+            level2_codes.reindex(frame.index).to_numpy(dtype=int)
+            if level2_codes is not None
+            else None
+        )
         n_units = int(frame.shape[0])
         row: dict[str, float | int | bool | str] = {
             "window_id": str(window_id),
             "window_x": float(frame["x"].mean()),
             "window_y": float(frame["y"].mean()),
+            "window_x_index": int(frame["window_x_index"].iloc[0])
+            if "window_x_index" in frame
+            else fallback_index,
+            "window_y_index": int(frame["window_y_index"].iloc[0])
+            if "window_y_index" in frame
+            else 0,
             "n_units": n_units,
             "valid_window": n_units >= min_parent_units,
         }
         if n_units < min_parent_units:
-            row.update({"neff_raw": np.nan, "neff_recon": np.nan, "delta_neff": np.nan, "neff_raw_sd": np.nan, "neff_recon_sd": np.nan, "delta_neff_sd": np.nan})
+            for metric in ("k_obs", "entropy", "neff", "evenness"):
+                for suffix in ("raw", "recon", "sd_raw", "sd_recon"):
+                    row[f"{metric}_{suffix}"] = np.nan
+                row[f"delta_{metric}"] = np.nan
+                row[f"delta_{metric}_sd"] = np.nan
+                row[f"{metric}_level2"] = np.nan
+                row[f"{metric}_sd_level2"] = np.nan
+                row[f"delta_{metric}_vs_raw_leiden"] = np.nan
+                row[f"delta_{metric}_vs_raw_leiden_sd"] = np.nan
+                row[f"delta_{metric}_vs_raw_level2"] = np.nan
+                row[f"delta_{metric}_vs_raw_level2_sd"] = np.nan
             rows.append(row)
             continue
-        raw_values: list[float] = []
-        recon_values: list[float] = []
+        raw_values: list[tuple[float, float, float, float]] = []
+        recon_values: list[tuple[float, float, float, float]] = []
+        level2_values: list[tuple[float, float, float, float]] = []
         for _ in range(n_draws):
             sampled = generator.choice(n_units, size=min_parent_units, replace=False)
-            raw_values.append(diversity_from_codes(raw_values_for_window[sampled]))
-            recon_values.append(diversity_from_codes(recon_values_for_window[sampled]))
-        raw_array = np.asarray(raw_values)
-        recon_array = np.asarray(recon_values)
-        delta_array = recon_array - raw_array
-        row.update(
-            {
-                "neff_raw": float(raw_array.mean()),
-                "neff_recon": float(recon_array.mean()),
-                "delta_neff": float(delta_array.mean()),
-                "neff_raw_sd": float(raw_array.std(ddof=0)),
-                "neff_recon_sd": float(recon_array.std(ddof=0)),
-                "delta_neff_sd": float(delta_array.std(ddof=0)),
-            }
-        )
+            raw_values.append(composition_from_codes(raw_values_for_window[sampled]))
+            recon_values.append(composition_from_codes(recon_values_for_window[sampled]))
+            if level2_values_for_window is not None:
+                level2_values.append(composition_from_codes(level2_values_for_window[sampled]))
+        raw_array = np.asarray(raw_values, dtype=float)
+        recon_array = np.asarray(recon_values, dtype=float)
+        level2_array = np.asarray(level2_values, dtype=float) if level2_values else None
+        for index, metric in enumerate(("k_obs", "entropy", "neff", "evenness")):
+            delta = recon_array[:, index] - raw_array[:, index]
+            row.update(
+                {
+                    f"{metric}_raw": float(raw_array[:, index].mean()),
+                    f"{metric}_recon": float(recon_array[:, index].mean()),
+                    f"delta_{metric}": float(delta.mean()),
+                    f"{metric}_sd_raw": float(raw_array[:, index].std(ddof=0)),
+                    f"{metric}_sd_recon": float(recon_array[:, index].std(ddof=0)),
+                    f"delta_{metric}_sd": float(delta.std(ddof=0)),
+                    f"delta_{metric}_vs_raw_leiden": float(delta.mean()),
+                    f"delta_{metric}_vs_raw_leiden_sd": float(delta.std(ddof=0)),
+                }
+            )
+            if level2_array is None:
+                row[f"{metric}_level2"] = np.nan
+                row[f"{metric}_sd_level2"] = np.nan
+                row[f"delta_{metric}_vs_raw_level2"] = np.nan
+                row[f"delta_{metric}_vs_raw_level2_sd"] = np.nan
+            else:
+                level2_delta = recon_array[:, index] - level2_array[:, index]
+                row[f"{metric}_level2"] = float(level2_array[:, index].mean())
+                row[f"{metric}_sd_level2"] = float(level2_array[:, index].std(ddof=0))
+                row[f"delta_{metric}_vs_raw_level2"] = float(level2_delta.mean())
+                row[f"delta_{metric}_vs_raw_level2_sd"] = float(level2_delta.std(ddof=0))
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -393,6 +448,12 @@ def assign_anatomy_candidates(
                 "window_id": window_id,
                 "window_x": float(frame["x"].mean()),
                 "window_y": float(frame["y"].mean()),
+                "window_x_index": int(frame["window_x_index"].iloc[0])
+                if "window_x_index" in frame
+                else 0,
+                "window_y_index": int(frame["window_y_index"].iloc[0])
+                if "window_y_index" in frame
+                else 0,
                 "tumor_units": tumor_units,
                 "normal_units": normal_units,
                 "tumor_candidate": tumor_candidate,
@@ -484,7 +545,7 @@ def summarize_cluster_change_by_anatomy(
     window_groups = dict(_region_frames(window_metrics))
     rows = []
     for region, units in unit_groups.items():
-        windows = window_groups[region]
+        windows = window_groups.get(region, window_metrics.iloc[0:0])
         valid = windows.loc[windows["valid_window"]]
         changed_units = int(units["unit_changed"].astype(bool).sum())
         paired_units = int(units.shape[0])

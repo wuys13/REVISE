@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Hashable, Sequence
+import warnings
 
 import numpy as np
 import pandas as pd
 from anndata import AnnData
 from scipy.optimize import linear_sum_assignment
-from scipy.sparse import issparse
+from scipy.sparse import SparseEfficiencyWarning, issparse
 from sklearn.metrics import (
     adjusted_mutual_info_score,
     adjusted_rand_score,
@@ -152,6 +153,89 @@ def align_observation_pairs(
     }
 
 
+def _nonzero_counts(matrix, *, axis: int) -> np.ndarray:
+    if issparse(matrix):
+        return np.asarray((matrix != 0).sum(axis=axis)).ravel()
+    return np.count_nonzero(np.asarray(matrix), axis=axis)
+
+
+def filter_paired_sp_svc_inputs(
+    raw: AnnData,
+    reconstructed: AnnData,
+    *,
+    min_genes: int = 50,
+    min_cells: int = 3,
+) -> tuple[AnnData, AnnData, dict[str, int | bool]]:
+    """Define QC on Raw counts and apply the retained IDs and genes to both carriers."""
+    if min_genes < 1 or min_cells < 1:
+        raise ValueError("min_genes and min_cells must be at least one")
+    raw_work, recon_work, audit = align_observation_pairs(raw, reconstructed)
+    input_units = int(raw_work.n_obs)
+    input_genes = int(raw_work.n_vars)
+    retained_units = _nonzero_counts(raw_work.X, axis=1) >= min_genes
+    raw_work = raw_work[retained_units].copy()
+    recon_work = recon_work[retained_units].copy()
+    after_cell_qc_units = int(raw_work.n_obs)
+    if raw_work.n_obs < 3:
+        raise ValueError("Raw QC retained fewer than three paired observations")
+    retained_genes = (
+        (_nonzero_counts(raw_work.X, axis=0) >= min_cells)
+        & ~raw_work.var_names.str.startswith("MT-")
+    )
+    raw_work = raw_work[:, retained_genes].copy()
+    recon_work = recon_work[:, retained_genes].copy()
+    if raw_work.n_vars < 2:
+        raise ValueError("Raw QC retained fewer than two shared genes")
+    retained_after_gene_filter = _nonzero_counts(raw_work.X, axis=1) > 0
+    raw_work = raw_work[retained_after_gene_filter].copy()
+    recon_work = recon_work[retained_after_gene_filter].copy()
+    if raw_work.n_obs < 3:
+        raise ValueError("Raw QC retained fewer than three paired observations")
+    audit.update(
+        {
+            "input_units": input_units,
+            "excluded_raw_qc_units": input_units - int(raw_work.n_obs),
+            "excluded_post_gene_filter_units": after_cell_qc_units - int(raw_work.n_obs),
+            "n_units": int(raw_work.n_obs),
+            "input_shared_genes": input_genes,
+            "excluded_raw_qc_genes": input_genes - int(raw_work.n_vars),
+            "n_shared_genes": int(raw_work.n_vars),
+        }
+    )
+    return raw_work, recon_work, audit
+
+
+def select_raw_hvg_feature_names(
+    raw: AnnData,
+    *,
+    n_top_genes: int = 2000,
+) -> list[str]:
+    """Select one canonical-compatible Raw HVG set for both sp-SVC carriers."""
+    if n_top_genes < 1:
+        raise ValueError("n_top_genes must be at least one")
+    if raw.n_vars <= n_top_genes:
+        return raw.var_names.astype(str).tolist()
+    import scanpy as sc
+
+    work = raw.copy()
+    if issparse(work.X):
+        work.X = work.X.tocsc()
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Some cells have zero counts")
+        sc.pp.normalize_total(work, target_sum=1e4)
+    sc.pp.log1p(work)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=SparseEfficiencyWarning)
+        sc.pp.highly_variable_genes(
+            work,
+            n_top_genes=n_top_genes,
+            flavor="seurat_v3",
+            check_values=False,
+        )
+    selected = set(work.var_names[work.var["highly_variable"]].astype(str))
+    return [str(gene) for gene in raw.var_names if str(gene) in selected]
+
+
 def _feature_variance(matrix) -> np.ndarray:
     if issparse(matrix):
         mean = np.asarray(matrix.mean(axis=0)).ravel()
@@ -199,7 +283,9 @@ def prepare_leiden_graph(
     work = adata[:, list(feature_names)].copy()
     if work.n_obs < 3 or work.n_vars < 2:
         raise ValueError("Leiden partitioning requires at least three units and two features")
-    sc.pp.normalize_total(work, target_sum=1e4)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Some cells have zero counts")
+        sc.pp.normalize_total(work, target_sum=1e4)
     sc.pp.log1p(work)
     usable_pcs = min(n_pcs, work.n_obs - 1, work.n_vars - 1)
     if usable_pcs < 1:
@@ -220,10 +306,15 @@ def leiden_labels(
 
     if not np.isfinite(resolution) or resolution <= 0:
         raise ValueError("resolution must be positive and finite")
-    work = graph_adata.copy()
+    if "connectivities" not in graph_adata.obsp:
+        raise KeyError("graph_adata must contain a precomputed connectivities graph")
+    # Leiden uses the neighbor graph only.  Copying ``graph_adata`` here would
+    # duplicate the full expression matrix once per candidate resolution.
+    work = AnnData(obs=graph_adata.obs.copy())
     key = "reconstruction_impact_leiden"
     sc.tl.leiden(
         work,
+        adjacency=graph_adata.obsp["connectivities"],
         resolution=float(resolution),
         key_added=key,
         random_state=random_state,
@@ -251,6 +342,14 @@ def _variation_of_information(left: pd.Series, right: pd.Series) -> float:
     return float(entropy_left + entropy_right - 2 * mutual_info_score(left, right))
 
 
+def _label_sort_key(value: str) -> tuple[int, float | str, str]:
+    try:
+        numeric = float(value)
+    except ValueError:
+        return (1, value, value)
+    return (0, numeric, value)
+
+
 def compare_partitions(
     raw_labels: pd.Series | Sequence[Hashable],
     reconstructed_labels: pd.Series | Sequence[Hashable],
@@ -264,8 +363,8 @@ def compare_partitions(
         raise ValueError("Raw and reconstructed labels must contain the same unit IDs")
     recon = recon.reindex(raw.index)
 
-    raw_categories = sorted(raw.unique().tolist())
-    recon_categories = sorted(recon.unique().tolist())
+    raw_categories = sorted(raw.unique().tolist(), key=_label_sort_key)
+    recon_categories = sorted(recon.unique().tolist(), key=_label_sort_key)
     contingency = pd.crosstab(raw, recon).reindex(
         index=raw_categories, columns=recon_categories, fill_value=0
     )

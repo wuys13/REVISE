@@ -92,6 +92,59 @@ def test_paired_rarefaction_is_deterministic_and_keeps_uniform_level1_at_one():
     pd.testing.assert_frame_equal(first, second)
     assert (first.loc[first["valid_window"], "neff_raw"] == 1.0).all()
     assert (first.loc[first["valid_window"], "neff_recon"] >= 1.0).all()
+    assert (first.loc[first["valid_window"], "k_obs_raw"] == 1.0).all()
+    assert (first.loc[first["valid_window"], "evenness_raw"] == 1.0).all()
+
+
+def test_paired_rarefaction_reports_richness_effective_diversity_and_evenness():
+    windows = pd.DataFrame(
+        {"window_id": ["a"] * 4, "x": range(4), "y": [0] * 4},
+        index=[f"u{i}" for i in range(4)],
+    )
+    raw = pd.Series(["a", "a", "a", "b"], index=windows.index)
+    recon = pd.Series(["a", "b", "c", "d"], index=windows.index)
+
+    metrics = compute_rarefied_window_diversity(
+        windows, raw, recon, min_parent_units=4, n_draws=3, random_state=42
+    ).iloc[0]
+
+    assert metrics["k_obs_raw"] == pytest.approx(2.0)
+    assert metrics["neff_raw"] == pytest.approx(np.exp(-0.75 * np.log(0.75) - 0.25 * np.log(0.25)))
+    assert metrics["evenness_raw"] == pytest.approx(metrics["neff_raw"] / 2.0)
+    assert metrics["k_obs_recon"] == pytest.approx(4.0)
+    assert metrics["neff_recon"] == pytest.approx(4.0)
+    assert metrics["evenness_recon"] == pytest.approx(1.0)
+    assert metrics["delta_k_obs"] == pytest.approx(2.0)
+
+
+def test_paired_rarefaction_uses_the_same_draws_for_raw_leiden_level2_and_recon():
+    windows = pd.DataFrame(
+        {"window_id": ["a"] * 5, "x": range(5), "y": [0] * 5},
+        index=[f"u{i}" for i in range(5)],
+    )
+    raw_leiden = pd.Series(["a", "a", "b", "b", "c"], index=windows.index)
+    raw_level2 = pd.Series(["x", "x", "y", "y", "z"], index=windows.index)
+    recon = raw_leiden.copy()
+
+    metrics = compute_rarefied_window_diversity(
+        windows,
+        raw_leiden,
+        recon,
+        raw_level2_labels=raw_level2,
+        min_parent_units=4,
+        n_draws=25,
+        random_state=42,
+    ).iloc[0]
+
+    assert metrics["k_obs_level2"] == pytest.approx(metrics["k_obs_raw"])
+    assert metrics["neff_level2"] == pytest.approx(metrics["neff_raw"])
+    assert metrics["evenness_level2"] == pytest.approx(metrics["evenness_raw"])
+    assert metrics["delta_k_obs_vs_raw_leiden"] == pytest.approx(0.0)
+    assert metrics["delta_neff_vs_raw_leiden"] == pytest.approx(0.0)
+    assert metrics["delta_evenness_vs_raw_leiden"] == pytest.approx(0.0)
+    assert metrics["delta_k_obs_vs_raw_level2"] == pytest.approx(0.0)
+    assert metrics["delta_neff_vs_raw_level2"] == pytest.approx(0.0)
+    assert metrics["delta_evenness_vs_raw_level2"] == pytest.approx(0.0)
 
 
 def test_region_threshold_refuses_small_or_unstable_window_sets():
