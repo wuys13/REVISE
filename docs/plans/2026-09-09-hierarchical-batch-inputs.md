@@ -8,7 +8,7 @@ type: refactor
 
 Approved implementation plan, 2026-09-09. This is a one-time work record;
 maintained guidance lives in the batch reconstruction, protocol and framework
-pages under `docs/source/`.
+pages under [docs/design/batch/](../design/batch/README.md).
 
 ## Outcome
 

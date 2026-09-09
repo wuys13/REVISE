@@ -20,7 +20,7 @@ workflows used to study reconstruction under controlled confounding factors.
 
 ## Install
 
-The `revise-2.0` branch also supports [batch reconstruction and analysis](docs/source/batch-reconstruction.rst):
+The `revise-2.0` branch also supports [batch reconstruction and analysis](docs/design/batch/README.md):
 standard `spatial.h5ad` sample directories, inherited `batch.yaml` configuration,
 shared references, separate outputs, resumable reconstruction and analysis adapters. Start with the
 [batch templates](configs/batch/). Reconstruction-impact algorithms remain in

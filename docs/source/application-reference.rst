@@ -164,7 +164,7 @@ Cluster mode also accepts ``output.ist_mapping: mean | random`` to publish one
 assembled ``SVC.h5ad`` (or ``<name>.h5ad``). This only changes final assembly:
 ``mean`` assigns cluster means, while ``random`` samples within-cluster donors
 using the execution seed and records donor IDs. GA/LR are unchanged. Other
-routes reject this key. See :doc:`batch-reconstruction` for carrier semantics
+routes reject this key. See `batch protocol <https://github.com/wuys13/REVISE/blob/revise-2.0/docs/design/batch/protocol.md#output-roles-and-current-result-semantics>`_ for carrier semantics
 and batch directory conventions. The table below shows the default modes.
 
 .. list-table::
