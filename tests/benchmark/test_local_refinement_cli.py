@@ -19,11 +19,13 @@ def test_strength_builds_the_only_local_refinement_override():
     args = argparse.Namespace(
         local_refinement_strength=0.35,
         sr_refinement_preset=None,
-        confounding="segmentation",
+        route="segmentation",
+        evaluate=True,
     )
 
     assert cli._build_algorithm_overrides(args) == {
-        "local_refinement": {"strength": 0.35}
+        "local_refinement": {"strength": 0.35},
+        "benchmark": {"evaluate": True},
     }
 
 
@@ -36,8 +38,8 @@ def test_removed_cli_flags_fail_with_one_migration_message(removed, monkeypatch)
         lambda message: (_ for _ in ()).throw(ValueError(message)),
     )
     argv = [
-        "--confounding",
-        "segmentation",
+        "--config",
+        "segmentation.yaml",
         "--data-root",
         "data",
         "--sample-name",

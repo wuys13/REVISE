@@ -138,7 +138,7 @@ def test_manifest_rewrites_copy_one_cached_software_identity(
     monkeypatch.setattr(framework, "collect_software_versions", collect)
 
     REVISEPipeline().run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(tmp_path / "output"),
@@ -154,8 +154,8 @@ def test_manifest_rewrites_copy_one_cached_software_identity(
 
 
 def test_application_run_directories_do_not_collide_when_created_together(tmp_path):
-    first = build_run_dir(str(tmp_path), "sample", "sp_svc:bin2cell")
-    second = build_run_dir(str(tmp_path), "sample", "sp_svc:bin2cell")
+    first = build_run_dir(str(tmp_path), "sample", "application:sp-SVC")
+    second = build_run_dir(str(tmp_path), "sample", "application:sp-SVC")
 
     assert first != second
     assert first.parent == second.parent
@@ -169,7 +169,7 @@ def test_fixed_benchmark_directory_refuses_running_envelope(tmp_path):
 
     with pytest.raises(RuntimeError, match="running.*provenance"):
         REVISEPipeline().run(
-            profile="benchmark_seg",
+            cf="segmentation",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -214,7 +214,7 @@ def test_fixed_benchmark_directory_can_be_reused_after_terminal_run(tmp_path):
     output_root = tmp_path / "reusable-benchmark"
     _write_benchmark_seg_inputs(tmp_path, "sample")
     options = {
-        "profile": "benchmark_seg",
+        "cf": "segmentation",
         "io_overrides": {
             "data_root": str(tmp_path),
             "output_root": str(output_root),
@@ -244,7 +244,7 @@ def test_application_manifest_and_log_share_each_unique_run_directory(tmp_path):
 
     for _ in range(2):
         REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),
@@ -253,7 +253,7 @@ def test_application_manifest_and_log_share_each_unique_run_directory(tmp_path):
             dry_run=True,
         )
 
-    route_dir = output_root / "sample" / "sp_svc__bin2cell"
+    route_dir = output_root / "sample" / "application__sp-SVC"
     manifests = sorted(route_dir.glob("*/provenance.json"))
     assert len(manifests) == 2
     assert len({path.parent for path in manifests}) == 2

@@ -1,4 +1,4 @@
-"""sc-SVC-sr allocation and projected-posterior conditioning seams."""
+"""sc-SVC sr-mode allocation and projected-posterior conditioning seams."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ def spot_global_assignment(
     *,
     broad_key: str,
     expected_categories: pd.Index,
+    unknown_key: object = "Unknown",
 ) -> GlobalAssignment:
     """Load one strict GA assignment from the spot axis."""
     if broad_key not in adata.obs:
@@ -52,12 +53,15 @@ def spot_global_assignment(
         ),
         expected_observations=adata.obs_names,
         expected_categories=expected_categories,
+        unknown_key=unknown_key,
     )
 
 
 def project_spot_assignment_to_virtual_cells(
     assignment: GlobalAssignment,
     svc_obs: pd.DataFrame,
+    *,
+    unknown_key: object = "Unknown",
 ) -> GlobalAssignment:
     """Project spot Q to virtual cells through an explicit stable mapping."""
     if not isinstance(svc_obs, pd.DataFrame) or not {
@@ -96,6 +100,7 @@ def project_spot_assignment_to_virtual_cells(
         GlobalAssignment(labels=labels, posterior=posterior),
         expected_observations=cell_ids,
         expected_categories=assignment.posterior.columns,
+        unknown_key=unknown_key,
     )
 
 
@@ -129,6 +134,7 @@ def condition_virtual_cell_ot_cost(
     assignment: GlobalAssignment,
     neighbor_indices: np.ndarray,
     strength: Real,
+    valid_support_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Condition one virtual-cell local OT cost on projected spot Q."""
     return condition_local_ot_cost(
@@ -136,6 +142,7 @@ def condition_virtual_cell_ot_cost(
         assignment,
         neighbor_indices,
         strength=strength,
+        valid_support_mask=valid_support_mask,
     )
 
 

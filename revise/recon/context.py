@@ -25,21 +25,23 @@ class PipelineContext:
     )
 
     merged_config: Dict[str, Any]
-    raw_config: Dict[str, Any]
-    config_path: str
     profile: Optional[str]
     runtime: Dict[str, Any]
     route_key: str
     run_dir: Path
     logger: logging.Logger
-    config_hash: Optional[str] = None
+    engine_defaults_hash: Optional[str] = None
+    authority_hash: Optional[str] = None
+    algorithm_config_hash: Optional[str] = None
+    effective_config_hash: Optional[str] = None
     dry_run: bool = False
     finalize_callback: Optional[Callable[["PipelineContext"], None]] = None
+    application_config_metadata: Dict[str, Any] = field(default_factory=dict)
+    benchmark_config_metadata: Dict[str, Any] = field(default_factory=dict)
 
     runner_config: Any = None
     runner: Any = None
     input_specs: Any = None
-    input_bundle: Any = None
     st_adata: Optional[AnnData] = None
     sc_ref_adata: Optional[AnnData] = None
     real_st_adata: Optional[AnnData] = None
@@ -356,16 +358,20 @@ class PipelineContext:
 
     @property
     def compatibility_mode(self) -> bool:
-        return bool(self.runtime.get("compatibility_mode", False))
+        return bool(self.runtime["compatibility_mode"])
 
     @property
     def route(self) -> Dict[str, Any]:
-        return {
-            "platform": self.runtime.get("platform"),
-            "confounding": self.runtime.get("confounding"),
+        route = {
             "mode": self.runtime.get("mode"),
             "task": self.runtime.get("task"),
             "svc_kind": self.runtime.get("svc_kind"),
             "strategy": self.runtime.get("strategy"),
             "compatibility_mode": self.runtime.get("compatibility_mode"),
         }
+        if self.runtime.get("mode") == "application":
+            route["application_route"] = self.runtime.get("application_route")
+            route["application_mode"] = self.runtime.get("application_mode")
+        else:
+            route["confounding"] = self.runtime.get("confounding")
+        return route

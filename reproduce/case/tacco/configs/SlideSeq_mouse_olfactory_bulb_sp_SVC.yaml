@@ -1,0 +1,41 @@
+schema_version: 1
+
+application:
+  svc_type: sp-SVC
+
+paths:
+  root_dir: .
+
+algorithm:
+  ot_method: tacco
+
+inputs:
+  st:
+    path: prepared/slideseq_olfactory_bulb/OB1_Slide5.h5ad
+    format: h5ad
+  reference:
+    path: prepared/slideseq_olfactory_bulb/GSE121891_reference.h5ad
+    format: h5ad
+
+preprocessing:
+  spatial:
+    min_transcript_counts: null
+    min_counts: 50
+    min_cell_counts: 1
+  reference:
+    min_transcript_counts: null
+    min_genes: null
+    min_cell_counts: 1
+
+global_anchoring:
+  broad_column: Level1
+
+local_refinement:
+  strength: 0.2
+
+output:
+  dir: results/slideseq_olfactory_bulb
+  name: SlideSeq_mouse_olfactory_bulb_sp_SVC
+
+execution:
+  seed: 42

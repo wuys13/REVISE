@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -10,7 +11,8 @@ import pytest
 from anndata import AnnData, read_h5ad
 
 from revise.backend.policies import ModeValidationPolicy
-from revise.config import load_raw_config, merge_unified_config
+from revise.config import merge_unified_config, resolve_semantic_route
+from revise.config.authority import ENGINE_DEFAULTS, _authority_document
 from revise.config.runner_conf import InputSpec
 from revise.config.runner_conf import resolve_input_specs
 from revise.config.runner_conf import resolved_input_path
@@ -31,8 +33,7 @@ COLUMNS = {
 DECLARED_PROFILES = {
     "application_sp",
     "application_sc",
-    "application_sc_hyper",
-    "application_sc_sr",
+    "application_sc_super_resolution",
     "benchmark_seg",
     "benchmark_bin2cell",
     "benchmark_sr_batch",
@@ -70,12 +71,13 @@ def _write(path: Path, role: str, *, genes=("g1", "g2")) -> Path:
 
 def _application_specs(tmp_path: Path):
     runtime = {"mode": "application", "task": "sp_svc"}
-    io = {
+    io = copy.deepcopy(ENGINE_DEFAULTS["io"])
+    io.update({
         "data_root": str(tmp_path),
         "sample_name": "sample",
         "st_file": "st.h5ad",
         "sc_ref_file": "sc.h5ad",
-    }
+    })
     specs = resolve_input_specs(runtime, io)
     return runtime, io, specs
 
@@ -97,11 +99,7 @@ def _write_application_inputs(tmp_path: Path):
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (
-            "application_sc_hyper",
-            [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
-        ),
-        (
-            "application_sc_sr",
+            "application_sc_super_resolution",
             [("st", "sample_Xenium.h5ad"), ("sc_ref", "adata_sc_all_reanno.h5ad")],
         ),
         (
@@ -159,11 +157,30 @@ def test_all_declared_profiles_resolve_one_explicit_input_matrix(
     profile,
     expected,
 ):
-    raw = load_raw_config("revise/revise.yaml")
+    raw = _authority_document()
+    namespace, selector = next(
+        (namespace, selector)
+        for namespace, routes in raw["router"].items()
+        for selector, spec in routes.items()
+        if spec["profile"] == profile
+    )
+    if namespace == "application" and selector.startswith("sc-SVC:"):
+        route = resolve_semantic_route(
+            raw,
+            svc_type="sc-SVC",
+            application_mode=selector.split(":", 1)[1],
+        )
+    else:
+        route = resolve_semantic_route(
+            raw,
+            **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
+        )
+    route.pop("profile")
+    route.pop("warning")
     merged = merge_unified_config(
         raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=route,
         io_overrides={"data_root": str(tmp_path), "sample_name": "sample"},
         algorithm_overrides={},
     )
@@ -179,13 +196,13 @@ def test_all_declared_profiles_resolve_one_explicit_input_matrix(
 
 
 def test_input_matrix_covers_every_declared_profile():
-    assert set(load_raw_config("revise/revise.yaml")["profiles"]) == DECLARED_PROFILES
+    assert set(_authority_document()["profiles"]) == DECLARED_PROFILES
 
 
 def test_full_loader_prefers_the_preflight_resolved_path():
     specs = (InputSpec("st", "/shared/st.h5ad"),)
 
-    assert resolved_input_path(specs, "st", "/derived-again/st.h5ad") == "/shared/st.h5ad"
+    assert resolved_input_path(specs, "st") == "/shared/st.h5ad"
 
 
 def test_spatialdata_source_path_replaces_the_h5ad_fallback(tmp_path):
@@ -217,7 +234,8 @@ def _write_benchmark_inputs(
     sample_name: str = "sample",
 ):
     runtime = {"mode": "benchmark", "task": task}
-    io = {
+    io = copy.deepcopy(ENGINE_DEFAULTS["io"])
+    io.update({
         "data_root": str(tmp_path),
         "sample_name": sample_name,
         "st_file": "st.h5ad",
@@ -225,7 +243,7 @@ def _write_benchmark_inputs(
         "gt_svc_file": "gt.h5ad",
         "seg_method": "seg_1",
         "spot_size": 50,
-    }
+    })
     specs = resolve_input_specs(runtime, io)
     paths = {spec.role: Path(spec.path) for spec in specs}
     st = _adata("st")
@@ -319,7 +337,7 @@ def test_benchmark_preflight_rejects_wrong_patient_for_sample_path(tmp_path):
         )
 
 
-def test_application_preflight_keeps_exact_patient_match(tmp_path):
+def test_application_preflight_accepts_reference_already_filtered_by_request(tmp_path):
     runtime, io, _ = _application_specs(tmp_path)
     io["sample_name"] = "P2CRC/cut_part1"
     io["patient_key"] = "Patient"
@@ -330,12 +348,13 @@ def test_application_preflight_keeps_exact_patient_match(tmp_path):
     sc_ref.obs["Patient"] = ["P2CRC"] * sc_ref.n_obs
     sc_ref.write_h5ad(sc_ref_path)
 
-    with pytest.raises(ValueError, match=r"sample 'P2CRC/cut_part1'"):
-        REVISEInputService(io).preflight(
-            specs,
-            runtime=runtime,
-            columns=COLUMNS,
-        )
+    report = REVISEInputService(io).preflight(
+        specs,
+        runtime=runtime,
+        columns=COLUMNS,
+    )
+
+    assert report["status"] == "ready"
 
 
 def test_batch_effect_preflight_allows_reference_without_target_patient(tmp_path):
@@ -592,7 +611,7 @@ def test_preflight_missing_file_has_role_and_path_context(tmp_path):
     _, _, specs = _application_specs(tmp_path)
 
     with pytest.raises(FileNotFoundError, match=r"role=st.*sample_st\.h5ad"):
-        REVISEInputService().preflight(
+        REVISEInputService(ENGINE_DEFAULTS["io"]).preflight(
             specs,
             runtime={"mode": "application", "task": "sp_svc"},
             columns=COLUMNS,
@@ -691,7 +710,6 @@ def test_application_sc_routes_require_the_labels_used_by_full_runners(
             runtime={
                 "mode": "application",
                 "task": task,
-                "platform": task,
             },
             columns=COLUMNS,
         )
@@ -707,7 +725,7 @@ def test_sc_svc_custom_columns_are_the_full_runner_contract(tmp_path):
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": "application", "task": "sc_svc", "platform": "sc_svc"},
+        runtime={"mode": "application", "task": "sc_svc"},
         columns={
             **COLUMNS,
             "cell_type_col": "custom_level1",
@@ -750,8 +768,7 @@ def test_sr_preflight_accepts_configured_broad_without_subtype_or_literal_level1
         specs,
         runtime={
             "mode": mode,
-            "task": "sc_svc_sr",
-            "platform": "sc_svc_sr" if mode == "application" else "sim2real",
+            "task": "sc_svc_super_resolution" if mode == "application" else "sc_svc_sr",
         },
         columns=columns,
     )
@@ -782,10 +799,7 @@ def test_sr_preflight_rejects_missing_configured_broad_column(tmp_path, mode):
             specs,
             runtime={
                 "mode": mode,
-                "task": "sc_svc_sr",
-                "platform": (
-                    "sc_svc_sr" if mode == "application" else "sim2real"
-                ),
+                "task": "sc_svc_super_resolution" if mode == "application" else "sc_svc_sr",
             },
             columns=columns,
         )
@@ -807,7 +821,7 @@ def test_application_sr_pre_allocation_rejects_mismatched_cell_locations(tmp_pat
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": "application", "task": "sc_svc_sr"},
+        runtime={"mode": "application", "task": "sc_svc_super_resolution"},
         columns=COLUMNS,
     )
 
@@ -836,7 +850,10 @@ def test_sr_preflight_records_documented_mapping_generation_path(
 
     report = REVISEInputService(io).preflight(
         specs,
-        runtime={"mode": mode, "task": "sc_svc_sr"},
+        runtime={
+            "mode": mode,
+            "task": "sc_svc_super_resolution" if mode == "application" else "sc_svc_sr",
+        },
         columns=COLUMNS,
     )
 
@@ -888,26 +905,42 @@ def _policy_context(
     mode="application",
     task="sp_svc",
 ):
-    runtime, io, _ = _application_specs(tmp_path)
-    runtime = {**runtime, "mode": mode, "task": task}
-    merged = {
-        "runtime": runtime,
-        "io": {**io, "output_root": str(tmp_path / "output")},
-        "columns": COLUMNS,
-        "ot": {
-            "ga": {"solver": ga_solver},
-            "lr": {"solver": lr_solver},
+    raw = _authority_document()
+    selector = {
+        ("application", "sp_svc"): {"svc_type": "sp-SVC"},
+        ("application", "sc_svc_super_resolution"): {
+            "svc_type": "sc-SVC",
+            "application_mode": "sr",
         },
-    }
-    if task in {"sp_svc", "sc_svc_sr"}:
-        merged["local_refinement"] = {
-            "strength": 0.2 if task == "sp_svc" else 0.0,
-        }
+        ("benchmark", "sp_svc"): {"cf": "segmentation"},
+        ("benchmark", "sc_svc_sr"): {"cf": "batch_effect"},
+        ("benchmark", "sc_svc_impute"): {"cf": "gene_panel"},
+    }[(mode, task)]
+    route = resolve_semantic_route(raw, **selector)
+    profile = route.pop("profile")
+    route.pop("warning")
+    merged = merge_unified_config(
+        raw_config=raw,
+        profile=profile,
+        runtime_overrides=route,
+        io_overrides={
+            "data_root": str(tmp_path),
+            "output_root": str(tmp_path / "output"),
+            "sample_name": "sample",
+            "st_file": "st.h5ad",
+            "sc_ref_file": "sc.h5ad",
+        },
+        algorithm_overrides={
+            "ot": {
+                "ga": {"solver": ga_solver},
+                "lr": {"solver": lr_solver},
+            }
+        },
+    )
+    runtime = merged["runtime"]
     return PipelineContext(
         merged_config=merged,
-        raw_config={},
-        config_path="revise/revise.yaml",
-        profile="test",
+        profile=profile,
         runtime=runtime,
         route_key="sp_svc:bin2cell",
         run_dir=tmp_path / "run",
@@ -954,7 +987,7 @@ def test_preflight_report_is_persisted_without_scientific_outputs(tmp_path):
     output_root = tmp_path / "output"
 
     svc = REVISEPipeline().run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(tmp_path),
             "output_root": str(output_root),
@@ -982,7 +1015,7 @@ def test_pipeline_preflight_failure_persists_terminal_run_truth(tmp_path):
 
     with pytest.raises(FileNotFoundError, match=r"role=st.*missing-case"):
         REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path),
                 "output_root": str(output_root),

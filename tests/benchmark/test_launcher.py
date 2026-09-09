@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = ROOT / "reproduce" / "benchmark_main.sh"
-CONFOUNDINGS = {
+ROUTES = {
     "segmentation",
     "bin2cell",
     "batch_effect",
@@ -33,7 +33,7 @@ import sys
 import time
 
 args = sys.argv[1:]
-cf = args[args.index("--confounding") + 1]
+cf = Path(args[args.index("--config") + 1]).stem
 sample_name = args[args.index("--sample-name") + 1]
 sample_part = sample_name.rsplit("/", 1)[-1].removeprefix("cut_")
 marker = cf if sample_part == "part1" else f"{sample_part}__{cf}"
@@ -129,7 +129,7 @@ def _launcher_env(
 def _status_records(tmp_path: Path) -> dict[str, dict]:
     manifest = _launcher_status(tmp_path)
     return {
-        record["confounding"]: record
+        record["route"]: record
         for record in manifest["tasks"]
     }
 
@@ -212,17 +212,17 @@ def test_launcher_waits_for_all_successful_children_and_records_status(tmp_path)
         stdout, stderr = process.communicate(timeout=10)
         records = _status_records(tmp_path)
         assert process.returncode == 0, (stdout, stderr)
-        assert set(records) == CONFOUNDINGS
+        assert set(records) == ROUTES
         assert {record["status"] for record in records.values()} == {"succeeded"}
         assert {record["exit_code"] for record in records.values()} == {0}
         assert {
             cf: record["pid"] for cf, record in records.items()
         } == {
             cf: int((tmp_path / "state" / f"{cf}.pid").read_text())
-            for cf in CONFOUNDINGS
+            for cf in ROUTES
         }
         assert _launcher_status(tmp_path)["status"] == "succeeded"
-        assert set(path.stem for path in (tmp_path / "state").glob("*.completed")) == CONFOUNDINGS
+        assert set(path.stem for path in (tmp_path / "state").glob("*.completed")) == ROUTES
         assert _live_fake_pids(tmp_path) == []
     finally:
         if process.poll() is None:
@@ -247,7 +247,7 @@ def test_launcher_returns_nonzero_and_preserves_failed_child_identity(tmp_path):
         )
         records = _status_records(tmp_path)
         assert result.returncode != 0
-        assert set(records) == CONFOUNDINGS
+        assert set(records) == ROUTES
         assert records["bin2cell"]["status"] == "failed"
         assert records["bin2cell"]["exit_code"] == 7
         assert _launcher_status(tmp_path)["status"] == "failed"
@@ -258,10 +258,10 @@ def test_launcher_returns_nonzero_and_preserves_failed_child_identity(tmp_path):
         )
         assert set(
             path.stem for path in (tmp_path / "state").glob("*.started")
-        ) == CONFOUNDINGS
+        ) == ROUTES
         assert set(
             path.stem for path in (tmp_path / "state").glob("*.completed")
-        ) == CONFOUNDINGS - {"bin2cell"}
+        ) == ROUTES - {"bin2cell"}
         assert _live_fake_pids(tmp_path) == []
     finally:
         _cleanup_fake_pids(tmp_path)
@@ -288,14 +288,14 @@ def test_launcher_never_exceeds_configured_concurrency(tmp_path):
         assert process.returncode == 0, (stdout, stderr)
         assert state == {"current": 0, "maximum": 2}
         records = _status_records(tmp_path)
-        assert set(records) == CONFOUNDINGS
+        assert set(records) == ROUTES
         assert {record["status"] for record in records.values()} == {"succeeded"}
         assert set(
             path.stem for path in (tmp_path / "state").glob("*.started")
-        ) == CONFOUNDINGS
+        ) == ROUTES
         assert set(
             path.stem for path in (tmp_path / "state").glob("*.completed")
-        ) == CONFOUNDINGS
+        ) == ROUTES
         assert _live_fake_pids(tmp_path) == []
     finally:
         if process.poll() is None:
@@ -345,7 +345,7 @@ def test_launcher_forwards_interruption_and_leaves_no_children(
             expected_exit
         }
         assert _launcher_status(tmp_path)["status"] == "interrupted"
-        interrupted_cfs = {record["confounding"] for record in interrupted}
+        interrupted_cfs = {record["route"] for record in interrupted}
         started_cfs = {
             path.stem for path in (tmp_path / "state").glob("*.started")
         }
@@ -354,7 +354,7 @@ def test_launcher_forwards_interruption_and_leaves_no_children(
         }
         assert started_cfs == signaled_cfs == interrupted_cfs
         for record in interrupted:
-            cf = record["confounding"]
+            cf = record["route"]
             assert record["pid"] == int(
                 (tmp_path / "state" / f"{cf}.pid").read_text()
             )
@@ -488,14 +488,13 @@ def test_blank_sample_parts_preserves_default_part1_task_set(tmp_path):
         _cleanup_fake_pids(tmp_path)
 
 
-def test_empty_legacy_environment_values_preserve_defaults(tmp_path):
+def test_empty_environment_values_preserve_non_config_defaults(tmp_path):
     env = _launcher_env(tmp_path, jobs=6)
     env.update(
         {
             "RAW_DATA_PATH": "",
             "SAVE_PATH": "",
             "SAMPLE_PATIENT": "",
-            "CONFIG_PATH": "",
         }
     )
     try:
@@ -523,7 +522,7 @@ def test_empty_legacy_environment_values_preserve_defaults(tmp_path):
             (tmp_path / "state" / "segmentation.args.json").read_text()
         )
         assert args[args.index("--data-root") + 1] == "./raw_data/Sim2Real-ST"
-        assert args[args.index("--config") + 1] == "revise/revise.yaml"
+        assert args[args.index("--config") + 1] == "segmentation.yaml"
         assert args[args.index("--output-root") + 1].startswith(
             "results_unified/benchmark_runs/"
         )
@@ -615,7 +614,7 @@ def test_multiple_sample_parts_preserve_all_task_identities(tmp_path):
         assert {task["id"] for task in manifest["tasks"]} == {
             f"P2CRC/cut_{part}|{cf}"
             for part in ("part1", "part2")
-            for cf in CONFOUNDINGS
+            for cf in ROUTES
         }
         assert {task["status"] for task in manifest["tasks"]} == {"succeeded"}
         observed_identities = set()
@@ -624,13 +623,13 @@ def test_multiple_sample_parts_preserve_all_task_identities(tmp_path):
             observed_identities.add(
                 (
                     args[args.index("--sample-name") + 1],
-                    args[args.index("--confounding") + 1],
+                    Path(args[args.index("--config") + 1]).stem,
                 )
             )
         assert observed_identities == {
             (f"P2CRC/cut_{part}", cf)
             for part in ("part1", "part2")
-            for cf in CONFOUNDINGS
+            for cf in ROUTES
         }
         assert len(list((tmp_path / "0_records" / "P2CRC_part1").glob("*.log"))) == 6
         assert len(list((tmp_path / "0_records" / "P2CRC_part2").glob("*.log"))) == 6

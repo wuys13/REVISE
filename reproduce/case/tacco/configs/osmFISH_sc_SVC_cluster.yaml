@@ -1,0 +1,42 @@
+schema_version: 1
+
+application:
+  svc_type: sc-SVC
+  mode: cluster
+
+paths:
+  root_dir: .
+
+algorithm:
+  ot_method: tacco
+
+inputs:
+  st:
+    path: prepared/osmfish/TonT_segmented_cells.h5ad
+    format: h5ad
+  reference:
+    path: prepared/osmfish/osmFISH_reference.h5ad
+    format: h5ad
+
+preprocessing:
+  spatial:
+    min_transcript_counts: 20
+    min_cell_counts: 1
+  reference:
+    min_transcript_counts: 20
+    min_cell_counts: 1
+
+global_anchoring:
+  broad_column: Level1
+
+local_refinement:
+  subtype_column: Level2
+  select_cell_type: Pyramidal
+  alpha: 0.2
+  resolutions: [0.6, 0.7, 0.8]
+
+output:
+  dir: results/osmfish
+
+execution:
+  seed: 42

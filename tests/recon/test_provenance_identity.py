@@ -6,6 +6,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -14,23 +15,34 @@ from anndata import AnnData
 
 from revise.config.runner_conf import resolve_input_specs
 from revise.config import (
-    load_raw_config,
     merge_unified_config,
+    resolve_semantic_route,
 )
+from revise.config.authority import _authority_document
 from revise.framework import REVISEPipeline
+from revise.recon.pipeline import UnifiedReconstructionPipeline
 from revise.recon.context import PipelineContext
 from revise.utils.deterministic import canonical_config_projection
 from revise.utils.provenance import hash_jsonable, input_identities
 
 
-CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
-
-
 def _resolved_config(profile, algorithm_overrides=None):
+    raw = _authority_document()
+    selector = {
+        "application_sp": {"svc_type": "sp-SVC"},
+        "application_sc": {"svc_type": "sc-SVC", "application_mode": "cluster"},
+        "application_sc_super_resolution": {
+            "svc_type": "sc-SVC",
+            "application_mode": "sr",
+        },
+    }[profile]
+    route = resolve_semantic_route(raw, **selector)
+    route.pop("profile")
+    route.pop("warning")
     return merge_unified_config(
-        raw_config=load_raw_config(CONFIG_PATH),
+        raw_config=raw,
         profile=profile,
-        runtime_overrides={},
+        runtime_overrides=route,
         io_overrides={},
         algorithm_overrides=algorithm_overrides or {},
     )
@@ -41,9 +53,8 @@ def _config(tmp_path: Path) -> dict:
         "runtime": {
             "seed": 17,
             "deterministic": True,
-            "platform": "sp_svc",
-            "confounding": "bin2cell",
             "mode": "application",
+            "application_route": "sp-SVC",
             "task": "sp_svc",
             "svc_kind": "sp",
             "strategy": "SpSvcApplicationStrategy",
@@ -102,6 +113,29 @@ def test_hash_jsonable_rejects_non_json_semantic_values(payload):
         hash_jsonable(payload)
 
 
+def test_benchmark_sr_compatibility_outputs_keep_published_filenames(tmp_path):
+    outputs = {
+        "sc_svc_dec": AnnData(X=np.ones((1, 1))),
+        "sc_svc_dec_graphagg": AnnData(X=np.ones((1, 1))),
+    }
+    recorded = []
+    ctx = SimpleNamespace(run_dir=tmp_path, record_artifact=recorded.append)
+
+    UnifiedReconstructionPipeline.__new__(UnifiedReconstructionPipeline)._emit_compatibility_files(
+        ctx,
+        outputs,
+    )
+
+    assert {path.name for path in tmp_path.glob("*.h5ad")} == {
+        "sc_SVC.h5ad",
+        "sc_SVC_graphagg.h5ad",
+    }
+    assert {artifact["role"] for artifact in recorded} == {
+        "compatibility:sc_svc_dec",
+        "compatibility:sc_svc_dec_graphagg",
+    }
+
+
 def test_config_hash_excludes_only_input_and_output_locators(tmp_path):
     baseline = _config(tmp_path)
     projected = canonical_config_projection(baseline)
@@ -109,6 +143,8 @@ def test_config_hash_excludes_only_input_and_output_locators(tmp_path):
         {
             "data_root",
             "output_root",
+            "st_path",
+            "sc_ref_path",
             "st_file",
             "sc_ref_file",
             "gt_svc_file",
@@ -120,6 +156,8 @@ def test_config_hash_excludes_only_input_and_output_locators(tmp_path):
     for key in (
         "data_root",
         "output_root",
+        "st_path",
+        "sc_ref_path",
         "st_file",
         "sc_ref_file",
         "gt_svc_file",
@@ -203,7 +241,7 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
     configs = []
     for name, data_root in (("left", left_data), ("right", right_data)):
         svc = REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / f"{name}-output"),
@@ -215,12 +253,12 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
         manifests.append(json.loads((run_dir / "provenance.json").read_text()))
         configs.append(json.loads((run_dir / "merged_config.json").read_text()))
 
-    assert manifests[0]["schema_version"] == manifests[1]["schema_version"] == 2
+    assert manifests[0]["schema_version"] == manifests[1]["schema_version"] == 4
     assert manifests[0]["run_dir"] != manifests[1]["run_dir"]
     assert manifests[0]["run"]["started_at"] != manifests[1]["run"]["started_at"]
     assert configs[0]["io"]["data_root"] != configs[1]["io"]["data_root"]
     assert configs[0]["io"]["output_root"] != configs[1]["io"]["output_root"]
-    assert manifests[0]["config_hash"] == manifests[1]["config_hash"]
+    assert manifests[0]["algorithm_config_hash"] == manifests[1]["algorithm_config_hash"]
     assert "data_fingerprint" not in manifests[0]
     assert "data_fingerprint" not in manifests[1]
     assert [record["role"] for record in manifests[0]["input_identities"]] == [
@@ -236,8 +274,13 @@ def test_pipeline_manifest_records_one_identity_per_input_role(tmp_path):
     for manifest, config in zip(manifests, configs):
         expected_specs = resolve_input_specs(config["runtime"], config["io"])
         assert manifest["runtime_seed"] == config["runtime"]["seed"]
-        assert manifest["config_hash"] == hash_jsonable(
-            canonical_config_projection(config)
+        assert manifest["algorithm_config_hash"] == config["_identity"][
+            "algorithm_config_hash"
+        ]
+        assert manifest["algorithm_config_hash"] == hash_jsonable(
+            canonical_config_projection(
+                {key: value for key, value in config.items() if key != "_identity"}
+            )
         )
         assert manifest["input_identities"] == sorted(
             input_identities(expected_specs),
@@ -262,7 +305,7 @@ def test_pipeline_computes_input_identities_once(
 
     monkeypatch.setattr(policies, "input_identities", counted)
     REVISEPipeline().run(
-        profile="application_sp",
+        svc_type="sp-SVC",
         io_overrides={
             "data_root": str(data_root),
             "output_root": str(tmp_path / "output"),
@@ -279,7 +322,7 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
 ):
     data_root = tmp_path / "data"
     _write_inputs(data_root)
-    pm_path = data_root / "sample_Xenium_PM_on_cell.csv"
+    pm_path = data_root / "PM_on_cell.csv"
     pm_path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
 
     manifests = []
@@ -290,11 +333,13 @@ def test_sc_sr_manifest_adds_optional_pm_identity_and_isolates_pm_changes(
         if replacement is not None:
             pm_path.write_text(replacement, encoding="utf-8")
         svc = REVISEPipeline().run(
-            profile="application_sc_sr",
+            svc_type="sc-SVC",
+            application_mode="sr",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(tmp_path / name),
                 "sample_name": "sample",
+                "pm_on_cell_path": str(pm_path),
             },
             dry_run=True,
         )
@@ -322,17 +367,19 @@ def test_invalid_pm_preserves_all_read_input_identities(tmp_path):
     data_root = tmp_path / "data"
     output_root = tmp_path / "output"
     _write_inputs(data_root)
-    pm_path = data_root / "sample_Xenium_PM_on_cell.csv"
+    pm_path = data_root / "PM_on_cell.csv"
     payload = b",A,B\nc1,invalid,0\nc2,0,1\n"
     pm_path.write_bytes(payload)
 
     with pytest.raises(ValueError, match="pm_on_cell"):
         REVISEPipeline().run(
-            profile="application_sc_sr",
+            svc_type="sc-SVC",
+            application_mode="sr",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(output_root),
                 "sample_name": "sample",
+                "pm_on_cell_path": str(pm_path),
             },
             dry_run=True,
         )
@@ -357,7 +404,7 @@ def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path
     monkeypatch.setattr(policies, "input_identities", fail_identities)
     with pytest.raises(ValueError, match="input identities"):
         REVISEPipeline().run(
-            profile="application_sp",
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(data_root),
                 "output_root": str(output_root),
@@ -378,8 +425,8 @@ def test_input_identity_failure_persists_terminal_manifest(monkeypatch, tmp_path
 def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
     output_root = tmp_path / "output"
     with pytest.raises(ValueError, match="Out of range float values"):
-        REVISEPipeline()._run_with_algorithm_overrides(
-            profile="application_sp",
+        REVISEPipeline().run(
+            svc_type="sp-SVC",
             io_overrides={
                 "data_root": str(tmp_path / "data"),
                 "output_root": str(output_root),
@@ -392,44 +439,146 @@ def test_invalid_semantic_config_fails_before_run_envelope(tmp_path):
     assert not output_root.exists()
 
 
-def test_manifest_preserves_result_and_ist_assembly(tmp_path):
+def test_manifest_marks_unresolved_inputs_with_null_fingerprint(tmp_path):
     config = _config(tmp_path)
     ctx = PipelineContext(
         merged_config=config,
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="application_sp",
         runtime=config["runtime"],
-        route_key="sp_svc:bin2cell",
+        route_key="application:sp-SVC",
         run_dir=tmp_path / "run",
         logger=logging.getLogger("test-unresolved-provenance"),
     )
     ctx.provenance["result"] = {
         "filename": "SVC.h5ad",
-        "type": "iST-SVC",
+        "type": "sp-SVC",
     }
-    ctx.provenance["assembly"] = {
-        "ist_mapping": "random",
-        "effective_seed": 17,
-        "donor_column": "revise_ist_donor_id",
-        "donor_sha256": "a" * 64,
-        "donor_count": 2,
+    ctx.provenance["results"] = {
+        "spatial": {
+            "filename": "sc_SVC_spatial.h5ad",
+            "type": "sc-SVC",
+        },
+        "expression": {
+            "filename": "sc_SVC_expr.h5ad",
+            "type": "sc-SVC",
+        },
     }
     REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
 
     manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 4
     assert manifest["result"] == {
         "filename": "SVC.h5ad",
-        "type": "iST-SVC",
+        "type": "sp-SVC",
     }
-    assert manifest["assembly"] == {
-        "ist_mapping": "random",
-        "effective_seed": 17,
-        "donor_column": "revise_ist_donor_id",
-        "donor_sha256": "a" * 64,
-        "donor_count": 2,
+    assert manifest["results"] == {
+        "spatial": {
+            "filename": "sc_SVC_spatial.h5ad",
+            "type": "sc-SVC",
+        },
+        "expression": {
+            "filename": "sc_SVC_expr.h5ad",
+            "type": "sc-SVC",
+        },
     }
-    assert ctx.provenance["assembly"] == manifest["assembly"]
+    assert ctx.provenance["results"] == manifest["results"]
     assert manifest["input_identities"] == []
     assert "data_fingerprint" not in manifest
+
+
+def test_application_config_provenance_is_namespaced_without_overwriting_engine_identity(
+    tmp_path,
+):
+    config = _config(tmp_path)
+    effective_request = {
+        "application_route": "sc-SVC",
+        "application_mode": "cluster",
+        "selected_cell_type": "T",
+        "output": {
+            "root": str(tmp_path / "output"),
+            "dir": str(tmp_path / "output" / "T"),
+            "name": "sample",
+        },
+    }
+    application_config = {
+        "source_path": str(tmp_path / "application.yaml"),
+        "source_sha256": "a" * 64,
+        "declared_root": ".",
+        "resolved_root": str(tmp_path),
+        "cwd": str(tmp_path),
+        "resolved_inputs": {
+            "st": str(tmp_path / "st.h5ad"),
+            "reference": str(tmp_path / "sc.h5ad"),
+            "output_dir": str(tmp_path / "output"),
+        },
+        "output_root": str(tmp_path / "output"),
+        "output_dir": str(tmp_path / "output" / "T"),
+        "output_paths": {
+            "svc": str(tmp_path / "output" / "T" / "sample.h5ad"),
+        },
+        "output_name": "sample",
+        "effective_request": effective_request,
+        "effective_request_hash": hash_jsonable(effective_request),
+        "config_path": "must-not-shadow-canonical-engine-truth",
+    }
+    ctx = PipelineContext(
+        merged_config=config,
+        profile="application_sp",
+        runtime=config["runtime"],
+        route_key="application:sp-SVC",
+        run_dir=tmp_path / "run",
+        logger=logging.getLogger("test-application-config-provenance"),
+        application_config_metadata=application_config,
+    )
+
+    REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
+
+    manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
+    assert "config_path" not in manifest
+    assert manifest["application_config"] == {
+        key: value
+        for key, value in application_config.items()
+        if key != "config_path"
+    }
+    assert set(manifest["application_config"]) == {
+        "source_path",
+        "source_sha256",
+        "declared_root",
+        "resolved_root",
+        "cwd",
+        "resolved_inputs",
+        "output_root",
+        "output_dir",
+        "output_paths",
+        "output_name",
+        "effective_request",
+        "effective_request_hash",
+    }
+    assert manifest["application_config"]["effective_request"] == effective_request
+    assert manifest["application_config"]["effective_request_hash"] == hash_jsonable(
+        effective_request
+    )
+
+
+def test_benchmark_config_provenance_is_namespaced(tmp_path):
+    config = _config(tmp_path)
+    benchmark_config = {
+        "source_path": str(tmp_path / "segmentation.yaml"),
+        "source_sha256": "b" * 64,
+        "effective_request": {"route": "segmentation"},
+        "effective_request_hash": "c" * 64,
+    }
+    ctx = PipelineContext(
+        merged_config=config,
+        profile="benchmark_seg",
+        runtime=config["runtime"],
+        route_key="benchmark:segmentation",
+        run_dir=tmp_path / "run",
+        logger=logging.getLogger("test-benchmark-config-provenance"),
+        benchmark_config_metadata=benchmark_config,
+    )
+
+    REVISEPipeline.__new__(REVISEPipeline)._write_final_metadata(ctx)
+
+    manifest = json.loads((ctx.run_dir / "provenance.json").read_text())
+    assert manifest["benchmark_config"] == benchmark_config

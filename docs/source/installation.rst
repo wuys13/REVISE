@@ -1,11 +1,21 @@
 Installation
 ============
 
-Current source contract
------------------------
+REVISE supports Python 3.10 and 3.11. Use a clean environment so the selected
+OT solver and scientific stack are unambiguous.
 
-The unified CLI and optional groups documented here describe the current
-repository. Install that exact code with:
+Install a published release
+---------------------------
+
+.. code-block:: bash
+
+   python -m pip install revise-svc
+
+Published releases can lag the repository. Check the installed version before
+expecting a newly documented source-checkout interface.
+
+Install the current source
+--------------------------
 
 .. code-block:: bash
 
@@ -13,25 +23,38 @@ repository. Install that exact code with:
    cd REVISE
    python -m pip install .
 
-The published package can be installed with ``python -m pip install
-revise-svc``, but releases can lag the repository. Check the installed version
-before expecting the current CLI or optional groups.
-
-For development and test tools:
+For development and repository tests:
 
 .. code-block:: bash
 
    python -m pip install -e ".[dev]"
 
-The package contains ``revise/revise.yaml``, so installed code can construct
-``REVISEPipeline()`` without a checkout-relative configuration path.
+The installed Application command is ``revise-reconstruct``. A source checkout
+may run the same request with ``python reconstruct.py``. Sim2Real-ST Benchmark
+reproduction is a checkout workflow invoked with
+``python reproduce/benchmark_main.py``; it is not an installed console script.
 
-Dependency layers
------------------
+Choose the solver dependency
+----------------------------
 
-The base package contains reconstruction, benchmarking, the POT implementation,
-clustering, and the core scientific stack. Additional capabilities are
-installed only when needed:
+The base package contains reconstruction, benchmarking, POT, clustering, and
+the core scientific stack. POT is the default OT implementation. REVISE also
+supports TACCO as an alternative OT method; the maintained Xenium cluster-mode
+template selects TACCO 0.5.0 explicitly:
+
+.. code-block:: bash
+
+   python -m pip install "revise-svc[tacco]"
+
+From a source checkout, use ``python -m pip install ".[tacco]"``. Set
+``algorithm.ot_method`` to ``pot`` or ``tacco`` explicitly when choosing a
+different supported solver for an Application request.
+
+Optional capabilities
+---------------------
+
+These extras provide additional data reading or downstream bioinformatics
+capabilities. Install only the extra required by the workflow:
 
 .. list-table::
    :header-rows: 1
@@ -40,43 +63,57 @@ installed only when needed:
    * - Capability
      - Source-checkout install
      - Purpose
-   * - iST-SVC default solver
-     - ``python -m pip install ".[tacco]"``
-     - Installs TACCO 0.5.0, required by the default iST-SVC route
    * - Pathway analysis
      - ``python -m pip install ".[pathway]"``
-     - Dependencies used by pathway notebooks
-   * - Cell-cell interaction analysis
+     - dependencies used by pathway notebooks
+   * - Cell-cell interaction
      - ``python -m pip install ".[cci]"``
-     - Dependencies used by CCI notebooks
+     - dependencies used by CCI notebooks; databases are separate resources
    * - Trajectory analysis
      - ``python -m pip install ".[trajectory]"``
-     - Dependencies used by trajectory notebooks
+     - dependencies used by trajectory notebooks
    * - SpatialData input
      - ``python -m pip install ".[spatialdata]"``
-     - SpatialData/Zarr input support
+     - SpatialData/Zarr ST input support
 
 After a matching package version is published, replace ``.`` with
-``revise-svc`` in those commands. Optional dependency selection and runtime
-algorithm selection are separate: installing an extra makes that capability
-available but does not activate it. Without the TACCO extra, users who accept a
-different reconstruction algorithm must explicitly pass ``--ot-method pot``;
-REVISE never selects POT as an automatic fallback.
+``revise-svc`` in those commands. Installing an extra makes a capability
+available; it does not choose a route or mode, and it does not download paper
+data.
 
-The CCI extra does not download a CellPhoneDB database. None of these commands
-downloads research data or external analysis resources.
+.. _application-templates:
 
-Documentation build
--------------------
+Application templates
+---------------------
+
+A source checkout exposes exactly three maintained files under
+``configs/application/``: ``VisiumHD.yaml``, ``Xenium.yaml``, and
+``Visium.yaml``. Copy one to a working directory before editing it. The
+installed package carries identical resources under ``revise.application/templates``;
+copy a packaged template before editing it:
+
+.. code-block:: python
+
+   from importlib.resources import as_file, files
+   from shutil import copyfile
+
+   resource = files("revise.application").joinpath("templates", "Xenium.yaml")
+   with as_file(resource) as source:
+       copyfile(source, "Xenium.yaml")
+
+Then run ``revise-reconstruct --config <local-copy>.yaml``. A source checkout
+may instead use ``python reconstruct.py --config configs/application/<name>.yaml``.
+The package does not distribute the real
+P1CRC, P2CRC, or mouse-brain H5AD inputs; use the reproduction downloads in
+the repository README.
+
+Build the documentation
+-----------------------
 
 .. code-block:: bash
 
    python -m pip install -r docs/requirements.txt
    sphinx-build -W --keep-going -b html docs /tmp/revise-docs-html
 
-Research data
--------------
-
-The paper benchmark/application datasets and reproduced results are available
-at ``https://zenodo.org/records/17705737``. Real-data end-to-end testing remains
-a separate validation step.
+The documentation build renders the preserved notebook snapshots but never
+executes them.

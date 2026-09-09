@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from zipfile import ZipFile
 
-import numpy as np
-import pandas as pd
 import pytest
-import yaml
-from anndata import AnnData
-from anndata import read_h5ad
 from packaging.requirements import Requirement
-from scipy import sparse
 
 from revise import __version__
 
@@ -35,29 +29,18 @@ def _run(command, *, cwd, env):
     )
 
 
-def _write_inputs(data_root: Path) -> None:
-    rng = np.random.default_rng(17)
-    st = AnnData(
-        X=sparse.csr_matrix(rng.poisson(3, size=(52, 52)) + 1),
-        obs=pd.DataFrame(index=[f"spot-{index}" for index in range(52)]),
-        var=pd.DataFrame(index=[f"g{index}" for index in range(52)]),
+def _copy_installed_template(installed_cli, filename: str, destination: Path) -> None:
+    script = (
+        "from importlib.resources import files; from pathlib import Path; "
+        f"Path({str(destination)!r}).write_bytes("
+        f"files('revise.application').joinpath('templates', {filename!r}).read_bytes())"
     )
-    st.obsm["spatial"] = np.column_stack(
-        [np.arange(52, dtype=float), np.arange(52, dtype=float) % 7]
+    copy = _run(
+        [installed_cli["python"], "-c", script],
+        cwd=destination.parent,
+        env=installed_cli["env"],
     )
-    sc_ref = AnnData(
-        X=sparse.csr_matrix(rng.poisson(3, size=(52, 52)) + 1),
-        obs=pd.DataFrame(
-            {
-                "Level1": ["A", "B"] * 26,
-                "Level2": ["A1", "B1"] * 26,
-            },
-            index=[f"cell-{index}" for index in range(52)],
-        ),
-        var=pd.DataFrame(index=st.var_names.copy()),
-    )
-    st.write_h5ad(data_root / "sample_st.h5ad")
-    sc_ref.write_h5ad(data_root / "sc.h5ad")
+    assert copy.returncode == 0, copy.stderr
 
 
 @pytest.fixture(scope="module")
@@ -77,6 +60,25 @@ def installed_cli(tmp_path_factory):
         wheel = Path(supplied_wheel).resolve()
         assert wheel.is_file()
     else:
+        source = tmp_path / "source"
+        shutil.copytree(
+            ROOT,
+            source,
+            ignore=shutil.ignore_patterns(
+                ".git",
+                ".agents",
+                ".codegraph",
+                ".codex",
+                "build",
+                "dist",
+                "output",
+                "raw_data",
+                "results",
+                "*.egg-info",
+                "__pycache__",
+                ".pytest_cache",
+            ),
+        )
         build = _run(
             [
                 integration_python,
@@ -89,7 +91,7 @@ def installed_cli(tmp_path_factory):
                 "--wheel-dir",
                 str(wheel_dir),
             ],
-            cwd=ROOT,
+            cwd=source,
             env=env,
         )
         assert build.returncode == 0, build.stderr
@@ -124,7 +126,8 @@ def installed_cli(tmp_path_factory):
         env=env,
     )
     assert probe.returncode == 0, probe.stderr
-    assert str(venv) in probe.stdout.strip()
+    installed_package = Path(probe.stdout.strip())
+    assert str(venv) in str(installed_package)
     return {
         "root": tmp_path,
         "python": python,
@@ -145,17 +148,39 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
         metadata = archive.read(metadata_name).decode("utf-8")
         entry_points = archive.read(entry_points_name).decode("utf-8")
 
-    assert __version__ == "2.0.0rc1"
-    assert "Version: 2.0.0rc1" in metadata
+    assert f"Version: {__version__}" in metadata
     assert "Name: revise-svc" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
-    assert "revise/application/cli.py" in names
+    assert "reconstruct.py" in names
+    assert "revise/application/config.py" in names
     assert "revise/benchmark/cli.py" in names
     assert "revise/benchmark/launcher.py" in names
-    assert "revise/revise.yaml" in names
+    assert "revise/revise.yaml" not in names
+    application_templates = {
+        "revise/application/templates/VisiumHD.yaml",
+        "revise/application/templates/Xenium.yaml",
+        "revise/application/templates/Visium.yaml",
+    }
+    benchmark_templates = {
+        f"revise/benchmark/templates/{route}.yaml"
+        for route in (
+            "segmentation",
+            "bin2cell",
+            "batch_effect",
+            "spot_size",
+            "gene_panel",
+            "gene_dropout",
+        )
+    }
+    assert {
+        name for name in names if name.startswith("revise/application/templates/")
+    } == application_templates
+    assert {
+        name for name in names if name.startswith("revise/benchmark/templates/")
+    } == benchmark_templates
     assert any(".dist-info/" in name and name.endswith("/LICENSE") for name in names)
     assert not any(name.startswith("tests/") for name in names)
-    assert "revise-reconstruct = revise.application.cli:main" in entry_points
+    assert "revise-reconstruct = reconstruct:main" in entry_points
 
     requirements = [
         Requirement(line.removeprefix("Requires-Dist: "))
@@ -172,11 +197,18 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
         "cellphonedb",
         "spatialdata",
     }
+    omicverse_stack = {
+        "omicverse",
+        "torch-geometric",
+        "torch",
+        "setuptools",
+        "transformers",
+    }
     expected_extras = {
         "tacco": {"tacco"},
-        "pathway": {"gseapy", "networkx", "omicverse"},
-        "cci": {"cellphonedb", "omicverse"},
-        "trajectory": {"omicverse"},
+        "pathway": {"gseapy", "networkx", *omicverse_stack},
+        "cci": {"cellphonedb", *omicverse_stack},
+        "trajectory": omicverse_stack,
         "spatialdata": {"spatialdata"},
     }
     for extra, expected in expected_extras.items():
@@ -189,54 +221,54 @@ def test_built_wheel_has_canonical_metadata_and_contents(installed_cli):
         assert selected == expected
 
 
-def test_built_wheel_installs_console_help_and_version(installed_cli):
+def test_built_wheel_installs_console_help(installed_cli):
     command = installed_cli["command"]
     env = installed_cli["env"]
     cwd = installed_cli["root"]
 
     help_result = _run([command, "--help"], cwd=cwd, env=env)
     assert help_result.returncode == 0, help_result.stderr
-    assert "--ot-method" in help_result.stdout
-    assert "--dry-run" in help_result.stdout
-    assert "--svc-type {hST-SVC,iST-SVC,sST-SVC}" in help_result.stdout
-    assert "--ist-mapping {mean,random}" in help_result.stdout
+    assert "--config CONFIG" in help_result.stdout
+    assert "--select-ct SELECT_CT" in help_result.stdout
+    assert "--svc-type" not in help_result.stdout
     assert "--set" not in help_result.stdout
-    assert "--select-ct" in help_result.stdout
-    assert "--sc-mapping" not in help_result.stdout
 
-    for removed_option in (
-        ["--set", "graph.method=pca"],
-        ["--sc-mapping", "mean"],
-    ):
-        removed = _run(
-            [
-                str(command),
-                "--svc-type",
-                "iST-SVC",
-                "--sample-name",
-                "sample",
-                "--st-file",
-                "st.h5ad",
-                "--sc-ref-file",
-                "sc.h5ad",
-                "--data-root",
-                "data",
-                *removed_option,
-            ],
-            cwd=installed_cli["root"],
-            env=env,
-        )
-        assert removed.returncode == 2
-        assert f"unrecognized arguments: {removed_option[0]}" in removed.stderr
 
-    version = _run(
-        [str(command), "--version"],
-        cwd=cwd,
-        env=env,
+def test_installed_cli_normalizes_cluster_override_before_reconstruction(installed_cli):
+    root = installed_cli["root"] / "xenium-override"
+    root.mkdir()
+    config_path = root / "Xenium.yaml"
+    _copy_installed_template(installed_cli, "Xenium.yaml", config_path)
+    probe = (
+        "import json; "
+        "from revise.application.config import (compile_application_config, "
+        "load_application_yaml, override_select_cell_type); "
+        "from revise.application.publication import output_paths; "
+        f"source, document = load_application_yaml({str(config_path)!r}); "
+        "config = compile_application_config(document, source=source); "
+        "config = override_select_cell_type(config, 'Mono/Macro'); "
+        "print(json.dumps({'select_cell_type': config.select_cell_type, "
+        "'output_dir': str(config.output_dir), "
+        "'outputs': {key: str(path) for key, path in output_paths(config).items()}}))"
+    )
+    result = _run(
+        [installed_cli["python"], "-c", probe],
+        cwd=root,
+        env=installed_cli["env"],
     )
 
-    assert version.returncode == 0, version.stderr
-    assert version.stdout.strip() == f"revise-reconstruct {__version__}"
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    expected_dir = root / "results" / "sc_SVC_case" / "P2CRC_Xenium" / "Mono_Macro"
+    assert payload == {
+        "select_cell_type": "Mono_Macro",
+        "output_dir": str(expected_dir),
+        "outputs": {
+            "spatial": str(expected_dir / "spatial.h5ad"),
+            "expression": str(expected_dir / "expr.h5ad"),
+        },
+    }
+
 
 
 def test_installed_wheel_benchmark_module_and_refinement_option(installed_cli):
@@ -267,166 +299,3 @@ def test_installed_wheel_benchmark_module_and_refinement_option(installed_cli):
     assert probe.returncode == 0, probe.stderr
     payload = json.loads(probe.stdout)
     assert str(installed_cli["root"] / "venv") in payload["module"]
-
-
-@pytest.mark.parametrize(
-    ("svc_type", "profile", "route", "mapping_args"),
-    (
-        ("hST-SVC", "application_sp", "sp_svc:bin2cell", []),
-        (
-            "iST-SVC",
-            "application_sc",
-            "sc_svc:segmentation",
-            ["--ist-mapping", "mean"],
-        ),
-        ("sST-SVC", "application_sc_sr", "sc_svc_sr:spot_size", []),
-    ),
-)
-def test_installed_cli_preflight_runs_outside_checkout(
-    installed_cli,
-    svc_type,
-    profile,
-    route,
-    mapping_args,
-):
-    root = installed_cli["root"]
-    data_root = root / f"dry-data-{svc_type}"
-    data_root.mkdir()
-    _write_inputs(data_root)
-    output_root = root / f"dry-output-{svc_type}"
-    result = _run(
-        [
-            installed_cli["command"],
-            "--svc-type",
-            svc_type,
-            "--sample-name",
-            "sample",
-            "--st-file",
-            "st.h5ad",
-            "--sc-ref-file",
-            "sc.h5ad",
-            "--data-root",
-            data_root,
-            "--output-root",
-            output_root,
-            "--ot-method",
-            "pot",
-            *mapping_args,
-            "--dry-run",
-        ],
-        cwd=root,
-        env=installed_cli["env"],
-    )
-
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "ready"
-    assert payload["svc_type"] == svc_type
-    assert payload["pipeline"]["profile"] == profile
-    assert payload["pipeline"]["route"] == route
-    assert not list(output_root.rglob("*.h5ad"))
-
-
-def test_source_and_installed_minimal_pot_runs_match(installed_cli):
-    source_python = installed_cli["source_python"]
-    availability = _run(
-        [source_python, "-c", "import scanpy, ot, squidpy"],
-        cwd=installed_cli["root"],
-        env=installed_cli["env"],
-    )
-    assert availability.returncode == 0, (
-        "release integration interpreter lacks mandatory base dependencies: "
-        f"{availability.stderr}"
-    )
-
-    data_root = installed_cli["root"] / "pot-data"
-    data_root.mkdir()
-    _write_inputs(data_root)
-    config = yaml.safe_load((ROOT / "revise/revise.yaml").read_text(encoding="utf-8"))
-    config["defaults"]["preprocess"].update(
-        st_min_counts=1,
-        st_min_cells=1,
-        sc_min_counts=1,
-        sc_min_cells=1,
-    )
-    config["defaults"]["graph"].update(
-        method="pca",
-        n_neighbors=5,
-        exp_neighbors=5,
-    )
-    config["defaults"]["plot"]["enabled"] = False
-    config_path = installed_cli["root"] / "minimal-pot.yaml"
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
-    common = [
-        "--svc-type",
-        "hST-SVC",
-        "--sample-name",
-        "sample",
-        "--st-file",
-        "st.h5ad",
-        "--sc-ref-file",
-        "sc.h5ad",
-        "--data-root",
-        str(data_root),
-        "--ot-method",
-        "pot",
-        "--config",
-        str(config_path),
-    ]
-    runs = []
-    for name, prefix in (
-        (
-            "source",
-            [source_python, ROOT / "reconstruct.py"],
-        ),
-        ("installed", [installed_cli["command"]]),
-    ):
-        output_root = installed_cli["root"] / f"{name}-output"
-        result = _run(
-            [*prefix, *common, "--output-root", output_root],
-            cwd=installed_cli["root"],
-            env=installed_cli["env"],
-        )
-        assert result.returncode == 0, result.stderr
-        payload = json.loads(result.stdout)
-        public = output_root / "sample" / "hST-SVC" / "SVC.h5ad"
-        assert public.is_file()
-        assert Path(payload["output"]) == public
-        manifest_path = next(output_root.rglob("provenance.json"))
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        assert manifest["run"]["status"] == "succeeded"
-        assert manifest["result"] == {
-            "filename": "SVC.h5ad",
-            "type": "hST-SVC",
-        }
-        assert "result_hash" not in manifest
-        assert manifest["stages"][3]["status"] == "succeeded"
-        # Each A/B fixture group has 26 observations, so the runner's existing
-        # <=50 rule skips local OT while still exercising full publication.
-        assert manifest["local_refinement"] == {
-            "route": "sp_svc:bin2cell",
-            "applied": False,
-            "strength": 0.2,
-        }
-        public_artifacts = [
-            artifact
-            for artifact in manifest["artifacts"]
-            if artifact["role"] == "public_result"
-            and artifact["status"] == "completed"
-        ]
-        assert len(public_artifacts) == 1
-        assert Path(public_artifacts[0]["path"]) == public
-        assert public_artifacts[0]["sha256"] == hashlib.sha256(
-            public.read_bytes()
-        ).hexdigest()
-        published = read_h5ad(public)
-        assert published.uns["revise_reconstruction"] == {
-            "schema_version": 2,
-            "svc_type": "hST-SVC",
-        }
-        assert "ot_events" not in manifest
-        runs.append((payload, manifest))
-
-    assert runs[0][0]["shape"] == runs[1][0]["shape"] == [52, 52]
-    assert runs[0][0]["pipeline"]["profile"] == runs[1][0]["pipeline"]["profile"]
-    assert runs[0][0]["pipeline"]["route"] == runs[1][0]["pipeline"]["route"]

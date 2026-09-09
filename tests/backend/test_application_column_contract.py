@@ -211,7 +211,7 @@ def test_lightweight_fixture_restores_relevant_prefix_keys_and_identities():
     next(fixture)
     try:
         importlib.import_module("revise.backend.ops.assignment")
-        importlib.import_module("revise.backend.ops.local_ot")
+        importlib.import_module("revise.backend.kernels.ot")
         importlib.import_module("revise.backend.ops.posterior_conditioning")
         importlib.import_module("revise.backend.ops.sr_allocation")
         sys.modules[probe_name] = probe
@@ -265,6 +265,7 @@ def _sp_argmax_runner(module):
     runner.config = SimpleNamespace(
         plot_flag=False,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_method="pca",
         rec_graph_alpha=0.0,
         rec_graph_exp_neighbor_num=1,
@@ -282,14 +283,9 @@ def _sp_argmax_runner(module):
     return runner
 
 
-def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path):
-    from revise.backend import adapters
+def test_application_preprocessing_normalizes_configured_reference_labels():
+    from revise.application.preprocess import normalize_reference_labels
 
-    st = AnnData(
-        X=sparse.csr_matrix(np.ones((2, 2))),
-        obs=pd.DataFrame(index=["s1", "s2"]),
-        var=pd.DataFrame(index=["g1", "g2"]),
-    )
     reference = AnnData(
         X=sparse.csr_matrix(np.ones((2, 2))),
         obs=pd.DataFrame(
@@ -302,70 +298,14 @@ def test_sp_adapter_normalizes_configured_reference_labels(monkeypatch, tmp_path
         ),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
+    normalized = normalize_reference_labels(reference, ["major_type", "minor_type"])
 
-    class InputService:
-        def read_st_adata(self, path):
-            return st.copy()
-
-        def read_sc_ref_adata(self, path):
-            return reference.copy()
-
-    monkeypatch.setattr(adapters, "_input_service", lambda ctx: InputService())
-    monkeypatch.setattr(
-        adapters.sc.pp,
-        "filter_cells",
-        lambda *args, **kwargs: None,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        adapters.sc.pp,
-        "filter_genes",
-        lambda *args, **kwargs: None,
-        raising=False,
-    )
-    ctx = SimpleNamespace(
-        merged_config={
-            "ot": {
-                "ga": {
-                    "solver": "pot",
-                    "pot": {"reg": 0.1, "reg_m": 0.0, "reg_type": "entropy"},
-                },
-                "lr": {
-                    "solver": "pot",
-                    "pot": {"reg": 0.1, "reg_m": 0.0, "reg_type": "kl"},
-                },
-                "impute": {"reg": 5.0, "reg_m": 0.0, "reg_type": "kl"},
-            },
-                "preprocess": {},
-                "graph": {},
-                "plot": {},
-                "local_refinement": {"strength": 0.2},
-        },
-        io={
-            "sample_name": "sample",
-            "data_root": str(tmp_path),
-            "st_file": "st.h5ad",
-            "sc_ref_file": "sc.h5ad",
-            "patient_key": "Patient",
-        },
-        columns={
-            "cell_type_col": "major_type",
-            "sub_cell_type_col": "minor_type",
-            "confidence_col": "Confidence",
-            "unknown_key": "Unknown",
-        },
-        run_dir=tmp_path,
-        logger=logging.getLogger("test-sp-label-normalization"),
-    )
-
-    adapters.SpSvcApplicationStrategy().prepare_context(ctx)
-
-    assert ctx.runner.sc_ref_adata.obs["major_type"].tolist() == ["T_NK", "T_NK"]
-    assert ctx.runner.sc_ref_adata.obs["minor_type"].tolist() == ["T_1", "T_2"]
+    assert normalized.obs["major_type"].tolist() == ["T_NK", "T_NK"]
+    assert normalized.obs["minor_type"].tolist() == ["T_1", "T_2"]
 
 
 def test_reference_label_normalization_rejects_category_collisions():
-    from revise.backend.adapters import _replace_slash_labels
+    from revise.application.preprocess import normalize_reference_labels
 
     reference = AnnData(
         X=np.ones((2, 1)),
@@ -374,7 +314,7 @@ def test_reference_label_normalization_rejects_category_collisions():
     )
 
     with pytest.raises(ValueError, match="collide after slash normalization"):
-        _replace_slash_labels(reference, ["major_type"])
+        normalize_reference_labels(reference, ["major_type"])
 
 
 def test_sp_local_refinement_trims_by_the_configured_cell_type(monkeypatch):
@@ -446,9 +386,11 @@ def test_sp_argmax_without_soft_posterior_fails_before_local_solver(
 
     monkeypatch.setattr(
         module,
-        "solve_local_ot",
-        lambda *_args, **_kwargs: pytest.fail(
-            "missing soft Q must fail before local solve"
+        "OTKernel",
+        SimpleNamespace(
+            couple=lambda *_args, **_kwargs: pytest.fail(
+                "missing soft Q must fail before local solve"
+            )
         ),
     )
 
@@ -457,7 +399,7 @@ def test_sp_argmax_without_soft_posterior_fails_before_local_solver(
 
 
 def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):
-    from revise.backend.runners import sc_svc_sr_application as module
+    from revise.backend.runners import sc_svc_super_resolution_application as module
 
     st = AnnData(
         X=np.ones((1, 2)),
@@ -476,10 +418,13 @@ def test_sr_reference_profiles_ignore_an_unrelated_clusters_column(monkeypatch):
         ),
         var=pd.DataFrame(index=["g1", "g2"]),
     )
-    runner = module.ScSVCSr.__new__(module.ScSVCSr)
+    runner = module.ScSVCSuperResolution.__new__(module.ScSVCSuperResolution)
     runner.st_adata = st
     runner.sc_ref_adata = reference
-    runner.config = SimpleNamespace(cell_type_col="major_type")
+    runner.config = SimpleNamespace(
+        cell_type_col="major_type",
+        unknown_key="Unknown",
+    )
     runner.spot_sr = SimpleNamespace(run=lambda _runner: None)
     runner.logger = logging.getLogger("test-sr-custom-column")
 
@@ -522,6 +467,7 @@ def test_sr_benchmark_custom_broad_column_drives_mandatory_allocation(
     runner.sc_ref_adata = reference
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_agg_enabled=False,
         local_refinement_strength=0.0,
     )
@@ -579,6 +525,7 @@ def test_sr_benchmark_reference_uses_configured_broad_column_without_clusters(
     runner.sc_ref_adata = reference
     runner.config = SimpleNamespace(
         cell_type_col="major_type",
+        unknown_key="Unknown",
         rec_graph_agg_enabled=False,
         local_refinement_strength=0.0,
     )
@@ -611,7 +558,7 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
     monkeypatch,
     load_runner,
 ):
-    module = load_runner("sc_svc_sr_application")
+    module = load_runner("sc_svc_super_resolution_application")
     from revise.backend.kernels.spot_sr import SpotSrKernel
     from revise.backend.ops.sr_allocation import (
         mandatory_reference_allocation as real_reference_allocation,
@@ -641,10 +588,11 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
         svc_completeness=True,
         sr_assignment_seed=17,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         local_refinement_strength=0.0,
         rec_match_spot_sum=True,
     )
-    runner = module.ScSVCSr.__new__(module.ScSVCSr)
+    runner = module.ScSVCSuperResolution.__new__(module.ScSVCSuperResolution)
     runner.st_adata = st
     runner.sc_ref_adata = reference
     runner.config = config

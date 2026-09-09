@@ -1,21 +1,21 @@
-Curated Reproduction Notebooks
-==============================
+Application Gallery
+===================
 
-Curated notebooks are included under ``reproduce/benchmark/`` and
-``reproduce/case/``. They preserve the paper-facing workflows and embedded
-historical outputs but are not part of the installed Python package. They are
-1.x historical reproduction material, not current 2.0 output; their carrier
-filenames therefore remain unchanged.
+This page indexes the preserved Application notebooks. Each card opens the
+static notebook page for one concrete spatial-transcriptomics reconstruction
+case. Sim2Real-ST Benchmark notebooks remain in their separate documentation
+section.
 
-Benchmark notebooks inspect Sim2Real-ST metric outputs. Application notebooks
-cover reconstruction and downstream cell-state, pathway, spatial-pattern, and
-other analyses. Some require optional package extras and external reference
-resources.
+.. nbgallery::
 
-Evidence boundary
------------------
-
-The presence of a notebook proves only that the workflow is preserved in the
-repository. It does not establish that the current source checkout reran a
-displayed result or biologically validated a downstream pattern. Use the
-current CLI and ``provenance.json`` contract for new runs.
+   Visium HD (hST platform) sp-SVC <../case/VisiumHD_sp_SVC>
+   Slide-seq (hST platform) mouse olfactory bulb sp-SVC <../case/SlideSeq_mouse_olfactory_bulb_sp_SVC>
+   Slide-seq (hST platform) mouse colon sp-SVC <../case/SlideSeq_mouse_colon_sp_SVC>
+   Stereo-seq (hST platform) zebrafish 5 hpf sp-SVC <../case/StereoSeq_zebrafish_5hpf_sp_SVC>
+   CosMx SMI (iST platform) 267T_not sp-SVC <../case/CosMx_SMI_267T_not_sp_SVC>
+   Xenium (iST platform) sc-SVC T cells <../case/Xenium_sc_SVC_T>
+   Xenium (iST platform) sc-SVC Fibroblast <../case/Xenium_sc_SVC_Fibroblast>
+   Xenium (iST platform) sc-SVC Mono/Macro <../case/Xenium_sc_SVC_Monocyte>
+   osmFISH (iST platform) sc-SVC cluster <../case/osmFISH_sc_SVC_cluster>
+   MERFISH (iST platform) Allen VISp sc-SVC cluster <../case/MERFISH_Allen_VISp_sc_SVC_cluster>
+   Visium (sST platform) sc-SVC mouse brain (SR mode) <../case/Visium_sc_SVC_mouse_brain>

@@ -95,6 +95,7 @@ def _isolated_impute_module():
     kernels = types.ModuleType("revise.backend.kernels")
     kernels.GeneImputeKernel = object
     kernels.GeneUncertaintyKernel = object
+    kernels.OTKernel = object
     sys.modules[kernels.__name__] = kernels
 
     benchmark = types.ModuleType("revise.backend.runners.benchmark_svc")
@@ -204,7 +205,7 @@ def _patch_problem(
             raise solver_error
         return np.outer(source_mass, target_mass)
 
-    monkeypatch.setattr(module, "solve_local_ot", solve)
+    monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
 
     def merge(adata, *, subcluster, mode):
         labels = list(dict.fromkeys(adata.obs[subcluster].astype(str)))

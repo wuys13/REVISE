@@ -41,7 +41,7 @@ def _quota():
 
 
 def test_snapshot_hashes_and_parses_the_same_single_read_bytes(monkeypatch, tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     original = b",T,Mono/Macro\nc1,0.8,0.2\nc2,0.1,0.9\n"
     replacement = b",T,Mono/Macro\nc1,0.4,0.6\nc2,0.7,0.3\n"
     path.write_bytes(original)
@@ -82,7 +82,6 @@ def test_snapshot_hashes_and_parses_the_same_single_read_bytes(monkeypatch, tmp_
 @pytest.mark.parametrize(
     "frame",
     [
-        pd.DataFrame([[0.2, 0.2]], index=["c1"], columns=["A", "B"]),
         pd.DataFrame([[-0.1, 1.1]], index=["c1"], columns=["A", "B"]),
         pd.DataFrame([[np.nan, np.nan]], index=["c1"], columns=["A", "B"]),
         pd.DataFrame([[np.inf, -np.inf]], index=["c1"], columns=["A", "B"]),
@@ -90,11 +89,25 @@ def test_snapshot_hashes_and_parses_the_same_single_read_bytes(monkeypatch, tmp_
     ],
 )
 def test_snapshot_rejects_invalid_probability_matrices(frame, tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     frame.to_csv(path)
 
     with pytest.raises(ValueError, match="pm_on_cell"):
         REVISEInputService().snapshot_pm_on_cell(path)
+
+
+def test_snapshot_preserves_unnormalized_pm_scores(tmp_path):
+    path = tmp_path / "PM_on_cell.csv"
+    expected = pd.DataFrame(
+        [[0.2, 0.2], [0.7, 0.4]],
+        index=["c1", "c2"],
+        columns=["A", "B"],
+    )
+    expected.to_csv(path)
+
+    frame, _identity = REVISEInputService().snapshot_pm_on_cell(path)
+
+    pd.testing.assert_frame_equal(frame, expected)
 
 
 @pytest.mark.parametrize(
@@ -105,7 +118,7 @@ def test_snapshot_rejects_invalid_probability_matrices(frame, tmp_path):
     ],
 )
 def test_snapshot_rejects_duplicate_or_blank_raw_headers(payload, tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     path.write_bytes(payload)
 
     with pytest.raises(ValueError, match="header"):
@@ -113,7 +126,7 @@ def test_snapshot_rejects_duplicate_or_blank_raw_headers(payload, tmp_path):
 
 
 def test_missing_snapshot_stays_none_after_file_appears(tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
 
     frame, identity = REVISEInputService().snapshot_pm_on_cell(path)
     path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
@@ -130,7 +143,7 @@ def test_missing_snapshot_stays_none_after_file_appears(tmp_path):
 
 
 def test_kernel_does_not_discover_pm_from_a_path(tmp_path):
-    path = tmp_path / "sample_PM_on_cell.csv"
+    path = tmp_path / "PM_on_cell.csv"
     path.write_text(",A,B\nc1,1,0\nc2,0,1\n", encoding="utf-8")
     config = SimpleNamespace(
         pm_on_cell=None,
@@ -145,19 +158,17 @@ def test_kernel_does_not_discover_pm_from_a_path(tmp_path):
     assert kernel.pm_on_cell is None
 
 
-def test_kernel_requires_exact_active_cell_and_type_sets():
-    extra_cell = pd.DataFrame(
-        [[0.5, 0.5], [0.5, 0.5], [0.5, 0.5]],
-        index=["c1", "c2", "c3"],
-        columns=["Mono_Macro", "T"],
+def test_kernel_subsets_global_pm_to_active_cell_and_type_axes():
+    global_pm = pd.DataFrame(
+        [[0.6, 0.4, 0.2], [0.3, 0.7, 0.5], [0.4, 0.6, 0.9]],
+        index=["c1", "c2", "unrelated-case-cell"],
+        columns=["Mono_Macro", "T", "unrelated-reference-class"],
     )
-    with pytest.raises(ValueError, match="extra"):
-        _kernel(extra_cell).assign_cell_types(_svc_obs(), _quota())
+    kernel = _kernel(global_pm)
 
-    extra_type = pd.DataFrame(
-        [[0.4, 0.4, 0.2], [0.4, 0.4, 0.2]],
-        index=["c1", "c2"],
-        columns=["Mono_Macro", "T", "B"],
+    kernel.assign_cell_types(_svc_obs(), _quota())
+
+    pd.testing.assert_frame_equal(
+        kernel.pm_on_cell,
+        global_pm.loc[["c2", "c1"], ["Mono_Macro", "T"]],
     )
-    with pytest.raises(ValueError, match="extra"):
-        _kernel(extra_type).assign_cell_types(_svc_obs(), _quota())

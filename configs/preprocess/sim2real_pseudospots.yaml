@@ -1,0 +1,34 @@
+schema_version: 1
+
+reference:
+  path: ../../raw_data/Real_application/adata_sc_all_reanno.h5ad
+  patient_column: Patient
+
+samples:
+  P1CRC:
+    xenium_path: ../../raw_data/Real_application/P1CRC_Xenium.h5ad
+    output_dir: ../../raw_data/Sim2Real-ST-P1CRC
+  P5CRC:
+    xenium_path: ../../raw_data/Real_application/P5CRC_Xenium.h5ad
+    output_dir: ../../raw_data/Sim2Real-ST-P5CRC
+
+preprocessing:
+  transcript_counts_min: 60
+  gene_min_cells: 100
+  label_key: Level1
+  unknown_label: Unknown
+  min_cells_per_type: 60
+
+# P2CRC is a read-only composition and size template; it is never regenerated.
+template_root: ../../raw_data/Sim2Real-ST/spot
+
+proposal:
+  base_width: 2740
+  base_height: 1370
+  scales: [0.75, 1.0, 1.25]
+  step: 250
+  min_cells: 1000
+  max_iou: 0.25
+
+spot_sizes: [50, 100, 150, 200]
+seed: 42

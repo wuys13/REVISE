@@ -1,126 +1,80 @@
 Concepts
 ========
 
-REVISE uses one orchestration lifecycle for three reconstruction types. The
-route describes the computational contract; it does not by itself prove that a
-reconstructed object is a true cell or biologically valid result.
+REVISE reconstructs Spatially-inferred Virtual Cells (SVCs) with one shared
+reconstruction lifecycle. Application users choose from the shape of their
+spatial observations; Sim2Real-ST Benchmark users choose a confounding-factor
+family. The frontends prepare different data, then meet at the same engine and
+optimal-transport implementation.
 
-Routes and result types
------------------------
+Choose from the data shape
+--------------------------
 
 .. list-table::
    :header-rows: 1
-   :widths: 1 2 2
+   :widths: 2 3 3 3
 
-   * - Public type
-     - Input rows
-     - Public 2.0 result type
-   * - ``hST-SVC``
+   * - Public type and mode
+     - Spatial rows
+     - Typical platform
+     - Public result
+   * - ``sp-SVC``
      - high-definition bins or pseudo-cells
-     - ``hST-SVC``
-   * - ``iST-SVC``
-     - segmented imaging-ST cells
-     - ``iST-SVC``
-   * - ``sST-SVC``
-     - spot-level observations
-     - ``sST-SVC``
+     - Visium HD
+     - one spatially refined ``AnnData``
+   * - ``sc-SVC``, cluster mode
+     - segmented cells
+     - Xenium, CosMx, MERFISH
+     - spatial and expression ``AnnData`` objects for one selected broad type
+   * - ``sc-SVC``, sr mode
+     - multi-cell spots
+     - Visium
+     - one virtual-cell reconstruction ``AnnData``
 
-Every route publishes exactly
-``<output-root>/<sample-name>/<svc-type>/SVC.h5ad``. The manifest ``result``
-contains the filename and selected public type. Only iST-SVC adds top-level
-``assembly`` evidence for its result construction.
+This is a data-shape decision, not an automatic platform detector. The user is
+responsible for supplying the matching input and annotation columns.
 
-The implementation retains internal IDs such as ``application_sp``,
-``application_sc``, ``application_sc_sr``, ``sp_svc``, ``sc_svc``, and
-``sc_svc_sr`` for profiles and backend routing. They are not public selectors.
+sc-SVC modes
+------------
 
-iST-SVC result ownership
+Cluster mode starts from segmented-cell observations. Its selected broad cell
+type identifies the cohort that receives subtype and expression refinement;
+the two output carriers keep spatial-side and expression-side analysis
+separate.
+
+SR mode starts from a multi-cell spot. It constructs the virtual-cell rows
+needed for each spot and assigns the spot-level broad composition to those
+rows. A supplied PM-on-cell score matrix can guide that assignment; otherwise
+the seeded quota allocation is used. SR mode reconstructs cell-type composition
+and expression within a spot. It does **not** by itself prove physical
+sub-spot cell locations or a nucleus/localization result. Segmentation-derived
+centers, when supplied, are retained; missing centers remain at the source
+spot coordinate.
+
+For exact input axes, PM semantics, field constraints, and output paths, see
+:doc:`application-reference`.
+
+Unified lifecycle and OT
 ------------------------
 
-``--ist-mapping mean`` is the default. Observations and spatial mappings come
-from the spatial carrier; variables and variable mappings come from the
-expression carrier. The public ``X`` uses the expression carrier as-is when
-computing each matched cluster mean. ``random`` keeps that ownership but uses a
-seeded donor row from the same cluster and records donor identities. H5AD
-serialization omits inapplicable ``uns`` keys whose values are ``None``; it
-does not invent sentinel values. Applicable mapping and donor evidence is
-present exactly as described in :doc:`case`.
+Application and Benchmark requests converge on this fixed stage order:
 
-Shared lifecycle
-----------------
+1. validate inputs;
+2. Global Anchoring;
+3. Local Refinement, including route-owned local-unit, graph, and OT work;
+4. finalize the SVC;
+5. evaluate only for an enabled Benchmark request.
 
-Every full pipeline request follows the same ordered stages:
+``algorithm.ot_method`` selects both the Global Anchoring and Local Refinement
+solver in an Application YAML. POT and TACCO share the same lower-level OT
+surface. A missing or failed selected solver is an error; REVISE never switches
+to the other solver automatically.
 
-1. input validation;
-2. Global Anchoring (GA);
-3. local-unit preparation;
-4. graph construction;
-5. OT problem construction and Local Refinement (LR);
-6. expression update;
-7. SVC finalization;
-8. optional benchmark evaluation.
+Evidence boundary
+-----------------
 
-``ot.ga.solver`` and ``ot.lr.solver`` select POT or TACCO for their respective
-stages. ``--ot-method`` is the convenience control that sets both stages.
-
-Spot super-resolution cell locations and random assignment
------------------------------------------------------------
-
-An sST-SVC route needs a count of virtual cells per spot. If a curated
-``uns["all_cells_in_spot"]`` mapping is absent, the input adapter estimates
-counts from spot transcript totals and creates virtual-cell rows.
-
-Segmentation-derived cell centers use the optional standardized
-``uns["revise_cell_locations"]`` DataFrame. Its index contains unique
-``cell_id`` values, its columns are ``spot_name``, ``x``, and ``y``, and its
-cell-to-spot assignments must agree with ``uns["all_cells_in_spot"]``. The
-histology-prior preprocessor writes this table from segmented-cell centroids.
-Its x/y values must use the same coordinate system and scale as
-``obsm["spatial"]``. Rows without a supplied center use the source spot
-coordinate; REVISE does not invent a sub-spot coordinate for them.
-
-The LR contribution proportions are converted with ``np.round`` and then
-repaired in stable order until each spot has an exact quota equal to its virtual
-cell count. The optional ``PM_on_cell.csv`` is a sample-local probability prior
-for assigning those quota slots in the current sample. Its case-sensitive path
-is derived from the resolved ST input as
-``<st-parent>/<st-stem>_PM_on_cell.csv``; there is no CLI path override.
-Its rows must exactly equal the active virtual-cell IDs and its columns must
-exactly equal the active normalized cell-type labels. After exact set equality,
-REVISE only reindexes them into active order. Values must be numeric and finite
-within ``[0, 1]``, and every row must sum to one with zero relative tolerance
-and an absolute tolerance of ``1e-6``. REVISE never clips or normalizes PM.
-PM is the assignment's prior score matrix, not a case table, cohort registry,
-or generic assignment posterior. If the file is missing, one seeded random
-permutation assigns the quota slots to the existing virtual-cell rows inside
-each spot.
-
-The tested invariant is exact per-spot composition, plus repeatability for the
-same seed. Which virtual-cell row receives a type can change with the seed.
-This random assignment changes which existing virtual-cell row receives a cell
-type; it does not generate an x/y coordinate. It is not a nucleus or
-cell-localization result and cannot establish which inferred type belongs to a
-supplied segmentation center.
-
-Inputs
-------
-
-The default input carrier is AnnData/H5AD. ST input provides an expression
-matrix and spatial coordinates; the reference provides an expression matrix
-and cell-type labels. Optional SpatialData input normalizes a selected ST table
-into that same AnnData contract. Reference and benchmark ground-truth inputs
-remain AnnData/H5AD.
-
-The pipeline validates input roles, axes, required fields, coordinate shape,
-and gene overlap. It aligns benchmark observations by shared identifiers before
-metrics are called. Validation does not convert an arbitrary or mismatched
-dataset into a scientifically comparable one.
-
-Evidence versus interpretation
-------------------------------
-
-Automated tests establish route selection, array/label invariants, solver
-events, deterministic identities, failure states, output publication, and
-small synthetic execution. They do not establish biological validation,
-cross-solver biological parity, or production-scale suitability. See
-:doc:`limitations` before interpreting an SVC or benchmark table.
+Tests establish routing, input and axis contracts, deterministic identities,
+failure states, output publication, and small synthetic execution. A notebook
+snapshot or a passing software test does not establish biological validation,
+clinical validity, cross-solver biological parity, or production-scale
+suitability.

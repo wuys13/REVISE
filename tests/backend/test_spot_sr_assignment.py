@@ -5,7 +5,6 @@ import itertools
 import logging
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,10 +13,39 @@ import pytest
 from anndata import AnnData
 
 from revise.backend.kernels.spot_sr import SpotSrKernel
-from revise.config import load_raw_config, merge_unified_config
+from revise.config import merge_unified_config, resolve_semantic_route
+from revise.config.authority import _authority_document
 
 
-CONFIG_PATH = Path(__file__).parents[2] / "revise" / "revise.yaml"
+def _merged(profile, *, runtime_overrides=None, io_overrides=None):
+    raw = _authority_document()
+    namespace, selector = next(
+        (namespace, selector)
+        for namespace, routes in raw["router"].items()
+        for selector, spec in routes.items()
+        if spec["profile"] == profile
+    )
+    if namespace == "application" and selector.startswith("sc-SVC:"):
+        runtime = resolve_semantic_route(
+            raw,
+            svc_type="sc-SVC",
+            application_mode=selector.split(":", 1)[1],
+        )
+    else:
+        runtime = resolve_semantic_route(
+            raw,
+            **({"svc_type": selector} if namespace == "application" else {"cf": selector}),
+        )
+    selected_profile = runtime.pop("profile")
+    runtime.pop("warning")
+    runtime.update(runtime_overrides or {})
+    return merge_unified_config(
+        raw_config=raw,
+        profile=selected_profile,
+        runtime_overrides=runtime,
+        io_overrides=io_overrides or {},
+        algorithm_overrides={},
+    )
 
 
 def _kernel(*, pm=None, seed=42, cell_type_col="Level1"):
@@ -177,26 +205,34 @@ def test_pm_allocation_rejects_missing_active_axes(pm, message):
     assert "cell_type" not in svc_obs
 
 
-def test_pm_allocation_rejects_extra_patient_level_rows():
+def test_pm_contract_subsets_patient_level_rows_to_current_case_cells():
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
     pm = pd.DataFrame(
         [[1.0, 0.0], [0.0, 1.0], [0.2, 0.8]],
         index=["c1", "c2", "unrelated-case-cell"],
         columns=["A", "B"],
     )
-    with pytest.raises(ValueError, match="extra"):
-        _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
+    kernel = _kernel(pm=pm)
+
+    result = kernel.assign_cell_types(svc_obs, _quota())
+
+    pd.testing.assert_frame_equal(kernel.pm_on_cell, pm.loc[["c1", "c2"], ["A", "B"]])
+    assert result.set_index("cell_id")["cell_type"].to_dict() == {"c1": "A", "c2": "B"}
 
 
-def test_pm_allocation_rejects_extra_global_classes():
+def test_pm_contract_subsets_global_classes_to_reference_classes():
     svc_obs = _svc({"spot-a": ["c1", "c2"]})
     pm = pd.DataFrame(
         [[1.0, 0.0, 0.3], [0.0, 1.0, 0.7]],
         index=["c1", "c2"],
         columns=["A", "B", "unrelated-reference-class"],
     )
-    with pytest.raises(ValueError, match="extra"):
-        _kernel(pm=pm).assign_cell_types(svc_obs, _quota())
+    kernel = _kernel(pm=pm)
+
+    result = kernel.assign_cell_types(svc_obs, _quota())
+
+    pd.testing.assert_frame_equal(kernel.pm_on_cell, pm.loc[["c1", "c2"], ["A", "B"]])
+    assert result.set_index("cell_id")["cell_type"].to_dict() == {"c1": "A", "c2": "B"}
 
 
 @pytest.mark.parametrize(
@@ -382,7 +418,12 @@ def test_true_cell_type_explicit_label_key_does_not_fallback(adapters):
 @pytest.mark.parametrize(
     ("strategy_name", "profile", "runner_module", "runner_class"),
     [
-        ("ScSvcSrApplicationStrategy", "application_sc_sr", "sc_svc_sr_application", "ScSVCSr"),
+        (
+            "ScSvcSuperResolutionApplicationStrategy",
+            "application_sc_super_resolution",
+            "sc_svc_super_resolution_application",
+            "ScSVCSuperResolution",
+        ),
         ("ScSvcSrBenchmarkStrategy", "benchmark_sr_batch", "sc_svc_sr_benchmark", "ScSVCSr"),
     ],
 )
@@ -395,46 +436,59 @@ def test_sr_adapters_propagate_runtime_seed_to_assignment_config(
     runner_module,
     runner_class,
 ):
-    raw = load_raw_config(CONFIG_PATH)
-    merged = merge_unified_config(
-        raw_config=raw,
-        profile=profile,
-        runtime_overrides={},
-        io_overrides={},
-        algorithm_overrides={},
-    )
+    merged = _merged(profile)
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path)
     runtime = dict(merged["runtime"])
     runtime["seed"] = 731
 
-    runner_stub = types.ModuleType(f"revise.backend.runners.{runner_module}")
-    setattr(runner_stub, runner_class, object)
-    monkeypatch.setitem(sys.modules, f"revise.backend.runners.{runner_module}", runner_stub)
-
     captured = {}
 
-    def capture_conf(conf, _cfg):
+    conf_type = (
+        adapters.ApplicationScSuperResolutionConf
+        if profile == "application_sc_super_resolution"
+        else adapters.BenchmarkSrConf
+    )
+
+    def capture_conf(**kwargs):
+        conf = conf_type(**kwargs)
         captured["conf"] = conf
+        return conf
 
     class StopAfterConfig(Exception):
         pass
 
+    runner_stub = types.ModuleType(f"revise.backend.runners.{runner_module}")
+    if profile == "application_sc_super_resolution":
+        class StopRunner:
+            def __init__(self, *_args, **_kwargs):
+                raise StopAfterConfig
+
+        setattr(runner_stub, runner_class, StopRunner)
+    else:
+        setattr(runner_stub, runner_class, object)
+    monkeypatch.setitem(sys.modules, f"revise.backend.runners.{runner_module}", runner_stub)
+
     def stop_before_io(_ctx):
         raise StopAfterConfig
 
-    monkeypatch.setattr(adapters, "_attach_local_refinement_strength", capture_conf)
+    monkeypatch.setattr(adapters, conf_type.__name__, capture_conf)
     monkeypatch.setattr(adapters, "_input_service", stop_before_io)
     ctx = SimpleNamespace(
         merged_config=merged,
         io=merged["io"],
         columns=merged["columns"],
         runtime=runtime,
-        route_key=f"{runtime['platform']}:{runtime['confounding']}",
+        route_key=(
+            f"{runtime['mode']}:"
+            f"{runtime.get('application_route') or runtime.get('confounding')}"
+        ),
         run_dir=tmp_path,
         logger=logging.getLogger(f"test-{strategy_name}"),
         compatibility_mode=False,
         pm_on_cell=pd.DataFrame([[1.0]], index=["c1"], columns=["A"]),
+        st_adata=(object() if profile == "application_sc_super_resolution" else None),
+        sc_ref_adata=(object() if profile == "application_sc_super_resolution" else None),
     )
 
     with pytest.raises(StopAfterConfig):
@@ -449,13 +503,10 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
     monkeypatch,
     tmp_path,
 ):
-    raw = load_raw_config(CONFIG_PATH)
-    merged = merge_unified_config(
-        raw_config=raw,
-        profile="benchmark_sr_batch",
+    merged = _merged(
+        "benchmark_sr_batch",
         runtime_overrides={"seed": 17},
         io_overrides={"sample_size": 1},
-        algorithm_overrides={},
     )
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path / "output")
@@ -523,7 +574,11 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
         logger=logging.getLogger("test-sr-subsampled-pm"),
         compatibility_mode=False,
         pm_on_cell=pm,
-        input_specs=None,
+        input_specs=(
+            SimpleNamespace(role="st", path="/resolved/st.h5ad"),
+            SimpleNamespace(role="sc_ref", path="/resolved/sc_ref.h5ad"),
+            SimpleNamespace(role="gt", path="/resolved/gt.h5ad"),
+        ),
     )
 
     adapters.ScSvcSrBenchmarkStrategy().prepare_context(ctx)
@@ -533,18 +588,14 @@ def test_sr_benchmark_subsample_restricts_pm_to_active_cells(
     assert ctx.pm_on_cell.index.tolist() == ["c1", "c2", "c3"]
 
 
-def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed_is_none(
+def test_sr_benchmark_uses_resolved_default_seed_when_override_is_none(
     adapters,
     monkeypatch,
     tmp_path,
 ):
-    raw = load_raw_config(CONFIG_PATH)
-    merged = merge_unified_config(
-        raw_config=raw,
-        profile="benchmark_sr_batch",
+    merged = _merged(
+        "benchmark_sr_batch",
         runtime_overrides={"seed": None},
-        io_overrides={},
-        algorithm_overrides={},
     )
     merged["io"]["data_root"] = str(tmp_path)
     merged["io"]["output_root"] = str(tmp_path)
@@ -559,8 +610,12 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
 
     captured = {}
 
-    def capture_conf(conf, _cfg):
+    conf_type = adapters.BenchmarkSrConf
+
+    def capture_conf(**kwargs):
+        conf = conf_type(**kwargs)
         captured["conf"] = conf
+        return conf
 
     class StopAfterConfig(Exception):
         pass
@@ -568,7 +623,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
     def stop_before_io(_ctx):
         raise StopAfterConfig
 
-    monkeypatch.setattr(adapters, "_attach_local_refinement_strength", capture_conf)
+    monkeypatch.setattr(adapters, "BenchmarkSrConf", capture_conf)
     monkeypatch.setattr(adapters, "_input_service", stop_before_io)
     ctx = SimpleNamespace(
         merged_config=merged,
@@ -581,11 +636,7 @@ def test_sr_benchmark_derives_assignment_seed_from_process_rng_when_runtime_seed
         compatibility_mode=True,
     )
 
-    np.random.seed(731)
-    expected_seed = int(
-        np.random.RandomState(731).randint(0, np.iinfo(np.int32).max)
-    )
     with pytest.raises(StopAfterConfig):
         adapters.ScSvcSrBenchmarkStrategy().prepare_context(ctx)
 
-    assert captured["conf"].sr_assignment_seed == expected_seed
+    assert captured["conf"].sr_assignment_seed == 42

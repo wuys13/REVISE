@@ -3,16 +3,22 @@ from __future__ import annotations
 import copy
 import signal
 import threading
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from anndata import AnnData
+
 from revise.backend import ModeEvaluationPolicy
 from revise.backend import ModeValidationPolicy
 from revise.backend import build_default_registry
-from revise.config import infer_default_profile
-from revise.config import load_raw_config
+from revise.config import ConfigError
+from revise.config import AUTHORITY_HASH
+from revise.config import ENGINE_DEFAULTS_HASH
 from revise.config import merge_unified_config
+from revise.config import resolve_semantic_route
+from revise.config.authority import _authority_document
 from revise.recon.context import PipelineContext
 from revise.recon.pipeline import UnifiedReconstructionPipeline
 from revise.svc import SVC
@@ -27,6 +33,31 @@ from revise.utils import (
     set_global_seed,
     sha256_file,
     write_json,
+)
+from revise.utils.logging import log_exception_to_run_file
+
+
+_APPLICATION_CONFIG_PROVENANCE_KEYS = (
+    "source_path",
+    "source_sha256",
+    "declared_root",
+    "resolved_root",
+    "cwd",
+    "resolved_inputs",
+    "output_root",
+    "output_dir",
+    "output_name",
+    "output_paths",
+    "effective_request",
+    "effective_request_hash",
+)
+
+_BENCHMARK_CONFIG_PROVENANCE_KEYS = (
+    "source_path",
+    "source_sha256",
+    "cli_overrides",
+    "effective_request",
+    "effective_request_hash",
 )
 
 
@@ -85,75 +116,93 @@ def _manifest_identity(path: Path) -> dict[str, int | str] | None:
 class REVISEPipeline:
     """Unified orchestration API for all REVISE tasks and modes."""
 
-    def __init__(self, config_path: Optional[str] = None):
-        if config_path is None:
-            config_path = str(Path(__file__).with_name("revise.yaml"))
-        self.config_path = str(self._resolve_config_path(config_path))
-        self.raw_config = load_raw_config(self.config_path)
+    def __init__(self):
+        self.authority = _authority_document()
         self.registry = None
-
-    @staticmethod
-    def _resolve_config_path(config_path: str | Path) -> Path:
-        path = Path(config_path)
-        if path.exists():
-            return path
-        # Backward-compatible default used by README examples and root wrapper
-        # scripts. In installed PyPI wheels, revise.yaml lives beside this file,
-        # not under the caller's current working directory.
-        if path.as_posix() == "revise/revise.yaml":
-            packaged = Path(__file__).with_name("revise.yaml")
-            if packaged.exists():
-                return packaged
-        return path
 
     def run(
         self,
         *,
-        profile: Optional[str] = None,
-        runtime_overrides: Optional[Dict[str, Any]] = None,
-        io_overrides: Optional[Dict[str, Any]] = None,
-        dry_run: bool = False,
-        finalize_callback=None,
-    ):
-        return self._run_with_algorithm_overrides(
-            profile=profile,
-            runtime_overrides=runtime_overrides,
-            io_overrides=io_overrides,
-            algorithm_overrides=None,
-            dry_run=dry_run,
-            finalize_callback=finalize_callback,
-        )
-
-    def _run_with_algorithm_overrides(
-        self,
-        *,
-        profile: Optional[str] = None,
+        svc_type: Optional[str] = None,
+        application_mode: Optional[str] = None,
+        cf: Optional[str] = None,
         runtime_overrides: Optional[Dict[str, Any]] = None,
         io_overrides: Optional[Dict[str, Any]] = None,
         algorithm_overrides: Optional[Dict[str, Any]] = None,
         dry_run: bool = False,
+        st_adata: AnnData | None = None,
+        sc_ref_adata: AnnData | None = None,
         finalize_callback=None,
+        application_config_metadata: Optional[Dict[str, Any]] = None,
+        benchmark_config_metadata: Optional[Dict[str, Any]] = None,
     ):
         # 1) Resolve final runtime config from single YAML entry:
         # defaults -> profile -> runtime/io overrides -> algorithm overrides.
         runtime_overrides = dict(runtime_overrides or {})
         io_overrides = dict(io_overrides or {})
         algorithm_overrides = dict(algorithm_overrides or {})
+        if (st_adata is None) != (sc_ref_adata is None):
+            raise ValueError("st_adata and sc_ref_adata must be supplied together")
 
-        if profile is None:
-            profile = infer_default_profile(self.raw_config, runtime_overrides)
+        route_identity_keys = {
+            "application_route",
+            "application_mode",
+            "confounding",
+            "mode",
+            "task",
+            "svc_kind",
+            "strategy",
+        }
+        forbidden = sorted(route_identity_keys & set(runtime_overrides))
+        if forbidden:
+            raise ConfigError(
+                "runtime_overrides cannot modify route identity: "
+                + ", ".join(forbidden)
+            )
+
+        resolved_route = resolve_semantic_route(
+            self.authority,
+            svc_type=svc_type,
+            application_mode=application_mode,
+            cf=cf,
+        )
+        route_warning = resolved_route.pop("warning")
+        profile = resolved_route.pop("profile")
+        if route_warning:
+            warnings.warn(route_warning, UserWarning, stacklevel=2)
+        resolved_runtime = {**resolved_route, **runtime_overrides}
 
         merged_config = merge_unified_config(
-            raw_config=self.raw_config,
+            raw_config=self.authority,
             profile=profile,
-            runtime_overrides=runtime_overrides,
+            runtime_overrides=resolved_runtime,
             io_overrides=io_overrides,
             algorithm_overrides=algorithm_overrides,
         )
 
         runtime = merged_config["runtime"]
-        config_hash = hash_jsonable(canonical_config_projection(merged_config))
-        route_key = f"{runtime['platform']}:{runtime['confounding']}"
+        algorithm_config_hash = hash_jsonable(
+            canonical_config_projection(merged_config)
+        )
+        effective_config_hash = hash_jsonable(
+            {
+                "engine_config": merged_config,
+                "application_request": (application_config_metadata or {}).get(
+                    "effective_request"
+                ),
+                "benchmark_request": (benchmark_config_metadata or {}).get(
+                    "effective_request"
+                ),
+            }
+        )
+        selector = (
+            runtime["application_route"]
+            if runtime["mode"] == "application"
+            else runtime["confounding"]
+        )
+        if runtime["mode"] == "application" and runtime.get("application_mode"):
+            selector = f"{selector}:{runtime['application_mode']}"
+        route_key = f"{runtime['mode']}:{selector}"
         output_root = merged_config["io"]["output_root"]
         sample_name = merged_config["io"]["sample_name"]
         run_dir = build_run_dir(
@@ -161,13 +210,17 @@ class REVISEPipeline:
             sample_name=sample_name,
             route_key=route_key,
             io_cfg=merged_config["io"],
+            mode=runtime["mode"],
+            cf=runtime.get("confounding"),
         )
-        if route_key.startswith("sim2real:"):
+        if runtime["mode"] == "benchmark":
             log_dir = build_task_dir(
                 output_root=output_root,
                 sample_name=sample_name,
                 route_key=route_key,
                 io_cfg=merged_config["io"],
+                mode=runtime["mode"],
+                cf=runtime.get("confounding"),
             )
         else:
             log_dir = run_dir
@@ -184,9 +237,15 @@ class REVISEPipeline:
                     run_dir=run_dir,
                     sample_name=sample_name,
                     profile=profile,
-                    config_hash=config_hash,
+                    algorithm_config_hash=algorithm_config_hash,
+                    effective_config_hash=effective_config_hash,
                     dry_run=dry_run,
+                    st_adata=st_adata,
+                    sc_ref_adata=sc_ref_adata,
                     finalize_callback=finalize_callback,
+                    application_config_metadata=application_config_metadata,
+                    benchmark_config_metadata=benchmark_config_metadata,
+                    route_warning=route_warning,
                 )
             except BaseException as exc:
                 manifest_after = _manifest_identity(manifest_path)
@@ -211,9 +270,15 @@ class REVISEPipeline:
         run_dir: Path,
         sample_name: str,
         profile: Optional[str],
-        config_hash: str,
+        algorithm_config_hash: str,
+        effective_config_hash: str,
         dry_run: bool,
+        st_adata: AnnData | None,
+        sc_ref_adata: AnnData | None,
         finalize_callback,
+        application_config_metadata: Optional[Dict[str, Any]],
+        benchmark_config_metadata: Optional[Dict[str, Any]],
+        route_warning: Optional[str],
     ):
         logger_name = f"REVISEUnified::{sample_name}::{route_key}"
         if log_dir == run_dir:
@@ -222,22 +287,33 @@ class REVISEPipeline:
             run_name=logger_name,
             run_dir=log_dir,
         )
+        if route_warning:
+            logger.warning("[framework] %s", route_warning)
         logger.info("[framework] start unified run route=%s strategy=%s", route_key, runtime["strategy"])
 
         set_global_seed(seed=runtime.get("seed"), deterministic=bool(runtime.get("deterministic", True)))
 
         ctx = PipelineContext(
             merged_config=merged_config,
-            raw_config=self.raw_config,
-            config_path=self.config_path,
             profile=profile,
             runtime=runtime,
             route_key=route_key,
             run_dir=run_dir,
             logger=logger,
-            config_hash=config_hash,
+            engine_defaults_hash=ENGINE_DEFAULTS_HASH,
+            authority_hash=AUTHORITY_HASH,
+            algorithm_config_hash=algorithm_config_hash,
+            effective_config_hash=effective_config_hash,
             dry_run=bool(dry_run),
+            st_adata=st_adata,
+            sc_ref_adata=sc_ref_adata,
             finalize_callback=finalize_callback,
+            application_config_metadata=copy.deepcopy(
+                application_config_metadata or {}
+            ),
+            benchmark_config_metadata=copy.deepcopy(
+                benchmark_config_metadata or {}
+            ),
             software_versions=collect_software_versions(merged_config),
         )
         ctx.set_provenance_callback(self._write_final_metadata, notify=False)
@@ -250,8 +326,8 @@ class REVISEPipeline:
                 self._write_initial_metadata(ctx)
 
                 if ctx.dry_run:
-                    # Dry-run validates structural inputs without importing the
-                    # heavy strategy registry. U8 extends this shared preflight.
+                    # Preflight resolves the same strategy as a formal run but
+                    # stops before scientific stages and publication.
                     self._run_dry_validation(ctx)
                     ctx.svc = SVC(
                         expr=None,
@@ -267,6 +343,7 @@ class REVISEPipeline:
                 if self.registry is None:
                     self.registry = build_default_registry()
                 strategy = self.registry.get(runtime["strategy"])
+
                 pipeline = UnifiedReconstructionPipeline(
                     strategy=strategy,
                     validation_policy=ModeValidationPolicy(),
@@ -302,7 +379,10 @@ class REVISEPipeline:
                     ctx.terminate_run(exc)
                 except BaseException as persistence_error:
                     raise exc from persistence_error
-                logger.exception("[framework] run failed")
+                log_exception_to_run_file(
+                    logger,
+                    f"[framework] run failed: {type(exc).__name__}: {exc}",
+                )
                 raise
 
     def _run_dry_validation(self, ctx: PipelineContext) -> None:
@@ -330,7 +410,7 @@ class REVISEPipeline:
 
     def _write_final_metadata(self, ctx: PipelineContext) -> None:
         provenance = {
-            "schema_version": 2,
+            "schema_version": 4,
             "run": copy.deepcopy(
                 getattr(
                     ctx,
@@ -347,13 +427,15 @@ class REVISEPipeline:
                     },
                 )
             ),
-            "config_path": ctx.config_path,
             "profile": ctx.profile,
             "route": ctx.route,
             "route_key": ctx.route_key,
             "run_dir": str(ctx.run_dir),
             "runtime_seed": ctx.merged_config.get("runtime", {}).get("seed"),
-            "config_hash": getattr(ctx, "config_hash", None),
+            "engine_defaults_hash": ctx.engine_defaults_hash,
+            "authority_hash": ctx.authority_hash,
+            "algorithm_config_hash": ctx.algorithm_config_hash,
+            "effective_config_hash": ctx.effective_config_hash,
             "input_identities": copy.deepcopy(
                 getattr(ctx, "input_identities", [])
             ),
@@ -371,12 +453,25 @@ class REVISEPipeline:
             ),
         }
         current_provenance = getattr(ctx, "provenance", {})
-        for result_key in (
-            "result",
-            "assembly",
-            "selection_review_required",
-            "selection_assessment",
-        ):
+        application_config = copy.deepcopy(
+            getattr(ctx, "application_config_metadata", {})
+        )
+        if application_config:
+            provenance["application_config"] = {
+                key: application_config[key]
+                for key in _APPLICATION_CONFIG_PROVENANCE_KEYS
+                if key in application_config
+            }
+        benchmark_config = copy.deepcopy(
+            getattr(ctx, "benchmark_config_metadata", {})
+        )
+        if benchmark_config:
+            provenance["benchmark_config"] = {
+                key: benchmark_config[key]
+                for key in _BENCHMARK_CONFIG_PROVENANCE_KEYS
+                if key in benchmark_config
+            }
+        for result_key in ("result", "results"):
             result_value = copy.deepcopy(current_provenance.get(result_key))
             if result_value is not None:
                 provenance[result_key] = result_value
@@ -391,4 +486,10 @@ class REVISEPipeline:
 
     def _export_merged_config(self, ctx: PipelineContext) -> Dict[str, Any]:
         exported = copy.deepcopy(ctx.merged_config)
+        exported["_identity"] = {
+            "engine_defaults_hash": ctx.engine_defaults_hash,
+            "authority_hash": ctx.authority_hash,
+            "algorithm_config_hash": ctx.algorithm_config_hash,
+            "effective_config_hash": ctx.effective_config_hash,
+        }
         return exported

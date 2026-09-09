@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 import scanpy as sc
 from scipy import sparse
-from scipy.spatial import cKDTree
 
 from revise.backend.contracts import LocalRefinementStrategy
 from revise.config.runner_conf import (
     ApplicationScConf,
-    ApplicationScSrConf,
+    ApplicationScSuperResolutionConf,
     ApplicationSpConf,
     BenchmarkImputeConf,
     BenchmarkSegConf,
@@ -22,24 +21,8 @@ from revise.config.runner_conf import (
 )
 from revise.io import REVISEInputService
 from revise.svc import SVC
-from revise.utils import benchmark_case_leaf, completed_artifact, write_json
+from revise.utils import benchmark_case_leaf
 from revise.utils.spot_sr_input import ensure_all_cells_in_spot
-
-
-def _cfg_get(config: Dict[str, Any], *path: str, default: Any = None) -> Any:
-    cur: Any = config
-    for key in path:
-        if not isinstance(cur, dict) or key not in cur:
-            return default
-        cur = cur[key]
-    return cur
-
-
-def _filter_reference_by_patient(adata, patient_key, sample_name):
-    if not patient_key or patient_key not in adata.obs:
-        return adata
-    matches = adata.obs[patient_key].astype(str).eq(str(sample_name))
-    return adata[matches.to_numpy(), :].copy()
 
 
 def _ot_runner_kwargs(cfg: Dict[str, Any], *, impute: bool = False) -> Dict[str, Any]:
@@ -70,18 +53,8 @@ def _ot_runner_kwargs(cfg: Dict[str, Any], *, impute: bool = False) -> Dict[str,
     return kwargs
 
 
-def _attach_local_refinement_strength(conf, cfg: Dict[str, Any]) -> None:
-    refinement = cfg.get("local_refinement")
-    if refinement is not None:
-        conf.local_refinement_strength = float(refinement["strength"])
-
-
 def _resolve_runtime_seed(ctx) -> int:
-    runtime = getattr(ctx, "runtime", None) or ctx.merged_config.get("runtime", {})
-    seed = runtime.get("seed", 42)
-    if seed is None:
-        return int(np.random.randint(0, np.iinfo(np.int32).max))
-    return int(seed)
+    return int(ctx.runtime["seed"])
 
 
 def _resolve_sample_seed(ctx) -> int:
@@ -104,168 +77,100 @@ def _subsample_obs(adata, n_obs: int, seed: int):
     return adata[keep, :].copy(), keep
 
 
-def _replace_slash_labels(adata, columns: Iterable[str]) -> None:
-    for col in columns:
-        if col not in adata.obs:
-            continue
-        # Force string dtype first so categorical columns do not keep stale
-        # categories (e.g. "Mono/Macro") after replacement.
-        series = adata.obs[col].astype(str)
-        if series.str.contains("/", regex=False).any():
-            normalized = series.str.replace("/", "_", regex=False)
-            label_pairs = pd.DataFrame(
-                {"original": series, "normalized": normalized}
-            ).drop_duplicates()
-            collisions = (
-                label_pairs.groupby("normalized", sort=False)["original"].nunique()
-            )
-            if (collisions > 1).any():
-                names = collisions[collisions > 1].index.tolist()
-                raise ValueError(
-                    f"Reference labels in {col!r} collide after slash normalization: "
-                    f"{names[:5]}"
+def preprocess_data(
+    route: str,
+    st_adata,
+    sc_ref_adata,
+    real_st_adata,
+    conf,
+    *,
+    sample_size: int | None,
+    sample_seed: int,
+    logger,
+):
+    """Dispatch the existing Benchmark input preparation by route family."""
+    if route in {"segmentation", "bin2cell"}:
+        if sample_size is not None:
+            sampled_st, keep = _subsample_obs(st_adata, int(sample_size), sample_seed)
+            common = pd.Index(keep).intersection(real_st_adata.obs_names)
+            st_adata = sampled_st[common, :].copy()
+            real_st_adata = real_st_adata[common, :].copy()
+
+    elif route in {"batch_effect", "spot_size"}:
+        ensure_all_cells_in_spot(
+            st_adata,
+            logger=logger,
+            real_adata=real_st_adata,
+        )
+        if sample_size is not None:
+            st_adata, _ = _subsample_obs(st_adata, int(sample_size), sample_seed)
+            mapping = st_adata.uns.get("all_cells_in_spot", {})
+            keep_cells: List[str] = []
+            for spot in st_adata.obs_names:
+                keep_cells.extend(mapping.get(str(spot), []))
+            if keep_cells:
+                keep_index = pd.Index(np.asarray(keep_cells, dtype=str))
+                if "cell_id" in real_st_adata.obs:
+                    keep_mask = real_st_adata.obs["cell_id"].astype(str).isin(keep_index)
+                    real_st_adata = real_st_adata[keep_mask.to_numpy(), :].copy()
+                else:
+                    real_index = keep_index.intersection(real_st_adata.obs_names)
+                    real_st_adata = real_st_adata[real_index, :].copy()
+                if isinstance(conf.pm_on_cell, pd.DataFrame):
+                    conf.pm_on_cell = conf.pm_on_cell.loc[
+                        keep_index.intersection(conf.pm_on_cell.index)
+                    ].copy()
+
+    elif route in {"gene_panel", "gene_dropout"}:
+        if sample_size is not None:
+            sampled_st, keep = _subsample_obs(st_adata, int(sample_size), sample_seed)
+            common = pd.Index(keep).intersection(real_st_adata.obs_names)
+            st_adata = sampled_st[common, :].copy()
+            real_st_adata = real_st_adata[common, :].copy()
+            if sc_ref_adata.n_obs > int(sample_size):
+                sc_ref_adata, _ = _subsample_obs(
+                    sc_ref_adata,
+                    int(sample_size),
+                    sample_seed,
                 )
-            adata.obs[col] = normalized
 
+        if conf.cell_type_col in sc_ref_adata.obs:
+            counts = sc_ref_adata.obs[conf.cell_type_col].value_counts()
+            valid_ct = counts[counts >= 2].index
+            sc_ref_adata = sc_ref_adata[
+                sc_ref_adata.obs[conf.cell_type_col].isin(valid_ct), :
+            ].copy()
 
-def _ensure_transcript_counts(adata) -> None:
-    if "transcript_counts" in adata.obs:
-        return
-    values = np.asarray(adata.X.sum(axis=1)).ravel()
-    adata.obs["transcript_counts"] = values
+        if conf.cell_type_col in sc_ref_adata.obs:
+            ct_sizes = sc_ref_adata.obs[conf.cell_type_col].value_counts()
+            min_ct_size = int(ct_sizes.min()) if not ct_sizes.empty else int(sc_ref_adata.n_obs)
+        else:
+            min_ct_size = int(sc_ref_adata.n_obs)
+        conf.rec_graph_n_pcs = min(
+            int(conf.rec_graph_n_pcs),
+            max(1, min_ct_size - 1),
+            max(1, sc_ref_adata.n_vars - 1),
+        )
+        logger.info(
+            "[adapter] impute rec_graph_n_pcs adjusted to %s",
+            conf.rec_graph_n_pcs,
+        )
+
+    else:
+        raise ValueError(f"Unsupported benchmark route: {route}")
+
+    return st_adata, sc_ref_adata, real_st_adata
 
 
 def _input_service(ctx) -> REVISEInputService:
     return REVISEInputService.from_context(ctx)
 
 
-def _input_path(ctx, role: str, fallback: str) -> str:
+def _input_path(ctx, role: str) -> str:
     return resolved_input_path(
-        getattr(ctx, "input_specs", None),
+        ctx.input_specs,
         role,
-        fallback,
     )
-
-
-def _inject_sr_spatial_leakage_noise(
-    adata,
-    leak_ratio: float,
-    k: int,
-    weight_mode: str = "distance",
-    preserve_total_counts: bool = True,
-    seed: int = 42,
-    logger=None,
-):
-    """Inject spot-level spatial transcript leakage by mixing neighbor compositions.
-
-    The perturbation is applied on spot expression before global anchoring:
-    each spot's gene composition is mixed with a weighted average of its
-    spatial neighbors, optionally preserving the original per-spot total counts.
-    """
-    leak_ratio = float(leak_ratio)
-    if leak_ratio <= 0:
-        if logger is not None:
-            logger.info("[sr-noise] leak_ratio<=0, skip noise injection")
-        return adata
-    if adata.n_obs < 2:
-        if logger is not None:
-            logger.info("[sr-noise] fewer than 2 spots, skip noise injection")
-        return adata
-    if "spatial" not in adata.obsm:
-        raise KeyError("st_adata.obsm['spatial'] is required for SR spatial leakage noise")
-
-    k = max(1, int(k))
-    coords = np.asarray(adata.obsm["spatial"], dtype=np.float64)
-    if coords.ndim != 2 or coords.shape[1] < 2:
-        raise ValueError("st_adata.obsm['spatial'] must have shape (n_spots, >=2)")
-    coords = coords[:, :2].copy()
-
-    # Tiny deterministic jitter avoids unstable tie ordering for duplicate coords.
-    rng = np.random.RandomState(int(seed))
-    coords += rng.normal(loc=0.0, scale=1e-9, size=coords.shape)
-
-    X_in = adata.X
-    X = X_in.toarray() if sparse.issparse(X_in) else np.asarray(X_in)
-    X = np.asarray(X, dtype=np.float64)
-    if X.ndim != 2:
-        raise ValueError("st_adata.X must be a 2D matrix")
-
-    tree = cKDTree(coords)
-    query_k = min(adata.n_obs, k + 1)
-    dists, nbrs = tree.query(coords, k=query_k)
-    dists = np.asarray(dists)
-    nbrs = np.asarray(nbrs)
-    if dists.ndim == 1:
-        dists = dists[:, None]
-        nbrs = nbrs[:, None]
-
-    row_sums = X.sum(axis=1, keepdims=True)
-    safe_row_sums = np.maximum(row_sums, 1e-12)
-    P = X / safe_row_sums
-    P_nb = np.zeros_like(P)
-
-    actual_k = 0
-    for i in range(adata.n_obs):
-        idx_row = nbrs[i]
-        dist_row = dists[i]
-        mask = idx_row != i
-        idx = idx_row[mask][:k]
-        dist = dist_row[mask][:k]
-
-        if idx.size == 0:
-            P_nb[i] = P[i]
-            continue
-
-        if weight_mode == "uniform":
-            w = np.ones(idx.size, dtype=np.float64)
-        elif weight_mode == "distance":
-            # Adaptive local scale: use median non-zero neighbor distance.
-            positive = dist[dist > 0]
-            scale = float(np.median(positive)) if positive.size > 0 else 1.0
-            scale = max(scale, 1e-8)
-            w = np.exp(-dist / scale)
-        else:
-            raise ValueError(f"Unsupported sr_noise_weight='{weight_mode}', expected 'uniform' or 'distance'")
-
-        w_sum = float(w.sum())
-        if w_sum <= 0:
-            w = np.full(idx.size, 1.0 / idx.size, dtype=np.float64)
-        else:
-            w = w / w_sum
-        P_nb[i] = w @ P[idx]
-        actual_k = max(actual_k, int(idx.size))
-
-    if preserve_total_counts:
-        P_noisy = (1.0 - leak_ratio) * P + leak_ratio * P_nb
-        X_noisy = P_noisy * row_sums
-    else:
-        X_nb = P_nb * safe_row_sums
-        X_noisy = (1.0 - leak_ratio) * X + leak_ratio * X_nb
-
-    X_noisy = np.clip(X_noisy, 0.0, None)
-
-    out = adata.copy()
-    out.X = sparse.csr_matrix(X_noisy) if sparse.issparse(X_in) else X_noisy
-    out.uns["sr_spatial_noise"] = {
-        "enabled": True,
-        "method": "spatial_neighbor_composition_mixing",
-        "leak_ratio": leak_ratio,
-        "k": int(k),
-        "weight_mode": str(weight_mode),
-        "preserve_total_counts": bool(preserve_total_counts),
-        "seed": int(seed),
-        "actual_max_neighbors_used": int(actual_k),
-    }
-
-    if logger is not None:
-        logger.info(
-            "[sr-noise] injected spatial leakage noise: lambda=%.4f, k=%d, weight=%s, preserve_total_counts=%s",
-            leak_ratio,
-            k,
-            weight_mode,
-            preserve_total_counts,
-        )
-    return out
 
 
 def _extract_probs(adata, key: str) -> pd.DataFrame | None:
@@ -280,154 +185,13 @@ def _extract_probs(adata, key: str) -> pd.DataFrame | None:
     return None
 
 
-def _as_float_list(values: Any, default: List[float]) -> List[float]:
-    if values is None:
-        return list(default)
-    if isinstance(values, (list, tuple)):
-        out = [float(v) for v in values]
-    else:
-        out = [float(values)]
-    uniq = sorted(set(out))
-    return uniq if uniq else list(default)
-
-
 def _require_concrete_cell_type(value: Any) -> str:
     select_ct = value.strip() if isinstance(value, str) else ""
     if select_ct.lower() in {"", "all", "*", "__all__", "all_cell_types"}:
-        raise ValueError("sc-SVC --select-ct must name one concrete cell type")
-    return select_ct
-
-
-_IST_SELECTION_EXCLUDE_KEYWORDS = ("tumor", "epi")
-
-
-def _ist_selection_gate_enabled(ctx) -> bool:
-    return (
-        (getattr(ctx, "runtime", {}) or {}).get("task") == "sc_svc"
-        and bool(ctx.merged_config.get("sc", {}).get("selection_review_gate", False))
-    )
-
-
-def _normalize_selected_cell_types(value: Any) -> List[str]:
-    values = value if isinstance(value, (list, tuple)) else [value]
-    selected: List[str] = []
-    for item in values:
-        if item is None:
-            continue
-        label = str(item).strip()
-        if label.casefold() in {"all", "*", "__all__", "all_cell_types"}:
-            raise ValueError("iST-SVC --select-ct must name concrete cell types")
-        if label and label not in selected:
-            selected.append(label)
-    return selected
-
-
-def _export_ga_posterior(ctx) -> tuple[pd.DataFrame, Path]:
-    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
-    posterior = ctx.runner.st_adata.obsm[cell_type_col]
-    if not isinstance(posterior, pd.DataFrame):
-        raise ValueError(f"GA posterior for {cell_type_col!r} must be a pandas DataFrame")
-    existing_path = ctx.artifacts.get("ga_posterior_path")
-    if existing_path is not None:
-        return posterior, Path(existing_path)
-    posterior_path = Path(ctx.run_dir) / "GA_posterior.csv"
-    posterior_export = posterior.copy(deep=True)
-    posterior_export.insert(0, "spot_id", posterior_export.index)
-    posterior_export.to_csv(posterior_path, index=False)
-    ctx.record_artifact(completed_artifact("ga_posterior", posterior_path))
-    ctx.artifacts["ga_posterior_path"] = str(posterior_path)
-    return posterior, posterior_path
-
-
-def _assess_ist_selection(ctx) -> Dict[str, Any]:
-    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
-    labels = ctx.runner.st_adata.obs[cell_type_col].astype(str)
-    posterior, posterior_path = _export_ga_posterior(ctx)
-    counts = labels.value_counts()
-    excluded_cell_types = [
-        str(label)
-        for label in counts.index
-        if any(keyword in str(label).casefold() for keyword in _IST_SELECTION_EXCLUDE_KEYWORDS)
-    ]
-    default_candidates = [
-        str(label) for label in counts.index if str(label) not in excluded_cell_types
-    ]
-    warnings: List[Dict[str, Any]] = [
-        {
-            "code": "over_20000",
-            "cell_type": str(label),
-            "count": int(count),
-        }
-        for label, count in counts.items()
-        if int(count) > 20_000
-    ]
-    if not default_candidates:
-        warnings.append(
-            {
-                "code": "no_default_candidates",
-                "message": "No cell types remain after default tumor/epi exclusion",
-            }
-        )
-    assessment = {
-        "status": "needs_review",
-        "cell_type_col": cell_type_col,
-        "input_identities": [
-            dict(identity) for identity in getattr(ctx, "input_identities", [])
-        ],
-        "counts": {str(label): int(count) for label, count in counts.items()},
-        "excluded_keywords": list(_IST_SELECTION_EXCLUDE_KEYWORDS),
-        "excluded_cell_types": excluded_cell_types,
-        "default_candidates": default_candidates,
-        "warnings": warnings,
-        "ga_posterior": {
-            "path": str(posterior_path),
-            "spot_id_column": "spot_id",
-            "cell_type_columns": [str(column) for column in posterior.columns],
-        },
-    }
-    path = Path(ctx.run_dir) / "selection_assessment.json"
-    write_json(path, assessment)
-    ctx.record_artifact(completed_artifact("selection_assessment", path))
-    ctx.artifacts["selection_review_required"] = True
-    ctx.artifacts["selection_assessment"] = assessment
-    ctx.artifacts["selection_assessment_path"] = str(path)
-    return assessment
-
-
-def _validate_ist_selected_cell_types(ctx, selected: List[str]) -> None:
-    if not selected:
-        raise ValueError("--select-ct requires at least one non-empty cell type")
-    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
-    ga_labels = set(ctx.runner.st_adata.obs[cell_type_col].astype(str))
-    reference_labels = set(ctx.runner.sc_ref_adata.obs[cell_type_col].astype(str))
-    missing_ga = [label for label in selected if label not in ga_labels]
-    missing_reference = [label for label in selected if label not in reference_labels]
-    if missing_ga or missing_reference:
-        details = []
-        if missing_ga:
-            details.append(f"missing from GA labels: {missing_ga}")
-        if missing_reference:
-            details.append(f"missing from filtered sc reference: {missing_reference}")
-        raise ValueError("Selected cell types are not available simultaneously; " + "; ".join(details))
-    counts = ctx.runner.st_adata.obs[cell_type_col].astype(str).value_counts()
-    too_small = [label for label in selected if int(counts.get(label, 0)) < 2]
-    if too_small:
         raise ValueError(
-            "Selected cell types have fewer than two spatial cells: "
-            f"{too_small}"
+            "route.select_cell_type must name one concrete broad cell type"
         )
-
-
-def _prefix_svc_cluster_labels(adata, cell_type: str, cluster_col: str = "SVC_cluster"):
-    if cluster_col not in adata.obs:
-        return adata
-    adata = adata.copy()
-    prefix = str(cell_type).replace("/", "_").replace(" ", "_")
-    adata.obs[cluster_col] = prefix + "_" + adata.obs[cluster_col].astype(str)
-    adata.obs[cluster_col] = adata.obs[cluster_col].astype("category")
-    return adata
-
-
+    return select_ct
 
 
 def _build_svc(
@@ -441,14 +205,18 @@ def _build_svc(
     primary_key = None
     if default_key and default_key in outputs:
         primary_key = default_key
-    elif outputs:
-        primary_key = next(iter(outputs.keys()))
+    elif default_key:
+        raise RuntimeError(
+            f"{ctx.runtime.get('application_route') or ctx.runtime.get('confounding')} "
+            f"strategy did not return required output {default_key!r}; "
+            f"available={sorted(outputs)}"
+        )
     primary = outputs.get(primary_key) if primary_key is not None else None
     expr = primary if expr is None else expr
     spatial = primary if spatial is None else spatial
 
-    cell_type_col = ctx.columns.get("cell_type_col", "Level1")
-    confidence_col = ctx.columns.get("confidence_col", "Confidence")
+    cell_type_col = ctx.columns["cell_type_col"]
+    confidence_col = ctx.columns["confidence_col"]
 
     labels = None
     confidence = None
@@ -475,7 +243,7 @@ def _build_svc(
     return SVC(
         expr=expr,
         spatial=spatial,
-        svc_kind=str(ctx.runtime.get("svc_kind", "sc")),
+        svc_kind=str(ctx.runtime["svc_kind"]),
         cell_type_probs=probs,
         cell_type_label=labels,
         confidence=confidence,
@@ -571,11 +339,18 @@ class RunnerBackedStrategy(LocalRefinementStrategy):
         # centrally managed under revise.backend.kernels.
         from revise.backend.kernels import build_kernel
 
-        if ctx.runtime.get("task") in {"sp_svc", "sc_svc_sr"}:
+        if ctx.runtime.get("task") in {
+            "sp_svc",
+            "sc_svc_super_resolution",
+            "sc_svc_sr",
+        }:
             ctx.runner_config.local_refinement_applied_callback = (
                 lambda: ctx.record_local_refinement(True)
             )
         kernel = build_kernel("global_anchoring", config=ctx.runner_config, logger=ctx.logger)
+        # For sp-SVC, the GA result carries the soft cell-type posterior Q in
+        # st_adata.obsm. Q preserves inferred mixture evidence from mixed or
+        # mis-segmented spatial units for the downstream Local Refinement stage.
         ctx.runner.st_adata = kernel.run(
             ctx.runner.st_adata,
             ctx.runner.sc_ref_adata,
@@ -606,54 +381,33 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
             unknown_key=columns["unknown_key"],
             st_file=io_cfg["st_file"],
             sc_ref_file=io_cfg["sc_ref_file"],
-            prep_st_min_counts=int(_cfg_get(cfg, "preprocess", "st_min_counts", default=20)),
-            prep_st_min_cells=int(_cfg_get(cfg, "preprocess", "st_min_cells", default=30)),
-            prep_sc_min_counts=int(_cfg_get(cfg, "preprocess", "sc_min_counts", default=20)),
-            prep_sc_min_cells=int(_cfg_get(cfg, "preprocess", "sc_min_cells", default=50)),
-            plot_flag=bool(_cfg_get(cfg, "plot", "enabled", default=False)),
-            plot_cluster_resolution=list(_cfg_get(cfg, "plot", "cluster_resolutions", default=[0.3, 0.5, 0.7])),
-            plot_min_genes=int(_cfg_get(cfg, "plot", "min_genes", default=20)),
-            plot_min_cells=int(_cfg_get(cfg, "plot", "min_cells", default=3)),
-            plot_sample_size=int(_cfg_get(cfg, "plot", "sample_size", default=10000)),
-            rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=10)),
-            rec_graph_exp_neighbor_num=int(_cfg_get(cfg, "graph", "exp_neighbors", default=10)),
-            rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=10)),
-            rec_graph_method=str(_cfg_get(cfg, "graph", "method", default="joint")),
-            rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.5)),
+            plot_flag=bool(cfg["plot"]["enabled"]),
+            plot_cluster_resolution=list(cfg["plot"]["cluster_resolutions"]),
+            plot_min_genes=int(cfg["plot"]["min_genes"]),
+            plot_min_cells=int(cfg["plot"]["min_cells"]),
+            plot_sample_size=int(cfg["plot"]["sample_size"]),
+            rec_graph_n_neighbors=int(cfg["graph"]["n_neighbors"]),
+            rec_graph_exp_neighbor_num=int(cfg["graph"]["exp_neighbors"]),
+            rec_graph_spatial_neighbor_num=int(cfg["graph"]["spatial_neighbors"]),
+            rec_graph_method=str(cfg["graph"]["method"]),
+            rec_graph_alpha=float(cfg["graph"]["alpha"]),
+            rec_alpha=float(cfg["reconstruct"]["alpha"]),
+            local_refinement_strength=float(
+                cfg["local_refinement"]["strength"]
+            ),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_local_refinement_strength(conf, cfg)
 
-        input_service = _input_service(ctx)
-        adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st", conf.st_file_path)
-        )
+        adata_st = ctx.st_adata
+        adata_sc = ctx.sc_ref_adata
+        if adata_st is None or adata_sc is None:
+            raise RuntimeError("Application requires preloaded AnnData inputs")
         sample_size = io_cfg.get("sample_size")
         if sample_size is not None:
             # Match original script behavior when compatibility_mode=true.
             sample_seed = _resolve_sample_seed(ctx)
             sc.pp.subsample(adata_st, n_obs=int(sample_size), random_state=sample_seed)
 
-        # Preserve the established application sp-SVC preprocessing semantics.
-        sc.pp.filter_cells(adata_st, min_counts=conf.prep_st_min_counts)
-        sc.pp.filter_genes(adata_st, min_cells=conf.prep_st_min_cells)
-
-        adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
-        )
-        adata_sc = _filter_reference_by_patient(
-            adata_sc,
-            io_cfg.get("patient_key"),
-            io_cfg["sample_name"],
-        )
-
-        # The original script uses min_genes for sc cells and min_cells for genes.
-        sc.pp.filter_cells(adata_sc, min_genes=conf.prep_sc_min_counts)
-        sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
-        _replace_slash_labels(
-            adata_sc,
-            [columns["cell_type_col"], columns["sub_cell_type_col"]],
-        )
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc
@@ -667,32 +421,13 @@ class SpSvcApplicationStrategy(RunnerBackedStrategy):
 class ScSvcApplicationStrategy(RunnerBackedStrategy):
     strategy_id = "ScSvcApplicationStrategy"
 
-    def global_anchoring(self, ctx) -> None:
-        super().global_anchoring(ctx)
-        if _ist_selection_gate_enabled(ctx):
-            _export_ga_posterior(ctx)
-            if ctx.merged_config.get("sc", {}).get("select_ct") is None:
-                _assess_ist_selection(ctx)
-            else:
-                cell_type_col = ctx.columns.get("cell_type_col", "Level1")
-                counts = ctx.runner.st_adata.obs[cell_type_col].astype(str).value_counts()
-                for label, count in counts.items():
-                    if int(count) > 20_000:
-                        ctx.logger.warning(
-                            "[iST selection] cell type %s has %s GA spots (>20000)",
-                            label,
-                            int(count),
-                        )
-
     def prepare_context(self, ctx) -> None:
         from revise.backend.runners.sc_svc_application import ScSVC as ScAppRunner
 
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        tacco_annotate_cfg = dict(
-            (cfg.get("sc", {}) or {}).get("tacco_annotate", {}) or {}
-        )
+        tacco_annotate_cfg = cfg["sc"]["tacco_annotate"]
 
         conf = ApplicationScConf(
             sample_name=io_cfg["sample_name"],
@@ -703,54 +438,23 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             unknown_key=columns["unknown_key"],
             st_file=io_cfg["st_file"],
             sc_ref_file=io_cfg["sc_ref_file"],
-            prep_st_min_counts=int(_cfg_get(cfg, "preprocess", "st_min_transcripts", default=60)),
-            prep_st_min_cells=int(_cfg_get(cfg, "preprocess", "st_min_cells", default=100)),
-            prep_sc_min_cells=int(_cfg_get(cfg, "preprocess", "sc_min_cells", default=100)),
-            rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=10)),
-            rec_graph_exp_neighbor_num=int(_cfg_get(cfg, "graph", "exp_neighbors", default=15)),
-            rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=6)),
-            rec_graph_method=str(_cfg_get(cfg, "graph", "method", default="joint")),
-            rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.2)),
-            rec_match_spot_sum=bool(_cfg_get(cfg, "sc", "match_spot_sum", default=False)),
-            tacco_annotate_multi_center=tacco_annotate_cfg.get("multi_center"),
-            tacco_annotate_lamb=tacco_annotate_cfg.get("lamb"),
+            rec_graph_n_neighbors=int(cfg["graph"]["n_neighbors"]),
+            rec_graph_exp_neighbor_num=int(cfg["graph"]["exp_neighbors"]),
+            rec_graph_spatial_neighbor_num=int(cfg["graph"]["spatial_neighbors"]),
+            rec_graph_method=str(cfg["graph"]["method"]),
+            rec_graph_alpha=float(cfg["graph"]["alpha"]),
+            rec_random_state=int(cfg["graph"]["random_state"]),
+            rec_alpha=float(cfg["reconstruct"]["alpha"]),
+            rec_match_spot_sum=bool(cfg["sc"]["match_spot_sum"]),
+            tacco_annotate_multi_center=tacco_annotate_cfg["multi_center"],
+            tacco_annotate_lamb=tacco_annotate_cfg["lamb"],
             **_ot_runner_kwargs(cfg),
         )
-        _attach_local_refinement_strength(conf, cfg)
 
-        input_service = _input_service(ctx)
-        adata_sp = input_service.read_st_adata(
-            _input_path(ctx, "st", conf.st_file_path)
-        )
-        _ensure_transcript_counts(adata_sp)
-        adata_sp = adata_sp[adata_sp.obs["transcript_counts"] >= conf.prep_st_min_counts, :].copy()
-        sc.pp.filter_genes(adata_sp, min_cells=conf.prep_st_min_cells)
-
-        adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
-        )
-        adata_sc = _filter_reference_by_patient(
-            adata_sc,
-            io_cfg.get("patient_key", "Patient"),
-            io_cfg["sample_name"],
-        )
-
-        cell_type_col = columns.get("cell_type_col", "Level1")
-        sub_cell_type_col = columns.get("sub_cell_type_col", "Level2")
-        required_cols = list(dict.fromkeys([cell_type_col, sub_cell_type_col]))
-        missing = [c for c in required_cols if c not in adata_sc.obs.columns]
-        if missing:
-            raise KeyError(f"Missing required columns in sc reference: {missing}")
-        adata_sc.obs = adata_sc.obs.loc[:, required_cols].copy()
-        for column in required_cols:
-            adata_sc.obs[column] = adata_sc.obs[column].astype(str)
-        sc.pp.filter_genes(adata_sc, min_cells=conf.prep_sc_min_cells)
-        _replace_slash_labels(adata_sc, required_cols)
-
-        overlap_genes = adata_sp.var_names.intersection(adata_sc.var_names)
-        if overlap_genes.empty:
-            raise ValueError("No overlapping genes between spatial and sc reference data")
-        adata_sp = adata_sp[:, overlap_genes].copy()
+        adata_sp = ctx.st_adata
+        adata_sc = ctx.sc_ref_adata
+        if adata_sp is None or adata_sc is None:
+            raise RuntimeError("Application requires preloaded AnnData inputs")
 
         ctx.runner_config = conf
         ctx.st_adata = adata_sp
@@ -758,90 +462,13 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         ctx.runner = ScAppRunner(adata_sp, adata_sc, conf, ctx.logger)
 
     def solve_ot(self, ctx) -> None:
-        sc_cfg = ctx.merged_config.get("sc", {})
-        sub_cell_type_col = ctx.columns.get("sub_cell_type_col", "Level2")
+        sc_cfg = ctx.merged_config["sc"]
+        sub_cell_type_col = ctx.columns["sub_cell_type_col"]
 
-        selected_cell_types = None
-        resolutions = list(sc_cfg.get("resolutions", [0.6, 0.7, 0.8]))
-        select_res = sc_cfg.get("select_resolution")
-        if _ist_selection_gate_enabled(ctx):
-            selected_cell_types = _normalize_selected_cell_types(sc_cfg.get("select_ct"))
-            _validate_ist_selected_cell_types(ctx, selected_cell_types)
-            spatial_parts = []
-            expr_parts = []
-            for candidate in selected_cell_types:
-                sc_svc_spatial_part, sc_svc_expr_part = ctx.runner.local_refinement(
-                    candidate, sub_cell_type_col, resolutions, select_res=select_res
-                )
-                ctx.record_local_refinement(True)
-                spatial_parts.append(_prefix_svc_cluster_labels(sc_svc_spatial_part, candidate))
-                expr_parts.append(_prefix_svc_cluster_labels(sc_svc_expr_part, candidate))
-            sc_svc_spatial = sc.concat(spatial_parts, join="outer", merge="same", uns_merge="unique", index_unique=None)
-            sc_svc_expr = sc.concat(expr_parts, join="outer", merge="same", uns_merge="unique", index_unique=None)
-            select_ct = list(selected_cell_types)
-        else:
-            select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
-            sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
-                select_ct, sub_cell_type_col, resolutions, select_res=select_res
-            )
-            ctx.record_local_refinement(True)
-        ctx.artifacts["outputs"] = {
-            "sc_svc_spatial": sc_svc_spatial,
-            "sc_svc_expr": sc_svc_expr,
-        }
-        ctx.artifacts["selected_cell_type"] = select_ct
-        if selected_cell_types is not None:
-            ctx.artifacts["selected_cell_types"] = selected_cell_types
-
-    def finalize_svc(self, ctx) -> SVC:
-        outputs = dict(ctx.artifacts.get("outputs", {}))
-        return _build_svc(
-            ctx,
-            outputs,
-            default_key="sc_svc_expr",
-            expr=outputs.get("sc_svc_expr"),
-            spatial=outputs.get("sc_svc_spatial"),
-            extra_provenance={
-                "selected_cell_type": ctx.artifacts.get("selected_cell_type"),
-                "selected_cell_types": ctx.artifacts.get("selected_cell_types"),
-            },
-        )
-
-
-class ScSvcHyperApplicationStrategy(ScSvcApplicationStrategy):
-    """Hyperresolution variant for application sc-SVC.
-
-    This strategy keeps the same high-level lifecycle while using a dedicated
-    local-refinement configuration path controlled by `sc.hyperresolution`.
-    """
-
-    strategy_id = "ScSvcHyperApplicationStrategy"
-
-    def solve_ot(self, ctx) -> None:
-        sc_cfg = ctx.merged_config.get("sc", {})
-        hyper_cfg = sc_cfg.get("hyperresolution", {}) or {}
-        if not bool(hyper_cfg.get("enabled", False)):
-            ctx.logger.warning("[adapter] hyperresolution disabled; fallback to ScSvcApplicationStrategy")
-            return super().solve_ot(ctx)
-
-        sub_cell_type_col = ctx.columns.get("sub_cell_type_col", "Level2")
         select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
 
-        base_res = _as_float_list(sc_cfg.get("resolutions"), default=[0.6, 0.7, 0.8])
-        hyper_res_cfg = hyper_cfg.get("resolutions")
-        if hyper_res_cfg is None:
-            # Densify around base search space for hyperresolution mode.
-            densified = set(base_res)
-            for val in base_res:
-                plus = round(min(2.0, float(val) + 0.05), 2)
-                minus = round(max(0.05, float(val) - 0.05), 2)
-                densified.add(plus)
-                densified.add(minus)
-            resolutions = sorted(densified)
-        else:
-            resolutions = _as_float_list(hyper_res_cfg, default=base_res)
-
-        select_res = hyper_cfg.get("select_resolution", sc_cfg.get("select_resolution"))
+        resolutions = list(sc_cfg["resolutions"])
+        select_res = sc_cfg.get("select_resolution")
         sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
             select_ct,
             sub_cell_type_col,
@@ -854,30 +481,34 @@ class ScSvcHyperApplicationStrategy(ScSvcApplicationStrategy):
             "sc_svc_expr": sc_svc_expr,
         }
         ctx.artifacts["selected_cell_type"] = select_ct
-        ctx.artifacts["hyperresolution"] = {
-            "enabled": True,
-            "resolutions": resolutions,
-            "select_resolution": select_res,
-        }
 
     def finalize_svc(self, ctx) -> SVC:
-        svc = super().finalize_svc(ctx)
-        hyper = dict(ctx.artifacts.get("hyperresolution", {}))
-        svc.provenance["hyperresolution"] = hyper
-        return svc
+        outputs = dict(ctx.artifacts.get("outputs", {}))
+        return _build_svc(
+            ctx,
+            outputs,
+            default_key="sc_svc_expr",
+            expr=outputs.get("sc_svc_expr"),
+            spatial=outputs.get("sc_svc_spatial"),
+            extra_provenance={
+                "selected_cell_type": ctx.artifacts.get("selected_cell_type"),
+            },
+        )
 
 
-class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
-    strategy_id = "ScSvcSrApplicationStrategy"
+class ScSvcSuperResolutionApplicationStrategy(RunnerBackedStrategy):
+    strategy_id = "ScSvcSuperResolutionApplicationStrategy"
 
     def prepare_context(self, ctx) -> None:
-        from revise.backend.runners.sc_svc_sr_application import ScSVCSr as ScSrAppRunner
+        from revise.backend.runners.sc_svc_super_resolution_application import (
+            ScSVCSuperResolution as ScSrAppRunner,
+        )
 
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
 
-        conf = ApplicationScSrConf(
+        conf = ApplicationScSuperResolutionConf(
             sample_name=io_cfg["sample_name"],
             raw_data_path=io_cfg["data_root"],
             result_root_path=str(ctx.run_dir),
@@ -886,35 +517,27 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
             unknown_key=columns["unknown_key"],
             st_file=io_cfg["st_file"],
             sc_ref_file=io_cfg["sc_ref_file"],
-            prep_st_min_counts=int(_cfg_get(cfg, "preprocess", "st_min_transcripts", default=60)),
-            prep_st_min_cells=int(_cfg_get(cfg, "preprocess", "st_min_cells", default=100)),
-            prep_sc_min_cells=int(_cfg_get(cfg, "preprocess", "sc_min_cells", default=100)),
-            rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=20)),
-            rec_graph_method=str(_cfg_get(cfg, "graph", "method", default="joint")),
-            rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.2)),
-            rec_graph_exp_neighbor_num=int(_cfg_get(cfg, "graph", "exp_neighbors", default=10)),
-            rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=20)),
-            rec_match_spot_sum=bool(_cfg_get(cfg, "sc", "match_spot_sum", default=False)),
-            svc_completeness=_cfg_get(cfg, "sc", "svc_completeness"),
+            rec_graph_n_neighbors=int(cfg["graph"]["n_neighbors"]),
+            rec_graph_method=str(cfg["graph"]["method"]),
+            rec_graph_alpha=float(cfg["graph"]["alpha"]),
+            rec_graph_exp_neighbor_num=int(cfg["graph"]["exp_neighbors"]),
+            rec_graph_spatial_neighbor_num=int(cfg["graph"]["spatial_neighbors"]),
+            rec_alpha=float(cfg["reconstruct"]["alpha"]),
+            rec_match_spot_sum=bool(cfg["sc"]["match_spot_sum"]),
+            rec_graph_agg_enabled=bool(cfg["sc"]["sr_graph_agg_enabled"]),
+            svc_completeness=cfg["sc"]["svc_completeness"],
             sr_assignment_seed=_resolve_runtime_seed(ctx),
+            local_refinement_strength=float(
+                cfg["local_refinement"]["strength"]
+            ),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_local_refinement_strength(conf, cfg)
         conf.pm_on_cell = getattr(ctx, "pm_on_cell", None)
 
-        input_service = _input_service(ctx)
-        adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st", conf.st_file_path)
-        )
-        ensure_all_cells_in_spot(adata_st, logger=ctx.logger)
-        adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
-        )
-        adata_sc = _filter_reference_by_patient(
-            adata_sc,
-            io_cfg.get("patient_key", "Patient"),
-            io_cfg["sample_name"],
-        )
+        adata_st = ctx.st_adata
+        adata_sc = ctx.sc_ref_adata
+        if adata_st is None or adata_sc is None:
+            raise RuntimeError("Application requires preloaded AnnData inputs")
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.sc_ref_adata = adata_sc
@@ -927,7 +550,7 @@ class ScSvcSrApplicationStrategy(RunnerBackedStrategy):
     def finalize_svc(self, ctx) -> SVC:
         outputs = dict(getattr(ctx.runner, "svc", {}))
         default_key = "sc_svc_dec"
-        if bool(getattr(ctx.runner_config, "rec_graph_agg_enabled", False)) and "sc_svc_dec_graphagg" in outputs:
+        if ctx.runner_config.rec_graph_agg_enabled and "sc_svc_dec_graphagg" in outputs:
             default_key = "sc_svc_dec_graphagg"
         return _build_svc(ctx, outputs, default_key=default_key)
 
@@ -943,7 +566,7 @@ class SpSvcBenchmarkSegStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        case_subdir = benchmark_case_leaf(ctx.route_key, io_cfg)
+        case_subdir = benchmark_case_leaf(ctx.runtime.get("confounding"), io_cfg)
 
         conf = BenchmarkSegConf(
             sample_name=io_cfg["sample_name"],
@@ -955,40 +578,45 @@ class SpSvcBenchmarkSegStrategy(RunnerBackedStrategy):
             st_file=io_cfg["st_file"],
             gt_svc_file=io_cfg["gt_svc_file"],
             sc_ref_file=io_cfg["sc_ref_file"],
-            seg_method=io_cfg.get("seg_method", "seg_1"),
+            seg_method=io_cfg["seg_method"],
             case_subdir=case_subdir,
-            rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=50)),
-            rec_graph_exp_neighbor_num=int(_cfg_get(cfg, "graph", "exp_neighbors", default=30)),
-            rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=30)),
-            rec_graph_method=str(_cfg_get(cfg, "graph", "method", default="joint")),
-            rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.8)),
-            rec_alpha=float(_cfg_get(cfg, "reconstruct", "alpha", default=1.0)),
+            rec_graph_n_neighbors=int(cfg["graph"]["n_neighbors"]),
+            rec_graph_exp_neighbor_num=int(cfg["graph"]["exp_neighbors"]),
+            rec_graph_spatial_neighbor_num=int(cfg["graph"]["spatial_neighbors"]),
+            rec_graph_method=str(cfg["graph"]["method"]),
+            rec_graph_alpha=float(cfg["graph"]["alpha"]),
+            rec_alpha=float(cfg["reconstruct"]["alpha"]),
+            dropout_total_counts=int(cfg["benchmark"]["dropout_total_counts"]),
+            swapping_total_counts=int(cfg["benchmark"]["swapping_total_counts"]),
+            lower_ts=float(cfg["benchmark"]["lower_ts"]),
+            upper_ts=float(cfg["benchmark"]["upper_ts"]),
+            local_refinement_strength=float(
+                cfg["local_refinement"]["strength"]
+            ),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_local_refinement_strength(conf, cfg)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)
         adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st", conf.st_file_path)
+            _input_path(ctx, "st")
         )
         adata_real = input_service.read_real_adata(
-            _input_path(ctx, "gt", conf.gt_svc_file_path)
+            _input_path(ctx, "gt")
         )
         adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
+            _input_path(ctx, "sc_ref")
         )
-
-        # Optional fast-compare mode: sample benchmark cells while keeping
-        # prediction/ground-truth perfectly aligned on obs index.
-        sample_size = io_cfg.get("sample_size")
-        if sample_size is not None:
-            sampled_st, keep = _subsample_obs(adata_st, int(sample_size), _resolve_sample_seed(ctx))
-            keep_index = pd.Index(keep)
-            common = keep_index.intersection(adata_real.obs_names)
-            # Keep prediction and ground-truth obs perfectly aligned.
-            adata_st = sampled_st[common, :].copy()
-            adata_real = adata_real[common, :].copy()
+        adata_st, adata_sc, adata_real = preprocess_data(
+            str(ctx.runtime["confounding"]),
+            adata_st,
+            adata_sc,
+            adata_real,
+            conf,
+            sample_size=io_cfg.get("sample_size"),
+            sample_seed=_resolve_sample_seed(ctx),
+            logger=ctx.logger,
+        )
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st
@@ -1010,7 +638,7 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        case_subdir = benchmark_case_leaf(ctx.route_key, io_cfg)
+        case_subdir = benchmark_case_leaf(ctx.runtime.get("confounding"), io_cfg)
 
         conf = BenchmarkSrConf(
             sample_name=io_cfg["sample_name"],
@@ -1022,127 +650,60 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
             st_file=io_cfg["st_file"],
             gt_svc_file=io_cfg["gt_svc_file"],
             sc_ref_file=io_cfg["sc_ref_file"],
-            spot_size=int(io_cfg.get("spot_size", 50)),
+            spot_size=int(io_cfg["spot_size"]),
             case_subdir=case_subdir,
-            svc_completeness=_cfg_get(cfg, "sc", "svc_completeness"),
+            svc_completeness=cfg["sc"]["svc_completeness"],
             sr_assignment_seed=_resolve_runtime_seed(ctx),
-            rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=20)),
-            rec_graph_exp_neighbor_num=int(_cfg_get(cfg, "graph", "exp_neighbors", default=10)),
-            rec_graph_spatial_neighbor_num=int(_cfg_get(cfg, "graph", "spatial_neighbors", default=20)),
-            rec_graph_method=str(_cfg_get(cfg, "graph", "method", default="joint")),
-            rec_graph_alpha=float(_cfg_get(cfg, "graph", "alpha", default=0.2)),
-            rec_alpha=float(_cfg_get(cfg, "reconstruct", "alpha", default=1.0)),
-            rec_graph_agg_enabled=bool(_cfg_get(cfg, "sc", "sr_graph_agg_enabled", default=False)),
-            rec_graph_agg_low_conf_only=bool(_cfg_get(cfg, "sc", "sr_graph_agg_low_conf_only", default=False)),
-            rec_graph_agg_low_conf_quantile=float(
-                _cfg_get(cfg, "sc", "sr_graph_agg_low_conf_quantile", default=0.2)
+            rec_graph_n_neighbors=int(cfg["graph"]["n_neighbors"]),
+            rec_graph_exp_neighbor_num=int(cfg["graph"]["exp_neighbors"]),
+            rec_graph_spatial_neighbor_num=int(cfg["graph"]["spatial_neighbors"]),
+            rec_graph_method=str(cfg["graph"]["method"]),
+            rec_graph_alpha=float(cfg["graph"]["alpha"]),
+            rec_alpha=float(cfg["reconstruct"]["alpha"]),
+            rec_graph_agg_enabled=bool(cfg["sc"]["sr_graph_agg_enabled"]),
+            rec_graph_agg_low_conf_only=bool(cfg["sc"]["sr_graph_agg_low_conf_only"]),
+            rec_graph_agg_low_conf_quantile=float(cfg["sc"]["sr_graph_agg_low_conf_quantile"]),
+            rec_graph_agg_anchor_only=bool(cfg["sc"]["sr_graph_agg_anchor_only"]),
+            rec_graph_agg_anchor_high_conf_quantile=float(cfg["sc"]["sr_graph_agg_anchor_high_conf_quantile"]),
+            rec_graph_agg_confidence_mode=str(cfg["sc"]["sr_graph_agg_confidence_mode"]),
+            rec_graph_agg_conf_weighted_alpha=bool(cfg["sc"]["sr_graph_agg_conf_weighted_alpha"]),
+            rec_graph_agg_conf_alpha_min=float(cfg["sc"]["sr_graph_agg_conf_alpha_min"]),
+            rec_graph_agg_conf_alpha_max=float(cfg["sc"]["sr_graph_agg_conf_alpha_max"]),
+            rec_graph_agg_conf_alpha_power=float(cfg["sc"]["sr_graph_agg_conf_alpha_power"]),
+            local_refinement_strength=float(
+                cfg["local_refinement"]["strength"]
             ),
-            rec_graph_agg_anchor_only=bool(_cfg_get(cfg, "sc", "sr_graph_agg_anchor_only", default=False)),
-            rec_graph_agg_anchor_high_conf_quantile=float(
-                _cfg_get(cfg, "sc", "sr_graph_agg_anchor_high_conf_quantile", default=0.8)
-            ),
-            rec_graph_agg_confidence_mode=str(
-                _cfg_get(cfg, "sc", "sr_graph_agg_confidence_mode", default="auto")
-            ),
-            rec_graph_agg_conf_weighted_alpha=bool(
-                _cfg_get(cfg, "sc", "sr_graph_agg_conf_weighted_alpha", default=False)
-            ),
-            rec_graph_agg_conf_alpha_min=float(
-                _cfg_get(cfg, "sc", "sr_graph_agg_conf_alpha_min", default=0.0)
-            ),
-            rec_graph_agg_conf_alpha_max=float(
-                _cfg_get(cfg, "sc", "sr_graph_agg_conf_alpha_max", default=-1.0)
-            ),
-            rec_graph_agg_conf_alpha_power=float(
-                _cfg_get(cfg, "sc", "sr_graph_agg_conf_alpha_power", default=1.0)
-            ),
-            sr_noise_enabled=bool(_cfg_get(cfg, "sc", "sr_noise_enabled", default=False)),
-            sr_noise_lambda=float(_cfg_get(cfg, "sc", "sr_noise_lambda", default=0.0)),
-            sr_noise_k=int(_cfg_get(cfg, "sc", "sr_noise_k", default=4)),
-            sr_noise_weight=str(_cfg_get(cfg, "sc", "sr_noise_weight", default="distance")),
-            sr_noise_preserve_total_counts=bool(_cfg_get(cfg, "sc", "sr_noise_preserve_total_counts", default=True)),
-            sr_noise_seed=int(_cfg_get(cfg, "sc", "sr_noise_seed", default=42)),
             **_ot_runner_kwargs(cfg),
         )
-        _attach_local_refinement_strength(conf, cfg)
         conf.pm_on_cell = getattr(ctx, "pm_on_cell", None)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)
         adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st", conf.st_file_path)
+            _input_path(ctx, "st")
         )
         adata_real = input_service.read_real_adata(
-            _input_path(ctx, "gt", conf.gt_svc_file_path)
+            _input_path(ctx, "gt")
         )
         adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
+            _input_path(ctx, "sc_ref")
         )
-        ensure_all_cells_in_spot(adata_st, logger=ctx.logger, real_adata=adata_real)
-
-        sample_size = io_cfg.get("sample_size")
-        if sample_size is not None:
-            # SR benchmark uses spot-level ST and cell-level GT with different
-            # obs spaces; align GT via spot->cell mapping instead of obs names.
-            sampled_st, _ = _subsample_obs(adata_st, int(sample_size), _resolve_sample_seed(ctx))
-            adata_st = sampled_st
-            mapping = adata_st.uns.get("all_cells_in_spot", {})
-            keep_cells: List[str] = []
-            for spot in adata_st.obs_names:
-                keep_cells.extend(mapping.get(str(spot), []))
-            if keep_cells:
-                keep_index = pd.Index(np.asarray(keep_cells, dtype=str))
-                if "cell_id" in adata_real.obs:
-                    keep_mask = adata_real.obs["cell_id"].astype(str).isin(keep_index)
-                    adata_real = adata_real[keep_mask.to_numpy(), :].copy()
-                else:
-                    real_index = keep_index.intersection(adata_real.obs_names)
-                    adata_real = adata_real[real_index, :].copy()
-                if isinstance(conf.pm_on_cell, pd.DataFrame):
-                    conf.pm_on_cell = conf.pm_on_cell.loc[
-                        keep_index.intersection(conf.pm_on_cell.index)
-                    ].copy()
+        adata_st, adata_sc, adata_real = preprocess_data(
+            str(ctx.runtime["confounding"]),
+            adata_st,
+            adata_sc,
+            adata_real,
+            conf,
+            sample_size=io_cfg.get("sample_size"),
+            sample_seed=_resolve_sample_seed(ctx),
+            logger=ctx.logger,
+        )
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st
         ctx.real_st_adata = adata_real
         ctx.sc_ref_adata = adata_sc
         ctx.runner = ScSrBenchmarkRunner(adata_st, adata_sc, conf, adata_real, ctx.logger)
-
-    def global_anchoring(self, ctx) -> None:
-        conf = ctx.runner_config
-        if bool(getattr(conf, "sr_noise_enabled", False)) and float(getattr(conf, "sr_noise_lambda", 0.0)) > 0:
-            noisy_st = _inject_sr_spatial_leakage_noise(
-                ctx.runner.st_adata,
-                leak_ratio=float(conf.sr_noise_lambda),
-                k=int(conf.sr_noise_k),
-                weight_mode=str(conf.sr_noise_weight),
-                preserve_total_counts=bool(conf.sr_noise_preserve_total_counts),
-                seed=int(conf.sr_noise_seed),
-                logger=ctx.logger,
-            )
-            ctx.runner.st_adata = noisy_st
-            ctx.st_adata = noisy_st
-            try:
-                noisy_path = Path(ctx.run_dir) / "st_input_noisy.h5ad"
-                noisy_path.parent.mkdir(parents=True, exist_ok=True)
-                noisy_st.write_h5ad(noisy_path)
-                ctx.artifacts["sr_noise"] = {
-                    "enabled": True,
-                    "artifact": str(noisy_path),
-                    "lambda": float(conf.sr_noise_lambda),
-                    "k": int(conf.sr_noise_k),
-                    "weight": str(conf.sr_noise_weight),
-                    "preserve_total_counts": bool(conf.sr_noise_preserve_total_counts),
-                    "seed": int(conf.sr_noise_seed),
-                }
-                ctx.logger.info("[sr-noise] saved noisy ST input to %s", noisy_path)
-            except Exception as exc:  # pragma: no cover - artifact persistence best effort
-                ctx.logger.warning("[sr-noise] failed to save noisy ST artifact: %s", exc)
-        else:
-            ctx.logger.info("[sr-noise] disabled for SR benchmark run")
-
-        super().global_anchoring(ctx)
 
     def solve_ot(self, ctx) -> None:
         ctx.runner_config.sr_allocation_callback = ctx.record_sr_allocation
@@ -1151,7 +712,7 @@ class ScSvcSrBenchmarkStrategy(RunnerBackedStrategy):
     def finalize_svc(self, ctx) -> SVC:
         outputs = dict(getattr(ctx.runner, "svc", {}))
         default_key = "sc_svc_dec"
-        if bool(getattr(ctx.runner_config, "rec_graph_agg_enabled", False)) and "sc_svc_dec_graphagg" in outputs:
+        if ctx.runner_config.rec_graph_agg_enabled and "sc_svc_dec_graphagg" in outputs:
             default_key = "sc_svc_dec_graphagg"
         return _build_svc(ctx, outputs, default_key=default_key)
 
@@ -1167,7 +728,7 @@ class ScSvcImputeBenchmarkStrategy(RunnerBackedStrategy):
         cfg = ctx.merged_config
         io_cfg = ctx.io
         columns = ctx.columns
-        case_subdir = benchmark_case_leaf(ctx.route_key, io_cfg)
+        case_subdir = benchmark_case_leaf(ctx.runtime.get("confounding"), io_cfg)
 
         conf = BenchmarkImputeConf(
             sample_name=io_cfg["sample_name"],
@@ -1180,62 +741,45 @@ class ScSvcImputeBenchmarkStrategy(RunnerBackedStrategy):
             gt_svc_file=io_cfg["gt_svc_file"],
             sc_ref_file=io_cfg["sc_ref_file"],
             case_subdir=case_subdir,
-            prep_min_cells=int(_cfg_get(cfg, "preprocess", "st_min_cells", default=30)),
-            prep_min_counts=int(_cfg_get(cfg, "preprocess", "st_min_transcripts", default=60)),
-            rec_graph_n_neighbors=int(_cfg_get(cfg, "graph", "n_neighbors", default=15)),
-            rec_merge_subcluster_method=str(_cfg_get(cfg, "impute", "merge_subcluster_method", default="mean")),
-            rec_subcluster_resolution=int(_cfg_get(cfg, "impute", "subcluster_resolution", default=3)),
+            prep_min_cells=int(cfg["preprocess"]["st_min_cells"]),
+            prep_min_counts=int(cfg["preprocess"]["st_min_transcripts"]),
+            rec_graph_preprocess=bool(cfg["impute"]["graph_preprocess"]),
+            rec_graph_n_pcs=int(cfg["impute"]["graph_n_pcs"]),
+            rec_graph_n_neighbors=int(cfg["graph"]["n_neighbors"]),
+            rec_merge_subcluster_method=str(cfg["impute"]["merge_subcluster_method"]),
+            rec_subcluster_resolution=int(cfg["impute"]["subcluster_resolution"]),
             rec_in_panel_subcluster_resolution=(
                 None
-                if _cfg_get(cfg, "impute", "in_panel_subcluster_resolution", default=None) is None
-                else int(_cfg_get(cfg, "impute", "in_panel_subcluster_resolution", default=None))
+                if cfg["impute"]["in_panel_subcluster_resolution"] is None
+                else int(cfg["impute"]["in_panel_subcluster_resolution"])
             ),
-            rec_impute_prune_flag=bool(_cfg_get(cfg, "impute", "prune", default=True)),
-            rec_impute_n_neighbors=int(_cfg_get(cfg, "impute", "n_neighbors", default=1)),
-            rec_impute_method=str(_cfg_get(cfg, "impute", "method", default="mean")),
+            rec_impute_prune_flag=bool(cfg["impute"]["prune"]),
+            rec_impute_n_neighbors=int(cfg["impute"]["n_neighbors"]),
+            rec_impute_method=str(cfg["impute"]["method"]),
             **_ot_runner_kwargs(cfg, impute=True),
         )
-        _attach_local_refinement_strength(conf, cfg)
         os.makedirs(conf.result_dir, exist_ok=True)
 
         input_service = _input_service(ctx)
         adata_st = input_service.read_st_adata(
-            _input_path(ctx, "st", conf.st_file_path)
+            _input_path(ctx, "st")
         )
         adata_real = input_service.read_real_adata(
-            _input_path(ctx, "gt", conf.gt_svc_file_path)
+            _input_path(ctx, "gt")
         )
         adata_sc = input_service.read_sc_ref_adata(
-            _input_path(ctx, "sc_ref", conf.sc_ref_file_path)
+            _input_path(ctx, "sc_ref")
         )
-
-        sample_size = io_cfg.get("sample_size")
-        if sample_size is not None:
-            sampled_st, keep = _subsample_obs(adata_st, int(sample_size), _resolve_sample_seed(ctx))
-            keep_index = pd.Index(keep)
-            common = keep_index.intersection(adata_real.obs_names)
-            adata_st = sampled_st[common, :].copy()
-            adata_real = adata_real[common, :].copy()
-            # Fast benchmark mode: also bound sc reference size for imputation
-            # routes so uncertainty/subcluster steps stay tractable.
-            if adata_sc.n_obs > int(sample_size):
-                adata_sc, _ = _subsample_obs(adata_sc, int(sample_size), _resolve_sample_seed(ctx))
-
-        if columns["cell_type_col"] in adata_sc.obs:
-            counts = adata_sc.obs[columns["cell_type_col"]].value_counts()
-            valid_ct = counts[counts >= 2].index
-            adata_sc = adata_sc[adata_sc.obs[columns["cell_type_col"]].isin(valid_ct), :].copy()
-
-        # Gene-uncertainty builds per-cell-type PCA graphs; when sampled data
-        # is small, cap n_pcs to avoid sklearn arpack dimension errors.
-        if columns["cell_type_col"] in adata_sc.obs:
-            ct_sizes = adata_sc.obs[columns["cell_type_col"]].value_counts()
-            min_ct_size = int(ct_sizes.min()) if not ct_sizes.empty else int(adata_sc.n_obs)
-        else:
-            min_ct_size = int(adata_sc.n_obs)
-        max_valid_pcs = min(int(conf.rec_graph_n_pcs), max(1, min_ct_size - 1), max(1, adata_sc.n_vars - 1))
-        conf.rec_graph_n_pcs = max_valid_pcs
-        ctx.logger.info("[adapter] impute rec_graph_n_pcs adjusted to %s", conf.rec_graph_n_pcs)
+        adata_st, adata_sc, adata_real = preprocess_data(
+            str(ctx.runtime["confounding"]),
+            adata_st,
+            adata_sc,
+            adata_real,
+            conf,
+            sample_size=io_cfg.get("sample_size"),
+            sample_seed=_resolve_sample_seed(ctx),
+            logger=ctx.logger,
+        )
 
         ctx.runner_config = conf
         ctx.st_adata = adata_st

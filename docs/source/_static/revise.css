@@ -159,6 +159,86 @@
   border-radius: 8px;
 }
 
+.rst-content .nbsphinx-gallery {
+  align-items: stretch;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rst-content .nbsphinx-gallery > a {
+  background: #ffffff;
+  border: 1px solid var(--revise-border);
+  border-radius: 10px;
+  color: var(--revise-ink);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.65rem;
+  text-align: left;
+  transition: border-color 150ms ease, box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.rst-content .nbsphinx-gallery > a:hover {
+  border-color: var(--revise-accent);
+  box-shadow: 0 10px 24px rgba(23, 32, 42, 0.11);
+  color: var(--revise-ink);
+  text-decoration: none;
+  transform: translateY(-2px);
+}
+
+.rst-content .nbsphinx-gallery > a > div:first-child {
+  align-items: center;
+  aspect-ratio: 8 / 5;
+  background: var(--revise-panel);
+  border-radius: 7px;
+  display: flex;
+  height: auto;
+  justify-content: center;
+  margin-bottom: 0.65rem;
+  overflow: hidden;
+}
+
+.rst-content .nbsphinx-gallery > a > div:first-child img {
+  display: block;
+  height: 100%;
+  max-height: none;
+  max-width: none;
+  object-fit: contain;
+  width: 100%;
+}
+
+/* Focus wide comparison figures on the rightmost REVISE reconstruction. */
+.rst-content .nbsphinx-gallery > a:nth-child(2) > div:first-child img,
+.rst-content .nbsphinx-gallery > a:nth-child(3) > div:first-child img,
+.rst-content .nbsphinx-gallery > a:nth-child(4) > div:first-child img,
+.rst-content .nbsphinx-gallery > a:nth-child(5) > div:first-child img {
+  object-fit: cover;
+  object-position: right center;
+}
+
+.rst-content .nbsphinx-gallery > a > div:first-child img[src$="nbsphinx-no-thumbnail.svg"] {
+  height: 5.5rem;
+  max-height: 5.5rem;
+  max-width: 5.5rem;
+  object-fit: contain;
+  width: 5.5rem;
+}
+
+.rst-content .nbsphinx-gallery > a > div:last-child {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.42;
+  padding: 0 0.15rem 0.1rem;
+}
+
+@media (max-width: 900px) {
+  .rst-content .nbsphinx-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 760px) {
   .revise-hero {
     padding: 1.35rem;
@@ -170,5 +250,11 @@
 
   .revise-card {
     min-height: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .rst-content .nbsphinx-gallery {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

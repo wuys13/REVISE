@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData, read_h5ad
 
-from revise.io.input_bundle import REVISEDataBundle
 from revise.io.spatialdata_service import SpatialDataService
+from revise.utils.labels import normalize_cell_type_label
 
 
 class PMOnCellSnapshotError(ValueError):
@@ -127,43 +127,18 @@ class REVISEInputService:
             raise ValueError(f"Invalid {context}; values must be finite")
         if np.any(values < 0.0) or np.any(values > 1.0):
             raise ValueError(f"Invalid {context}; values must be within [0, 1]")
-        if not np.allclose(
-            values.sum(axis=1),
-            1.0,
-            rtol=0.0,
-            atol=1e-6,
-        ):
-            raise ValueError(f"Invalid {context}; each row must sum to 1")
-
         frame.index = normalized_index
         frame.columns = normalized_columns
 
-    def load_bundle(
+    def preflight(
         self,
+        specs,
         *,
-        st_path: Union[str, Path],
-        sc_ref_path: Union[str, Path],
-        real_st_path: Optional[Union[str, Path]] = None,
-    ) -> REVISEDataBundle:
-        st_loaded = self._read_role(st_path, role="st")
-        sc_loaded = self._read_role(sc_ref_path, role="sc_ref")
-        real_loaded = self._read_role(real_st_path, role="gt") if real_st_path is not None else None
-        source_report = {
-            "st": st_loaded.metadata,
-            "sc_ref": sc_loaded.metadata,
-        }
-        if real_loaded is not None:
-            source_report["gt"] = real_loaded.metadata
-        return REVISEDataBundle(
-            st_adata=st_loaded.adata,
-            sc_ref_adata=sc_loaded.adata,
-            real_st_adata=real_loaded.adata if real_loaded is not None else None,
-            sdata=st_loaded.sdata,
-            coordinate_system=self.io_config.get("spatialdata_coordinate_system", "global"),
-            source_report=source_report,
-        )
-
-    def preflight(self, specs, *, runtime, columns) -> Dict[str, Any]:
+        runtime,
+        columns,
+        reference_filter_column: str | None = None,
+        reference_filter_value: str | None = None,
+    ) -> Dict[str, Any]:
         """Validate route-required input metadata without loading expression data."""
         opened: Dict[str, AnnData] = {}
         reports = []
@@ -196,6 +171,22 @@ class REVISEInputService:
                     runtime=runtime,
                     columns=columns,
                 )
+                if (
+                    role == "sc_ref"
+                    and reference_filter_column is not None
+                    and reference_filter_value is not None
+                ):
+                    if reference_filter_column not in adata.obs.columns:
+                        raise ValueError(
+                            "Invalid reference filter: "
+                            f"filter_column={reference_filter_column!r}; actual=missing"
+                        )
+                    matched = adata.obs[reference_filter_column] == reference_filter_value
+                    if not bool(matched.any()):
+                        raise ValueError(
+                            "Invalid reference filter: "
+                            f"filter_value={reference_filter_value!r}; matched no rows"
+                        )
                 opened[role] = adata
                 input_report = {
                     "role": role,
@@ -204,7 +195,10 @@ class REVISEInputService:
                     "backed": backed,
                     "shape": [int(adata.n_obs), int(adata.n_vars)],
                 }
-                if role == "st" and str(runtime.get("task")) == "sc_svc_sr":
+                if role == "st" and str(runtime.get("task")) in {
+                    "sc_svc_super_resolution",
+                    "sc_svc_sr",
+                }:
                     raw_mapping = adata.uns.get("all_cells_in_spot")
                     if raw_mapping is not None:
                         mapping_source = "embedded"
@@ -220,7 +214,7 @@ class REVISEInputService:
                     input_report["ground_truth_label_source"] = (
                         self._resolve_sr_ground_truth_label_key(
                             adata,
-                            str(columns.get("cell_type_col", "Level1")),
+                            str(columns["cell_type_col"]),
                         )
                     )
                 reports.append(input_report)
@@ -288,10 +282,11 @@ class REVISEInputService:
                 required_obs.append("transcript_counts")
             self._require_obs(adata, required_obs, context=context)
         elif role == "sc_ref":
-            required_obs = [str(columns.get("cell_type_col", "Level1"))]
+            cell_type_col = str(columns["cell_type_col"])
+            required_obs = [cell_type_col]
             if mode == "application" and task == "sc_svc":
                 required_obs.append(
-                    str(columns.get("sub_cell_type_col", "Level2"))
+                    str(columns["sub_cell_type_col"])
                 )
             self._require_reference_labels(
                 adata,
@@ -300,9 +295,9 @@ class REVISEInputService:
             )
             patient_key = self.io_config.get("patient_key")
             sample_name = self.io_config.get("sample_name")
-            requires_patient_match = not (
-                mode == "benchmark"
-                and str(runtime.get("confounding")) == "batch_effect"
+            patient_sample = str(sample_name) if sample_name is not None else None
+            requires_patient_match = mode == "benchmark" and not (
+                str(runtime.get("confounding")) == "batch_effect"
             )
             if (
                 requires_patient_match
@@ -310,7 +305,6 @@ class REVISEInputService:
                 and patient_key in adata.obs
                 and sample_name is not None
             ):
-                patient_sample = str(sample_name)
                 if mode == "benchmark":
                     patient_sample = patient_sample.split("/", 1)[0]
                 if not adata.obs[patient_key].astype(str).eq(patient_sample).any():
@@ -318,10 +312,38 @@ class REVISEInputService:
                         f"Invalid input: {context}; field=obs[{patient_key!r}]; "
                         f"expected=at least one row for sample {patient_sample!r}"
                     )
+            selected = columns.get("select_cell_type")
+            if mode == "application" and task == "sc_svc" and selected:
+                labels = adata.obs[cell_type_col].astype(str)
+                if (
+                    requires_patient_match
+                    and patient_key
+                    and patient_key in adata.obs
+                    and sample_name is not None
+                ):
+                    labels = labels[
+                        adata.obs[patient_key].astype(str).eq(patient_sample)
+                    ]
+                normalized_labels = labels.map(normalize_cell_type_label)
+                normalized_selected = normalize_cell_type_label(str(selected))
+                if normalized_selected not in set(normalized_labels):
+                    available = sorted(
+                        {str(value) for value in normalized_labels.dropna().unique()}
+                    )[:8]
+                    scope = (
+                        "full reference"
+                        if mode == "application"
+                        else f"patient {patient_sample!r}"
+                    )
+                    raise ValueError(
+                        f"Invalid input: {context}; field=select_cell_type; "
+                        f"actual={selected!r}; expected=label present in {scope}; "
+                        f"available={available}"
+                    )
         elif role == "gt" and task == "sc_svc_sr":
             label_key = self._resolve_sr_ground_truth_label_key(
                 adata,
-                str(columns.get("cell_type_col", "Level1")),
+                str(columns["cell_type_col"]),
             )
             self._require_obs(
                 adata,

@@ -16,8 +16,6 @@ def _context(tmp_path, *, task: str, local_refinement=None):
         config["local_refinement"] = local_refinement
     return PipelineContext(
         merged_config=config,
-        raw_config={},
-        config_path="revise/revise.yaml",
         profile="test",
         runtime={"task": task},
         route_key=f"test:{task}",

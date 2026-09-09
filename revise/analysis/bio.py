@@ -2,8 +2,10 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import scanpy as sc
 from tqdm import tqdm
+
+from revise.analysis.advanced import enrichment
+from revise.analysis.basic import differential_expression
 
 mpl.rcParams["pdf.fonttype"] = 42
 mpl.rcParams["ps.useafm"] = False
@@ -33,83 +35,31 @@ def _require_networkx():
 
 def get_degs(adata, groupby, method="t-test", fc_threshold=None, reference="rest"):
     """Run differential expression and return a tidy DataFrame of DEG statistics."""
-    adata = adata.copy()
-    adata.obs[groupby] = adata.obs[groupby].astype("category")
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
-
-    print("Conducting differential expression analysis...")
-    sc.tl.rank_genes_groups(
-        adata, reference=reference, groupby=groupby, method=method, use_raw=False
+    return differential_expression.get_degs(
+        adata,
+        groupby=groupby,
+        method=method,
+        fc_threshold=fc_threshold,
+        reference=reference,
     )
-
-    rank_genes_groups_df = pd.DataFrame()
-    categories = adata.obs[groupby].cat.categories.tolist()
-    if reference in categories:
-        categories.remove(reference)
-    for group in categories:
-        group_df = pd.DataFrame(
-            {
-                "group": group,
-                "gene": adata.uns["rank_genes_groups"]["names"][group],
-                "logfoldchanges": adata.uns["rank_genes_groups"]["logfoldchanges"][group],
-                "pvals": adata.uns["rank_genes_groups"]["pvals"][group],
-                "pvals_adj": adata.uns["rank_genes_groups"]["pvals_adj"][group],
-            }
-        )
-
-        rank_genes_groups_df = pd.concat([rank_genes_groups_df, group_df])
-    if fc_threshold is not None:
-        if fc_threshold > 0:
-            rank_genes_groups_df = rank_genes_groups_df[
-                rank_genes_groups_df["logfoldchanges"] > fc_threshold
-            ]
-        else:
-            rank_genes_groups_df = rank_genes_groups_df[
-                rank_genes_groups_df["logfoldchanges"] < fc_threshold
-            ]
-
-    rank_genes_groups_df["log_q"] = -np.log10(
-        rank_genes_groups_df["pvals_adj"] + 1e-100
-    )
-    rank_genes_groups_df.sort_values(by="log_q", ascending=False, inplace=True)
-    rank_genes_groups_df.reset_index(drop=True, inplace=True)
-
-    return rank_genes_groups_df
 
 
 # get enrichment pathway
 def get_enrichment(deg_genes, geneset_file, cutoff=0.05):
     """Run Enrichr on a gene list and return the results DataFrame."""
-    empty_columns = [
-        "Gene_set",
-        "Term",
-        "Overlap",
-        "P-value",
-        "Adjusted P-value",
-        "Old P-value",
-        "Old Adjusted P-value",
-        "Odds Ratio",
-        "Combined Score",
-        "Genes",
-    ]
-    if not deg_genes:
-        return pd.DataFrame(columns=empty_columns)
-    gp = _require_gseapy()
-
     try:
-        enr = gp.enrichr(
-            gene_list=deg_genes,
-            gene_sets=geneset_file,  # ['MSigDB_Hallmark_2020','KEGG_2021_Human'],
-            organism="human",
+        return enrichment.get_enrichment(
+            deg_genes,
+            geneset_file,
             cutoff=cutoff,
         )
-        pathway = enr.results
-    except Exception as exc:
-        print(f"Skipping enrichment analysis: {type(exc).__name__}: {exc}")
-        pathway = pd.DataFrame(columns=empty_columns)
-
-    return pathway
+    except enrichment.EnrichmentExecutionError as exc:
+        cause = exc.__cause__ or exc
+        print(
+            "Skipping enrichment analysis: "
+            f"{type(cause).__name__}: {cause}"
+        )
+        return pd.DataFrame(columns=enrichment.ENRICHMENT_RESULT_COLUMNS)
 
 
 # get conclusions used for input to LLM

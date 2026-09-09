@@ -58,10 +58,10 @@ def _kernel_class(monkeypatch):
         [[0.0, 1.0], [1.0, 0.0]]
     )
     monkeypatch.setitem(sys.modules, "revise.backend.ops.distance", distance)
-    from revise.backend.kernels import global_anchoring
+    from revise.backend.kernels import global_anchoring, ot as ot_kernel
 
     monkeypatch.setattr(
-        global_anchoring,
+        ot_kernel,
         "bhattacharyya_distance",
         distance.bhattacharyya_distance,
     )
@@ -75,6 +75,86 @@ def _valid_result(adata):
         index=adata.obs_names,
         columns=["A", "B"],
     )
+
+
+def test_application_sc_pot_does_not_require_tacco_annotation_parameters(
+    monkeypatch,
+):
+    from revise.backend.kernels import global_anchoring
+    from revise.config.runner_conf import ApplicationScConf
+
+    target, reference = _inputs()
+    config = ApplicationScConf(
+        sample_name="sample",
+        raw_data_path="data",
+        result_root_path="output",
+        st_file="sp.h5ad",
+        sc_ref_file="sc.h5ad",
+        annotate_mode="pot",
+        rec_ot_method="pot",
+        cell_type_col="Level1",
+        confidence_col="Confidence",
+        unknown_key="Unknown",
+        tacco_annotate_multi_center=None,
+        tacco_annotate_lamb=None,
+        annotate_pot_reg=0.1,
+        annotate_pot_reg_m=0.0,
+        annotate_pot_reg_type="entropy",
+        rec_graph_n_neighbors=10,
+        rec_graph_exp_neighbor_num=15,
+        rec_graph_spatial_neighbor_num=6,
+        rec_graph_method="joint",
+        rec_graph_alpha=0.2,
+        rec_random_state=0,
+        rec_pot_reg=0.1,
+        rec_pot_reg_m=0.0,
+        rec_pot_reg_type="entropy",
+        rec_alpha=0.5,
+        rec_match_spot_sum=False,
+    )
+    calls = []
+    monkeypatch.setattr(
+        global_anchoring,
+        "OTKernel",
+        SimpleNamespace(
+            annotate=lambda target, reference, **kwargs: calls.append(kwargs)
+            or target.copy()
+        ),
+    )
+
+    global_anchoring.GlobalAnchoringKernel(
+        config,
+        logging.getLogger("test"),
+    ).run(
+        target,
+        reference,
+        annotate_pot_reg=0.1,
+        annotate_pot_reg_m=0.0,
+        annotate_pot_reg_type="entropy",
+    )
+
+    assert calls[0]["method"] == "pot"
+
+
+def test_tacco_rejects_zero_mass_posterior_row(monkeypatch):
+    GlobalAnchoringKernel = _kernel_class(monkeypatch)
+    target, reference = _inputs()
+
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        adata.obsm[result_key] = pd.DataFrame(
+            [[0.0, 0.0], [3.0, 7.0]],
+            index=adata.obs_names,
+            columns=["A", "B"],
+        )
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
+
+    with pytest.raises(ValueError, match="positive mass"):
+        GlobalAnchoringKernel(
+            _config("tacco"),
+            logging.getLogger("test"),
+        ).run(target, reference)
 
 
 def test_stale_canonical_key_cannot_satisfy_tacco_noop(monkeypatch):
@@ -124,7 +204,7 @@ def test_tacco_uses_unique_result_key_then_promotes_only_fresh_output(monkeypatc
     assert result.obs["Level1"].tolist() == ["A", "B"]
 
 
-def test_tacco_rejects_all_nan_rows_without_reference_prior_repair(
+def test_tacco_publishes_all_nan_rows_without_reference_prior_repair(
     monkeypatch,
 ):
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
@@ -185,13 +265,73 @@ def test_tacco_rejects_all_nan_rows_without_reference_prior_repair(
         return adata, processed_reference
 
     _install_tacco(monkeypatch, annotate)
-    with pytest.raises(ValueError, match="finite"):
-        GlobalAnchoringKernel(
-            _config("tacco"),
-            logging.getLogger("test"),
-        ).run(target, reference)
+    result = GlobalAnchoringKernel(
+        _config("tacco"),
+        logging.getLogger("test"),
+    ).run(target, reference)
 
     assert "tacco_side_effect" not in reference.uns
+    assert result.obs["Level1"].tolist() == [
+        "A",
+        "B",
+        "Unknown",
+        "Unknown",
+        "Unknown",
+    ]
+    assert result.obsm["Level1"].iloc[2:].isna().all(axis=None)
+    assert result.obs["Confidence"].iloc[2:].isna().all()
+
+
+def test_tacco_unified_contract_publishes_custom_unknown_and_nan_confidence(
+    monkeypatch,
+):
+    GlobalAnchoringKernel = _kernel_class(monkeypatch)
+    target, reference = _inputs()
+
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert return_reference is True
+        adata.obsm[result_key] = pd.DataFrame(
+            [[0.8, 0.2], [np.nan, np.nan]],
+            index=adata.obs_names,
+            columns=["A", "B"],
+        )
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
+    result = GlobalAnchoringKernel(
+        _config("tacco"),
+        logging.getLogger("test"),
+    ).run(
+        target,
+        reference,
+        unknown_key="Unassigned",
+    )
+
+    assert result.obs["Level1"].tolist() == ["A", "Unassigned"]
+    assert np.isnan(result.obsm["Level1"].loc["spot2"]).all()
+    assert np.isnan(result.obs.loc["spot2", "Confidence"])
+
+
+def test_pot_zero_mass_is_not_converted_to_unassigned(monkeypatch):
+    GlobalAnchoringKernel = _kernel_class(monkeypatch)
+    target, reference = _inputs()
+    monkeypatch.setattr(
+        sys.modules["ot"].unbalanced,
+        "sinkhorn_unbalanced",
+        lambda *args, **kwargs: np.array([[0.0, 0.0], [0.2, 0.3]]),
+    )
+
+    with pytest.raises(ValueError, match="positive mass"):
+        GlobalAnchoringKernel(
+            _config("pot"),
+            logging.getLogger("test"),
+        ).run(
+            target,
+            reference,
+            annotate_pot_reg=0.1,
+            annotate_pot_reg_m=0.0,
+            annotate_pot_reg_type="entropy",
+        )
 
 
 def test_tacco_does_not_hide_partial_nonfinite_final_zero_row(monkeypatch):
@@ -263,7 +403,6 @@ def test_tacco_wrong_result_key_fails_closed(monkeypatch):
     [
         ([[np.nan, 0.2], [0.1, 0.9]], "finite"),
         ([[-0.1, 1.1], [0.1, 0.9]], "non-negative"),
-        ([[0.0, 0.0], [0.1, 0.9]], "row-normalized"),
     ],
 )
 def test_malformed_fresh_tacco_result_fails_before_completed(
@@ -388,6 +527,7 @@ def test_tacco_publishes_ordered_values_without_reordering_or_normalizing(
     )
 
     def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert list(ref.obs[annotation_key].cat.categories) == ["B", "A"]
         adata.obsm[result_key] = expected.copy()
         return adata, ref
 
@@ -402,34 +542,41 @@ def test_tacco_publishes_ordered_values_without_reordering_or_normalizing(
     assert result.obs["Level1"].tolist() == expected.idxmax(axis=1).tolist()
 
 
-def test_tacco_rejects_sorted_output_when_reference_order_is_nondefault(
+def test_tacco_rejects_returned_category_order_when_reference_first_seen_differs(
     monkeypatch,
 ):
+    from revise.backend.ops.assignment import GlobalAssignmentContractError
+
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
     target, reference = _inputs()
     reference.obs["Level1"] = ["B", "A"]
-    candidate = pd.DataFrame(
+    expected = pd.DataFrame(
         [[0.3, 0.7], [0.6, 0.4]],
         index=target.obs_names,
         columns=["A", "B"],
     )
 
-    with pytest.raises(ValueError, match="category.*order"):
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        assert list(ref.obs[annotation_key].cat.categories) == ["B", "A"]
+        adata.obsm[result_key] = expected.copy()
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
+    with pytest.raises(
+        GlobalAssignmentContractError,
+        match="category axis order",
+    ):
         GlobalAnchoringKernel(
             _config("tacco"),
             logging.getLogger("test"),
-        )._validate_tacco_result(
-            candidate,
-            target.obs_names,
-            reference.obs["Level1"],
-        )
+        ).run(target, reference)
 
 
 @pytest.mark.parametrize(
     ("index", "columns", "message"),
     [
         (["spot2", "spot1"], ["A", "B"], "observation.*order"),
-        (["spot1", "spot2"], ["B", "A"], "category.*order"),
+        (["spot1", "spot2"], ["A", "C"], "category.*mismatch"),
     ],
 )
 def test_tacco_rejects_permuted_axes_instead_of_reordering(
@@ -446,36 +593,36 @@ def test_tacco_rejects_permuted_axes_instead_of_reordering(
         columns=columns,
     )
 
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        annotated = adata[candidate.index].copy()
+        annotated.obsm[result_key] = candidate.copy()
+        return annotated, ref
+
+    _install_tacco(monkeypatch, annotate)
     with pytest.raises(ValueError, match=message):
         GlobalAnchoringKernel(
             _config("tacco"),
             logging.getLogger("test"),
-        )._validate_tacco_result(
-            candidate,
-            target.obs_names,
-            reference.obs["Level1"],
-        )
+        ).run(target, reference)
 
 
-def test_tacco_validation_returns_owned_global_assignment(monkeypatch):
-    from revise.backend.ops.assignment import GlobalAssignment
-
+def test_tacco_publishes_owned_posterior(monkeypatch):
     GlobalAnchoringKernel = _kernel_class(monkeypatch)
     target, reference = _inputs()
     candidate = _valid_result(target)
 
-    assignment = GlobalAnchoringKernel(
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        adata.obsm[result_key] = candidate
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
+    result = GlobalAnchoringKernel(
         _config("tacco"),
         logging.getLogger("test"),
-    )._validate_tacco_result(
-        candidate,
-        target.obs_names,
-        reference.obs["Level1"],
-    )
+    ).run(target, reference)
 
-    assert isinstance(assignment, GlobalAssignment)
-    assert assignment.posterior is not candidate
-    pd.testing.assert_frame_equal(assignment.posterior, candidate)
+    assert result.obsm["Level1"] is not candidate
+    pd.testing.assert_frame_equal(result.obsm["Level1"], candidate)
 
 
 def test_tacco_invalid_values_use_global_assignment_contract_error(monkeypatch):
@@ -486,12 +633,13 @@ def test_tacco_invalid_values_use_global_assignment_contract_error(monkeypatch):
     candidate = _valid_result(target)
     candidate.iloc[0, 0] = np.nan
 
+    def annotate(adata, ref, annotation_key, *, result_key, return_reference):
+        adata.obsm[result_key] = candidate
+        return adata, ref
+
+    _install_tacco(monkeypatch, annotate)
     with pytest.raises(GlobalAssignmentContractError, match="finite"):
         GlobalAnchoringKernel(
             _config("tacco"),
             logging.getLogger("test"),
-        )._validate_tacco_result(
-            candidate,
-            target.obs_names,
-            reference.obs["Level1"],
-        )
+        ).run(target, reference)

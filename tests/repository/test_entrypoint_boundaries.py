@@ -47,4 +47,5 @@ def test_benchmark_python_wrapper_finds_checkout_package_outside_repository(
     )
 
     assert result.returncode == 0, result.stderr
-    assert "--confounding" in result.stdout
+    assert "--config" in result.stdout
+    assert "--confounding" not in result.stdout

@@ -1,145 +1,119 @@
 Architecture
 ============
 
-REVISE has one public orchestration API and one fixed reconstruction lifecycle.
-Profiles and the router select one reconstruction strategy; the configuration
-selects OT solvers for GA and LR.
+REVISE has one reconstruction engine and a shared optimal-transport layer.
+Application and Sim2Real-ST Benchmark deliberately keep separate request,
+preprocessing, and publication boundaries.
 
-System map
-----------
+Frontend boundary
+-----------------
 
 .. code-block:: text
 
-   reconstruct.py / revise-reconstruct
-   `-- revise.application.cli
-       `-- revise.application.service
-       `-- REVISEPipeline.run()
-           |-- load and validate merged configuration
-           |-- resolve and preflight route inputs
-           |-- create canonical run envelope
-           `-- UnifiedReconstructionPipeline
-               |-- validate_inputs
-               |-- global_anchoring
-               |-- prepare_local_units
-               |-- build_graph
-               |-- build_ot_problem
-               |-- solve_ot
-               |-- update_expression
-               |-- finalize_svc
-               `-- evaluate_if_needed
+   Application YAML
+       -> reconstruct.run_application
+       -> load -> filter -> preprocess -> reconstruct -> publish
+                              |
+                              v
+                         REVISEPipeline
+                              ^
+                              |
+   Benchmark YAML + CLI
+       -> revise.benchmark.run_benchmark
+       -> expand experimental cases -> route-specific preparation
 
-``REVISEPipeline`` owns configuration, route resolution, input preflight,
-deterministic setup, run/provenance lifecycle, and strategy dispatch. The
-unified pipeline owns stage order. Strategies change stage internals without
-creating a second lifecycle.
+                         REVISEPipeline
+                              |
+                              v
+                UnifiedReconstructionPipeline
+       validate -> Global Anchoring -> Local Refinement -> finalize
+                                                    -> evaluate (Benchmark only)
+                              |
+                              v
+                 route strategy -> shared OTKernel
 
-Configuration and routing
--------------------------
+``reconstruct.py`` keeps Application preparation visible: it compiles one
+YAML, filters and preprocesses the two inputs, prepares a cluster-mode pair or
+normalizes SR/reference labels, and then invokes the engine. Benchmark owns
+its six experimental case layouts and ground-truth roles; Application mode is
+not added to Benchmark YAML.
 
-``revise/revise.yaml`` contains:
-
-- ``defaults`` for runtime, IO, columns, preprocessing, graph, OT, and route
-  behavior;
-- ``profiles`` for declared application and benchmark requests;
-- ``router`` mappings from internal route/confounding to strategy;
-- ``locked_params`` for governed low-level values.
-
-GA uses ``ot.ga.solver`` and LR uses ``ot.lr.solver``. Runner translations
-preserve the same two-stage selection even when a legacy runner has a different
-internal call shape.
-
-Assignment boundary
+Application routing
 -------------------
 
-Global anchoring produces one validated posterior ``Q`` and its ``argmax(Q)``
-labels. Downstream ownership is explicit per route:
+``revise.config.authority`` owns package defaults and typed route resolution.
+The public Application request resolves to one of these internal records:
 
-- hST-SVC conditions each local OT cost with ``Q``;
-- sST-SVC projects spot-level ``Q`` to virtual cells, then conditions local
-  OT cost;
-- iST-SVC uses only ``argmax(Q)`` to split broad cohorts and does not
-  reweight GraphCluster with ``Q``;
-- imputation does not expose assignment-based local refinement.
+.. list-table::
+   :header-rows: 1
+   :widths: 2 2 3 3 3
 
-There is no optional policy or fallback state machine. ``Q`` must already have
-the expected observation/category axes, finite non-negative values, and
-positive row mass. sST-SVC composition and closed-form expression allocation
-remain mandatory algorithm steps independent of local OT conditioning.
+   * - Public request
+     - Selector
+     - Profile / task
+     - Strategy
+     - Runner configuration
+   * - ``sp-SVC``
+     - ``sp-SVC``
+     - ``application_sp`` / ``sp_svc``
+     - ``SpSvcApplicationStrategy``
+     - ``ApplicationSpConf``
+   * - ``sc-SVC`` cluster
+     - ``sc-SVC:cluster``
+     - ``application_sc`` / ``sc_svc``
+     - ``ScSvcApplicationStrategy``
+     - ``ApplicationScConf``
+   * - ``sc-SVC`` sr
+     - ``sc-SVC:sr``
+     - ``application_sc_super_resolution`` / ``sc_svc_super_resolution``
+     - ``ScSvcSuperResolutionApplicationStrategy``
+     - ``ApplicationScSuperResolutionConf``
 
-Run evidence
-------------
+Runtime metadata records ``application_route: sc-SVC`` plus either
+``application_mode: cluster`` or ``application_mode: sr`` for the two sc-SVC
+cases. The mode is
+also part of the route key, so cluster and SR runs do not share a run directory.
+The App SR runner is
+``sc_svc_super_resolution_application.ScSVCSuperResolution``.
 
-A full run allocates a unique canonical directory beneath the route-specific
-output tree. It contains at least the merged configuration, logs, and
-``provenance.json``; successful stages may add hashed artifacts and benchmark
-metric tables. The exact directory leaf is unique; locate its
-``provenance.json`` beneath the route-specific output tree rather than
-reconstructing a hard-coded timestamp pattern.
+Benchmark retains its own ``sc_svc_sr`` task, profile, runner, and compatible
+result naming. It is a Benchmark implementation detail, not an Application
+SVC category.
 
-The canonical CLI publishes one stable-facing application result for every
-public selector:
+Assignment and Local Refinement
+-------------------------------
 
-.. code-block:: text
+Global Anchoring produces a validated posterior ``Q`` and broad labels. Each
+route owns how it enters Local Refinement:
 
-   <output-root>/<sample-name>/<svc-type>/SVC.h5ad
+- sp-SVC conditions each local OT cost with ``Q``;
+- sc-SVC sr mode projects spot-level ``Q`` to virtual cells, then conditions
+  the local OT cost;
+- sc-SVC cluster mode uses broad labels to choose cohorts and does not reweight
+  GraphCluster with ``Q``;
+- Benchmark gene-panel and gene-dropout imputation do not expose
+  assignment-conditioned Local Refinement.
 
-The manifest ``result`` contains exactly ``filename`` and ``type``. Only
-iST-SVC adds the top-level ``assembly`` record for mean/random construction.
-Strategy carriers and other artifacts remain in the canonical run but are not
-additional public output contracts.
+POT and TACCO meet at ``revise.backend.kernels.ot.OTKernel``. Application
+``algorithm.ot_method`` sets both ``ot.ga.solver`` and ``ot.lr.solver``. There
+is no user-selectable solver fallback.
 
-The single-file publisher writes a same-directory temporary H5AD, reloads it
-before replacement, and provides best-effort caught-exception rollback. It is
-not reader-atomic or crash-atomic. The caller must guarantee one writer per
-stable public target; violating that precondition is undefined.
+Publication and failure contract
+--------------------------------
 
-For the 2.0 iST-SVC route, ``select_ct: null`` runs validation and GA, then
-writes ``selection_assessment.json`` and ``GA_posterior.csv`` and returns
-``needs_review``. The CSV uses ``spot_id`` as its first column and keeps the GA
-cell-type columns in their original order. The report
-excludes labels containing ``tumor`` or ``epi`` (case-insensitive), warns for
-any label with more than 20,000 GA spots, and never silently selects a largest
-class. Human confirmation is supplied by repeating ``--select-ct`` for each
-requested cell type; only then does iST refinement and ``SVC.h5ad`` publication
-run. The assessment records the resolved input identities for the current
-reference; this version does not rank multiple references automatically.
+The engine returns a canonical ``SVC`` carrier. Application publication
+exposes only the promised route artifacts: one H5AD for sp-SVC/SR and the
+fixed spatial/expression pair for cluster mode. It writes same-directory
+temporary H5AD files before replacing public targets. Paired outputs are not
+reader-atomic or crash-atomic, but catchable replacement failures attempt
+rollback; one writer per stable public target is a caller precondition.
 
-Inapplicable reconstruction metadata values that are ``None`` are omitted by
-H5AD serialization; it does not invent sentinel values. Applicable keys remain
-exact.
-
-``provenance.json.local_refinement`` is the minimal route-level evidence:
-``route``, ``applied``, and ``strength``. For iST-SVC and imputation,
-``strength`` is ``null`` because those routes do not accept the option.
-``sr_allocation`` remains adjacent durable evidence for mandatory SR
-allocation.
-
-Failure model
--------------
-
-Run status is limited to ``running``, ``succeeded``, and ``failed``. Captured
-SIGTERM and KeyboardInterrupt become failed with their error evidence, as do
-captured stage exceptions; later stages are skipped because of upstream
-failure. Dry-run marks non-validation stages skipped. An uncatchable
-termination leaves the last manifest running, which is evidence that the run
-did not complete—not permission to infer success.
-
-``input_identities`` records one content identity per external role; there is
-no aggregate data fingerprint. Software identity is collected once per run.
-The manifest retains the resolved ``ot_config`` and minimal
-``local_refinement`` evidence, but has no OT or Assignment event state machine.
-
-The ``local_refinement.applied`` flag changes to true only after at least one
-route-owned local refinement unit completes successfully. It is independent of
-posterior conditioning and its strength: a completed local OT refinement with
-strength zero is still applied. Failure and interruption continue through the
-normal stage error and publication rollback; stage/run errors remain the
+Each canonical run writes ``merged_config.json`` and ``provenance.json``. The
+manifest state is ``running``, ``succeeded``, or ``failed``. Catchable errors,
+SIGTERM, and KeyboardInterrupt record failure evidence and re-raise. An
+uncatchable termination can leave the last manifest ``running``; that is
+incomplete evidence, not success. The stage error in the manifest is the
 authoritative failure explanation.
 
-Extension boundary
-------------------
-
-Add a new route by extending the existing profile, router, and strategy registry and
-their focused tests. Do not create another orchestration entrypoint or output
-alias layer. Candidate evidence is intentionally limited to tested routes and
-scales; see :doc:`limitations`.
+For public YAML fields use :doc:`application-reference`; for Python function
+signatures use :doc:`api/index`.

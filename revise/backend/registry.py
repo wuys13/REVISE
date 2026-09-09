@@ -27,9 +27,8 @@ class StrategyRegistry:
 def build_default_registry() -> StrategyRegistry:
     from revise.backend.adapters import (
         ScSvcApplicationStrategy,
-        ScSvcHyperApplicationStrategy,
         ScSvcImputeBenchmarkStrategy,
-        ScSvcSrApplicationStrategy,
+        ScSvcSuperResolutionApplicationStrategy,
         ScSvcSrBenchmarkStrategy,
         SpSvcApplicationStrategy,
         SpSvcBenchmarkSegStrategy,
@@ -38,8 +37,7 @@ def build_default_registry() -> StrategyRegistry:
     reg = StrategyRegistry()
     reg.register(SpSvcApplicationStrategy())
     reg.register(ScSvcApplicationStrategy())
-    reg.register(ScSvcHyperApplicationStrategy())
-    reg.register(ScSvcSrApplicationStrategy())
+    reg.register(ScSvcSuperResolutionApplicationStrategy())
     reg.register(SpSvcBenchmarkSegStrategy())
     reg.register(ScSvcSrBenchmarkStrategy())
     reg.register(ScSvcImputeBenchmarkStrategy())

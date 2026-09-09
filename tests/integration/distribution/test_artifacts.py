@@ -6,12 +6,15 @@ import csv
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
 from zipfile import ZipFile
 
 import pytest
+
+from revise import __version__
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -42,17 +45,37 @@ def built_distributions(tmp_path_factory):
     root = tmp_path_factory.mktemp("distribution-artifacts")
     supplied_dist = os.environ.get("REVISE_DIST_DIR")
     dist = Path(supplied_dist).resolve() if supplied_dist else root / "dist"
+    source = root / "source"
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     env["PYTHONNOUSERSITE"] = "1"
     if not supplied_dist:
+        shutil.copytree(
+            ROOT,
+            source,
+            ignore=shutil.ignore_patterns(
+                ".git",
+                ".agents",
+                ".codegraph",
+                ".codex",
+                "build",
+                "dist",
+                "output",
+                "raw_data",
+                "results",
+                "*.egg-info",
+                "__pycache__",
+                ".pytest_cache",
+            ),
+        )
         command = [
             os.environ.get("REVISE_INTEGRATION_PYTHON", sys.executable),
             "-m",
             "build",
+            "--no-isolation",
             "--outdir",
             dist,
-            ROOT,
+            source,
         ]
         result = _run(command, cwd=root, env=env)
         assert result.returncode == 0, result.stderr
@@ -98,8 +121,41 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         }
         sdist_names = list(members)
 
-    assert "revise/revise.yaml" in wheel_names
-    assert "revise-reconstruct = revise.application.cli:main" in entry_points
+    assert "revise/revise.yaml" not in wheel_names
+    template_mirrors = {
+        **{
+            f"revise/application/templates/{filename}": f"configs/application/{filename}"
+            for filename in (
+                "VisiumHD.yaml",
+                "Xenium.yaml",
+                "Visium.yaml",
+            )
+        },
+        **{
+            f"revise/benchmark/templates/{route}.yaml": f"configs/benchmark/{route}.yaml"
+            for route in (
+                "segmentation",
+                "bin2cell",
+                "batch_effect",
+                "spot_size",
+                "gene_panel",
+                "gene_dropout",
+            )
+        },
+    }
+    packaged_templates = set(template_mirrors)
+    assert packaged_templates <= set(wheel_names)
+    assert len(packaged_templates) == 9
+    assert "reconstruct.py" in wheel_names
+    assert "revise/backend/runners/sc_svc_super_resolution_application.py" in wheel_names
+    for removed in (
+        "revise/application/templates/Xenium_T.yaml",
+        "revise/application/templates/Xenium_Fib.yaml",
+        "revise/application/templates/Xenium_Mono.yaml",
+        "revise/backend/runners/sc_svc_sr_application.py",
+    ):
+        assert removed not in wheel_names
+    assert "revise-reconstruct = reconstruct:main" in entry_points
     assert (
         "revise-build-histology-priors = revise.preprocess.cli:main"
         in entry_points
@@ -108,8 +164,14 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "revise-compute-biological-metrics = revise.analysis.cli:main"
         in entry_points
     )
-    assert "Version: 2.0.0rc1" in metadata
+    assert f"Version: {__version__}" in metadata
     assert "Requires-Python: <3.12,>=3.10" in metadata
+    for extra in ("pathway", "cci", "trajectory"):
+        assert f'Requires-Dist: torch-geometric; extra == "{extra}"' in metadata
+        assert f'Requires-Dist: torch; extra == "{extra}"' in metadata
+        assert f'Requires-Dist: setuptools<81; extra == "{extra}"' in metadata
+        assert f'Requires-Dist: transformers<5; extra == "{extra}"' in metadata
+    assert 'Requires-Dist: cellphonedb<6,>=5; extra == "cci"' in metadata
     assert any(name.endswith("/LICENSE") for name in wheel_names)
     assert not any(name.startswith("tests/") for name in wheel_names)
     assert not any(name.startswith("constraints/") for name in wheel_names)
@@ -127,6 +189,8 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
     for pattern in [
         "revise/**/*.py",
         "revise/**/*.yaml",
+        "configs/application/*.yaml",
+        "configs/benchmark/*.yaml",
         "constraints/*.txt",
     ]:
         expected_sdist.update(
@@ -162,10 +226,22 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         assert actual_wheel_sources == expected_wheel_sources
         for source_path in expected_wheel_sources:
             assert archive.read(source_path) == (ROOT / source_path).read_bytes()
+        for package_path, mirror_path in template_mirrors.items():
+            assert archive.read(package_path) == (
+                ROOT / mirror_path
+            ).read_bytes()
         license_name = next(
             name for name in wheel_names if name.endswith("/licenses/LICENSE")
         )
         assert archive.read(license_name) == (ROOT / "LICENSE").read_bytes()
+
+    with tarfile.open(artifacts["sdist"], "r:gz") as archive:
+        for package_path, mirror_path in template_mirrors.items():
+            packaged = archive.extractfile(members[package_path])
+            mirrored = archive.extractfile(members[mirror_path])
+            assert packaged is not None
+            assert mirrored is not None
+            assert packaged.read() == mirrored.read()
 
 
 @pytest.mark.parametrize("role", ["wheel", "sdist"])
@@ -245,16 +321,9 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
         env=env,
     )
     assert probe.returncode == 0, probe.stderr
-    assert "2.0.0rc1" in probe.stdout
+    assert probe.stdout.splitlines()[0] == __version__
     assert str(venv) in probe.stdout
     assert str(ROOT) not in probe.stdout
-    version = _run(
-        [venv / "bin" / "revise-reconstruct", "--version"],
-        cwd=root,
-        env=env,
-    )
-    assert version.returncode == 0, version.stderr
-    assert "2.0.0rc1" in version.stdout
     histology_help = _run(
         [venv / "bin" / "revise-build-histology-priors", "--help"],
         cwd=root,

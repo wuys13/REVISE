@@ -20,7 +20,6 @@ ROOT = Path(__file__).resolve().parents[2]
         "application_sp_SVC_recon.sh",
         "application_sc_SVC_recon.py",
         "application_sc_SVC_recon.sh",
-        ".github/workflows/release.yml",
     ],
 )
 def test_main_repository_excludes_migration_and_custom_release_surfaces(relative):
@@ -55,11 +54,57 @@ def test_biological_metrics_remain_owned_by_the_analysis_package():
         assert f"def {function}(" in source
 
 
-def test_moved_application_notebook_uses_repository_relative_paths():
-    notebook = (
-        ROOT / "reproduce/case/application_sc_SVC_analysis_case.ipynb"
-    ).read_text(encoding="utf-8")
+def test_case_notebooks_are_the_canonical_application_gallery():
+    case_dir = ROOT / "reproduce" / "case"
+    canonical = {
+        "CosMx_SMI_267T_not_sp_SVC.ipynb",
+        "MERFISH_Allen_VISp_sc_SVC_cluster.ipynb",
+        "SlideSeq_mouse_colon_sp_SVC.ipynb",
+        "SlideSeq_mouse_olfactory_bulb_sp_SVC.ipynb",
+        "StereoSeq_zebrafish_5hpf_sp_SVC.ipynb",
+        "osmFISH_sc_SVC_cluster.ipynb",
+        "Xenium_sc_SVC_T.ipynb",
+        "Xenium_sc_SVC_Fibroblast.ipynb",
+        "Xenium_sc_SVC_Monocyte.ipynb",
+        "VisiumHD_sp_SVC.ipynb",
+        "Visium_sc_SVC_mouse_brain.ipynb",
+    }
+    retired = {
+        "sc_SVC_case_T_analysis.ipynb",
+        "sc_SVC_case_Fibroblast_analysis.ipynb",
+        "sc_SVC_case_Monocyte_analysis.ipynb",
+        "sp_SVC_case.ipynb",
+        "sc_SVC_case_T_recon.ipynb",
+        "sc_SVC_case_Fibroblast_recon.ipynb",
+        "sc_SVC_case_Monocyte_recon.ipynb",
+        "application_sc_SVC_analysis_case.ipynb",
+    }
 
-    assert "../../raw_data/Real_application" in notebook
-    assert "../../output/sc_SVC_case" in notebook
-    assert "./reproduce/case" not in notebook
+    assert {path.name for path in case_dir.glob("*.ipynb")} == canonical
+    assert all(not (case_dir / name).exists() for name in retired)
+
+
+def test_public_notebook_indexes_use_only_canonical_application_names():
+    indexes = [
+        ROOT / "reproduce/README.md",
+        ROOT / "docs/source/gallery.rst",
+        ROOT / "docs/source/quickstart.rst",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in indexes)
+
+    for canonical in (
+        "Xenium_sc_SVC_T.ipynb",
+        "Xenium_sc_SVC_Fibroblast.ipynb",
+        "Xenium_sc_SVC_Monocyte.ipynb",
+        "VisiumHD_sp_SVC.ipynb",
+        "Visium_sc_SVC_mouse_brain.ipynb",
+    ):
+        assert canonical in combined
+    for retired in (
+        "sc_SVC_case_T_recon.ipynb",
+        "sc_SVC_case_Fibroblast_recon.ipynb",
+        "sc_SVC_case_Monocyte_recon.ipynb",
+        "application_sc_SVC_analysis_case.ipynb",
+        "sc_SVC_sr_case_Visium_mouse_brain.ipynb",
+    ):
+        assert retired not in combined

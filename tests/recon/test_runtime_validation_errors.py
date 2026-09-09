@@ -21,7 +21,7 @@ from scipy import sparse
 RUNNER_MODULE_NAMES = (
     "revise.backend.runners.application_svc",
     "revise.backend.runners.benchmark_svc",
-    "revise.backend.runners.sc_svc_sr_application",
+    "revise.backend.runners.sc_svc_super_resolution_application",
     "revise.backend.runners.sc_svc_sr_benchmark",
     "revise.backend.runners.sp_svc_application",
 )
@@ -221,14 +221,14 @@ def test_benchmark_overlap_validation_is_contextual_value_error(runner_modules):
 
 
 @pytest.mark.parametrize(
-    ("module_attr", "st_path"),
+    ("module_attr", "runner_class", "st_path"),
     [
-        ("sr_application", "/data/application_st.h5ad"),
-        ("sr_benchmark", "/data/benchmark_st.h5ad"),
+        ("sr_application", "ScSVCSuperResolution", "/data/application_st.h5ad"),
+        ("sr_benchmark", "ScSVCSr", "/data/benchmark_st.h5ad"),
     ],
 )
 def test_sr_mapping_validation_is_contextual_key_error(
-    runner_modules, module_attr, st_path
+    runner_modules, module_attr, runner_class, st_path
 ):
     target = SimpleNamespace(
         st_adata=_adata("gene"),
@@ -236,7 +236,7 @@ def test_sr_mapping_validation_is_contextual_key_error(
     )
 
     with pytest.raises(KeyError) as exc_info:
-        getattr(runner_modules, module_attr).ScSVCSr._adata_validate_dec(target)
+        getattr(getattr(runner_modules, module_attr), runner_class)._adata_validate_dec(target)
 
     _check_message(
         exc_info,
@@ -245,6 +245,14 @@ def test_sr_mapping_validation_is_contextual_key_error(
         "expected=present",
         "actual=missing",
     )
+
+
+def test_application_sr_runner_hard_cut_keeps_benchmark_runner(runner_modules):
+    assert runner_modules.sr_application.ScSVCSuperResolution
+    assert runner_modules.sr_benchmark.ScSVCSr
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("revise.backend.runners.sc_svc_sr_application")
 
 
 @pytest.mark.parametrize(

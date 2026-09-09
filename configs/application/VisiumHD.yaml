@@ -1,0 +1,41 @@
+schema_version: 1
+
+application:
+  svc_type: sp-SVC
+
+paths:
+  root_dir: . # EDIT: this is the command launch directory, not the YAML directory.
+
+algorithm:
+  ot_method: pot # KEEP: this Visium HD protocol uses POT for GA and LR.
+
+inputs:
+  st:
+    path: raw_data/Real_application/P1CRC_HD.h5ad # EDIT
+    format: h5ad
+  reference:
+    path: raw_data/Real_application/adata_sc_all_reanno.h5ad # EDIT
+    format: h5ad
+
+preprocessing:
+  spatial:
+    min_transcript_counts: null
+    min_counts: 20
+    min_cell_counts: 30
+  reference:
+    min_transcript_counts: null
+    min_genes: 20
+    min_cell_counts: 50
+
+global_anchoring:
+  broad_column: Level1 # EDIT to a column in reference.obs.
+
+local_refinement:
+  strength: 0.2 # KEEP; this changes LR cost blending and does not skip LR.
+
+output:
+  dir: results/sp_SVC_case/P1CRC # EDIT: relative to paths.root_dir.
+  name: sp_SVC # EDIT: one logical result name; do not add .h5ad.
+
+execution:
+  seed: 42 # KEEP for reproducible runs.

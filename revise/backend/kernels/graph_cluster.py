@@ -46,7 +46,7 @@ class GraphClusterKernel(BaseKernel):
         adata_raw = adata.copy()
         # Keep graph construction and Leiden partitioning deterministic so
         # old/new wrappers can be compared with strict equality.
-        random_state = int(getattr(self.config, "rec_random_state", 0))
+        random_state = int(self.config.rec_random_state)
 
         def _log_graph_stats(name, graph):
             nnz = getattr(graph, "nnz", None)

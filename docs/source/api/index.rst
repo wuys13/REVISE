@@ -1,133 +1,95 @@
-API
-===
+Python API
+==========
 
-``REVISEPipeline`` is the stable low-level orchestration entry point. It resolves
-``revise/revise.yaml`` profiles, applies runtime and IO overrides, and routes
-each run to the appropriate backend strategy. Route-qualified 2.0 publication
-belongs to ``revise-reconstruct``/``python reconstruct.py``; a direct pipeline
-call returns an internal ``SVC`` carrier and does not promise
-``<output-root>/<sample-name>/<svc-type>/SVC.h5ad``.
+Use the workflow-level functions for new code. They preserve the same YAML
+contracts as the command-line entry points and keep route-specific preparation
+inside the package.
 
-Start with :doc:`../quickstart` for runnable examples and :doc:`../architecture`
-for the full lifecycle. This page is the reference surface for classes and
-extension points.
-
-.. figure:: classes_revise.svg
-   :alt: REVISE API architecture
-   :align: center
-
-   Current API architecture.
+Application
+-----------
 
 .. code-block:: python
 
-    from revise.framework import REVISEPipeline
+   from reconstruct import run_application
 
-    pipeline = REVISEPipeline()
-    svc = pipeline.run(
-        profile="application_sc",
-        runtime_overrides={"platform": "sc_svc", "confounding": "segmentation"},
-        io_overrides={
-            "data_root": "raw_data/Real_application",
-            "output_root": "output/sc_SVC_case",
-            "sample_name": "P2CRC",
-            "st_file": "Xenium.h5ad",
-            "sc_ref_file": "adata_sc_all_reanno.h5ad",
-        },
-    )
+   spatial, expression = run_application(
+       "configs/application/Xenium.yaml",
+       select_ct="T",
+   )
 
-``application_sc`` and ``sc_svc`` in this example are retained internal IDs,
-not public selectors. The application CLI maps the public selectors hST-SVC,
-iST-SVC, and sST-SVC onto those internal profiles and routes.
+``run_application(config_path, *, select_ct=None)`` compiles one Application
+YAML, loads and preprocesses its inputs, reconstructs, publishes, and returns
+the same in-memory objects that it writes. ``select_ct`` is an optional
+cluster-mode-only override; it has priority over the YAML value. The current
+Application output rules are defined in :doc:`../application-reference`.
 
-Pipeline
-~~~~~~~~
+``sp-SVC`` and ``sc-SVC`` SR mode return one ``AnnData``. ``sc-SVC`` cluster
+mode returns ``(spatial_adata, expression_adata)``.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.framework.REVISEPipeline
-    revise.recon.context.PipelineContext
-    revise.recon.pipeline.UnifiedReconstructionPipeline
-    revise.svc.SVC
+   reconstruct.run_application
 
-Facade Helpers
-~~~~~~~~~~~~~~
+Sim2Real Benchmark
+------------------
 
-The facade helpers are thin wrappers around ``REVISEPipeline.run`` retained for
-low-level callers. Their historical function names are not 2.0 public
-``--svc-type`` values and do not add the application publisher.
+.. code-block:: python
 
-.. autosummary::
-    :toctree: generated
-    :nosignatures:
+   from revise.benchmark import run_benchmark
 
-    revise.recon.facade.sp_svc
-    revise.recon.facade.sc_svc
+   report = run_benchmark(
+       "configs/benchmark/segmentation.yaml",
+       "raw_data/Sim2Real-ST",
+       "P2CRC/cut_part1",
+       "output/benchmark",
+       dataset_task="segmentation",
+       evaluate=True,
+   )
 
-Configuration
-~~~~~~~~~~~~~
-
-``revise/revise.yaml`` is the external configuration and routing surface.
-``revise.config.runner_conf`` contains internal runner contracts used by
-backend adapters and compatibility notebooks.
+``run_benchmark`` expands the selected Benchmark YAML's cases and returns a
+report mapping. Inspect ``report["ok"]``, ``total_runs``, ``passed_runs``, and
+each member of ``results``; one output directory is not proof that a suite
+succeeded.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.config.runner_conf.ApplicationSpConf
-    revise.config.runner_conf.ApplicationScConf
-    revise.config.runner_conf.ApplicationScSrConf
-    revise.config.runner_conf.BenchmarkSrConf
-    revise.config.runner_conf.BenchmarkSegConf
-    revise.config.runner_conf.BenchmarkImputeConf
+   revise.benchmark.run_benchmark
 
-Analysis Services
-~~~~~~~~~~~~~~~~~
+Advanced engine boundary
+------------------------
 
-Analysis services consume the unified ``SVC`` result carrier and provide
-notebook-compatible downstream helpers.
+``REVISEPipeline`` is the shared engine interface. Direct Application callers
+must pass ``svc_type="sc-SVC"`` with
+``application_mode="cluster"`` or ``application_mode="sr"``. They are
+responsible for correct route-specific IO and algorithm overrides, so this is
+not a replacement for the YAML entry point.
 
-.. autosummary::
-    :toctree: generated
-    :nosignatures:
-
-    revise.analysis.ScSVCAnalysisService
-    revise.analysis.SpSVCAnalysisService
-    revise.analysis.compute_metric
-    revise.analysis.compute_clustering_metrics
-
-Strategy contract and registry
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-These classes are the extension points used by the unified backend.
+``SVC`` holds the canonical expression/spatial carriers, assignment
+information, artifacts, metrics, and provenance produced by the engine.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.backend.registry.StrategyRegistry
-    revise.backend.contracts.LocalRefinementStrategy
+   revise.framework.REVISEPipeline
+   revise.svc.SVC
 
-Backend Compatibility Runners
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Metrics
+-------
 
-These classes are kept for notebooks, parity checks, and low-level debugging.
-New application and benchmark code should prefer ``REVISEPipeline`` or the
-application or benchmark entrypoints.
-Direct internal hST-SVC and sST-SVC runner paths receive the resolved
-``local_refinement_strength`` value. The iST-SVC and imputation paths do
-not provide it. Assignment ``Q`` is validated at the global-assignment boundary
-and is not synthesized or repaired inside a runner.
+``compute_metric`` produces the Benchmark-compatible per-gene ``PCC``,
+``SSIM``, ``MSE``, and ``NRMSE`` table. The caller must align observations;
+the function aligns genes but does not join cells by identifier.
+``compute_clustering_metrics`` returns ``(ARI, NMI)`` from two ``adata.obs``
+columns.
 
 .. autosummary::
-    :toctree: generated
-    :nosignatures:
+   :toctree: generated
+   :nosignatures:
 
-    revise.backend.runners.sp_svc_application.SpSVC
-    revise.backend.runners.sc_svc_application.ScSVC
-    revise.backend.runners.sc_svc_sr_application.ScSVCSr
-    revise.backend.runners.sp_svc_benchmark.SpSVC
-    revise.backend.runners.sc_svc_sr_benchmark.ScSVCSr
-    revise.backend.runners.sc_svc_impute_benchmark.ScSVCImpute
+   revise.analysis.compute_metric
+   revise.analysis.compute_clustering_metrics

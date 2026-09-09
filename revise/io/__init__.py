@@ -5,7 +5,6 @@ keeps external input handling isolated so new spatial file ecosystems can be
 added without changing algorithm code.
 """
 
-from revise.io.input_bundle import REVISEDataBundle
 from revise.io.input_service import REVISEInputService
 
-__all__ = ["REVISEDataBundle", "REVISEInputService"]
+__all__ = ["REVISEInputService"]

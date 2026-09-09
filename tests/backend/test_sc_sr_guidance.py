@@ -146,12 +146,19 @@ def test_route_validates_each_complete_assignment_once_before_group_subsetting(
     real_validate = sr_allocation.validate_global_assignment
     validated_observation_counts = []
 
-    def validate_once(assignment, *, expected_observations, expected_categories):
+    def validate_once(
+        assignment,
+        *,
+        expected_observations,
+        expected_categories,
+        unknown_key="Unknown",
+    ):
         validated_observation_counts.append(len(expected_observations))
         return real_validate(
             assignment,
             expected_observations=expected_observations,
             expected_categories=expected_categories,
+            unknown_key=unknown_key,
         )
 
     monkeypatch.setattr(
@@ -298,11 +305,18 @@ def _runner_config(*, graph_enabled=True, strength=0.0, seed=17):
         svc_completeness=True,
         sr_assignment_seed=seed,
         cell_type_col="major_type",
+        unknown_key="Unknown",
         local_refinement_strength=strength,
         rec_graph_agg_enabled=graph_enabled,
         rec_graph_agg_low_conf_only=False,
+        rec_graph_agg_low_conf_quantile=0.2,
         rec_graph_agg_anchor_only=False,
+        rec_graph_agg_anchor_high_conf_quantile=0.8,
+        rec_graph_agg_confidence_mode="auto",
         rec_graph_agg_conf_weighted_alpha=False,
+        rec_graph_agg_conf_alpha_min=0.0,
+        rec_graph_agg_conf_alpha_max=-1.0,
+        rec_graph_agg_conf_alpha_power=1.0,
         rec_graph_n_neighbors=2,
         rec_graph_method="joint",
         rec_graph_alpha=0.2,
@@ -335,9 +349,10 @@ def load_sr_runner(monkeypatch):
     scanpy.AnnData = AnnData
     monkeypatch.setitem(sys.modules, "scanpy", scanpy)
     distance = types.ModuleType("revise.backend.ops.distance")
-    distance.similarity_to_distance = lambda values, _support: np.asarray(
-        values,
-        dtype=np.float64,
+    distance.similarity_to_distance = lambda values, support: np.where(
+        support,
+        np.asarray(values, dtype=np.float64),
+        np.inf,
     )
     monkeypatch.setitem(sys.modules, "revise.backend.ops.distance", distance)
     kernels = importlib.import_module("revise.backend.kernels")
@@ -365,7 +380,8 @@ def _build_runner(module, *, benchmark, strength, graph_enabled=True, seed=17):
         strength=strength,
         seed=seed,
     )
-    runner = module.ScSVCSr.__new__(module.ScSVCSr)
+    runner_class = module.ScSVCSr if benchmark else module.ScSVCSuperResolution
+    runner = runner_class.__new__(runner_class)
     runner.st_adata = spatial
     runner.sc_ref_adata = reference
     runner.config = config
@@ -397,7 +413,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
 
     snapshots = []
     for strength in (0.0, 3.0):
-        module = load_sr_runner("sc_svc_sr_application")
+        module = load_sr_runner("sc_svc_super_resolution_application")
         runner = _build_runner(
             module,
             benchmark=False,
@@ -408,9 +424,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
         monkeypatch.setattr(
             module,
             "get_adjacency_graph",
-            lambda adata, **_kwargs: sparse.csr_matrix(
-                np.ones((adata.n_obs, adata.n_obs), dtype=np.float64)
-            ),
+            lambda adata, **_kwargs: sparse.eye(adata.n_obs, format="csr"),
         )
 
         def solve(source, target, cost, **kwargs):
@@ -419,6 +433,9 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
                     "cost": np.asarray(cost).copy(),
                     "reference_measure": kwargs["reference_measure"],
                     "method": kwargs["method"],
+                    "valid_support_mask": np.asarray(
+                        kwargs["valid_support_mask"]
+                    ).copy(),
                 }
             )
             return np.outer(
@@ -426,7 +443,7 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
                 np.asarray(target) / np.sum(target),
             )
 
-        monkeypatch.setattr(module, "solve_local_ot", solve)
+        monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
         applied = runner.local_refinement()
         snapshots.append(
             {
@@ -445,6 +462,10 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
     assert {call["method"] for call in conditioned["calls"]} == {solver}
     assert all(
         call["reference_measure"] is None
+        for call in conditioned["calls"]
+    )
+    assert all(
+        np.isposinf(call["cost"][~call["valid_support_mask"]]).all()
         for call in conditioned["calls"]
     )
     assert any(
@@ -482,9 +503,7 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
     monkeypatch.setattr(
         module,
         "get_adjacency_graph",
-        lambda adata, **_kwargs: sparse.csr_matrix(
-            np.ones((adata.n_obs, adata.n_obs), dtype=np.float64)
-        ),
+        lambda adata, **_kwargs: sparse.eye(adata.n_obs, format="csr"),
     )
 
     def solve(source, target, cost, **kwargs):
@@ -493,6 +512,9 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
                 "cost": np.asarray(cost).copy(),
                 "reference_measure": kwargs["reference_measure"],
                 "method": kwargs["method"],
+                "valid_support_mask": np.asarray(
+                    kwargs["valid_support_mask"]
+                ).copy(),
             }
         )
         return np.outer(
@@ -500,12 +522,16 @@ def test_benchmark_enabled_graph_conditions_every_solver_call(
             np.asarray(target) / np.sum(target),
         )
 
-    monkeypatch.setattr(module, "solve_local_ot", solve)
+    monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
 
     assert runner.local_refinement() is True
     assert len(calls) == 2
     assert {call["method"] for call in calls} == {solver}
     assert all(call["reference_measure"] is None for call in calls)
+    assert all(
+        np.isposinf(call["cost"][~call["valid_support_mask"]]).all()
+        for call in calls
+    )
     assert all(
         np.any(call["cost"][np.isfinite(call["cost"])] > 1.0)
         for call in calls
@@ -530,7 +556,7 @@ def test_benchmark_disabled_graph_control_reports_no_local_ot(
 def test_allocation_completes_before_invalid_virtual_projection_fails(
     load_sr_runner,
 ):
-    module = load_sr_runner("sc_svc_sr_application")
+    module = load_sr_runner("sc_svc_super_resolution_application")
     runner = _build_runner(
         module,
         benchmark=False,

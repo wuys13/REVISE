@@ -3,22 +3,11 @@ from __future__ import annotations
 import copy
 import math
 from numbers import Real
-from pathlib import Path
 from typing import Any, Dict, List
 
-try:
-    import yaml
-except ImportError as exc:  # pragma: no cover
-    raise ImportError("PyYAML is required for revise config loading") from exc
-
-
-APPLICATION_DEFAULT_CF = {
-    "sp_svc": "bin2cell",
-    "sc_svc": "segmentation",
-    "sc_svc_sr": "spot_size",
-}
 
 TOP_LEVEL_KEYS = {"version", "defaults", "router", "profiles", "locked_params", "schemas"}
+ENGINE_CONFIG_VERSION = 2
 DEFAULT_SECTION_KEYS = {
     "runtime",
     "io",
@@ -38,7 +27,8 @@ RUNTIME_KEYS = {
     "seed",
     "deterministic",
     "compatibility_mode",
-    "platform",
+    "application_route",
+    "application_mode",
     "confounding",
     "mode",
     "task",
@@ -49,6 +39,9 @@ IO_KEYS = {
     "data_root",
     "output_root",
     "sample_name",
+    "st_path",
+    "sc_ref_path",
+    "pm_on_cell_path",
     "st_file",
     "sc_ref_file",
     "gt_svc_file",
@@ -66,7 +59,14 @@ IO_KEYS = {
 }
 COLUMNS_KEYS = {"cell_type_col", "sub_cell_type_col", "confidence_col", "unknown_key"}
 PREPROCESS_KEYS = {"st_min_counts", "st_min_cells", "sc_min_counts", "sc_min_cells", "st_min_transcripts"}
-GRAPH_KEYS = {"method", "alpha", "n_neighbors", "exp_neighbors", "spatial_neighbors"}
+GRAPH_KEYS = {
+    "method",
+    "alpha",
+    "n_neighbors",
+    "exp_neighbors",
+    "spatial_neighbors",
+    "random_state",
+}
 OT_KEYS = {"ga", "lr", "impute"}
 OT_PHASE_KEYS = {"solver", "pot"}
 OT_LEAF_KEYS = {"reg", "reg_m", "reg_type"}
@@ -74,13 +74,17 @@ OT_SOLVERS = {"pot", "tacco"}
 OT_REG_TYPES = {"entropy", "kl"}
 PLOT_KEYS = {"enabled", "cluster_resolutions", "min_genes", "min_cells", "sample_size"}
 RECONSTRUCT_KEYS = {"alpha"}
-BENCHMARK_KEYS = {"evaluate"}
+BENCHMARK_KEYS = {
+    "evaluate",
+    "dropout_total_counts",
+    "swapping_total_counts",
+    "lower_ts",
+    "upper_ts",
+}
 SC_KEYS = {
     "select_ct",
-    "selection_review_gate",
     "resolutions",
     "select_resolution",
-    "hyperresolution",
     "match_spot_sum",
     "svc_completeness",
     "sr_graph_agg_enabled",
@@ -93,15 +97,8 @@ SC_KEYS = {
     "sr_graph_agg_conf_alpha_min",
     "sr_graph_agg_conf_alpha_max",
     "sr_graph_agg_conf_alpha_power",
-    "sr_noise_enabled",
-    "sr_noise_lambda",
-    "sr_noise_k",
-    "sr_noise_weight",
-    "sr_noise_preserve_total_counts",
-    "sr_noise_seed",
     "tacco_annotate",
 }
-SC_HYPER_KEYS = {"enabled", "strategy", "resolutions", "select_resolution"}
 SC_TACCO_ANNOTATE_KEYS = {"multi_center", "lamb"}
 IMPUTE_KEYS = {
     "merge_subcluster_method",
@@ -110,14 +107,16 @@ IMPUTE_KEYS = {
     "prune",
     "n_neighbors",
     "method",
+    "graph_preprocess",
+    "graph_n_pcs",
 }
 LOCAL_REFINEMENT_KEYS = {"strength"}
 ASSIGNMENT_GUIDANCE_MIGRATION_ERROR = (
     "Assignment guidance options were removed; use local_refinement.strength"
 )
-ROUTE_LEAF_KEYS = {"mode", "task", "svc_kind", "strategy"}
+ROUTE_NAMESPACES = {"application", "benchmark"}
+ROUTE_LEAF_KEYS = {"profile", "task", "svc_kind", "strategy"}
 LOCKED_PARAMS_KEYS = {"keys"}
-ALGORITHM_IDENTITY_PATHS = {"sc.hyperresolution"}
 
 
 class ConfigError(ValueError):
@@ -213,11 +212,6 @@ def _validate_ot_section(ot_cfg: Dict[str, Any], ctx: str, *, resolved: bool = F
 
 def _validate_sc_section(sc_cfg: Dict[str, Any], ctx: str) -> None:
     _reject_unknown_keys(sc_cfg, SC_KEYS, ctx)
-    hyper = sc_cfg.get("hyperresolution")
-    if hyper is not None:
-        hyper_map = _ensure_mapping(hyper, f"{ctx}.hyperresolution")
-        _reject_unknown_keys(hyper_map, SC_HYPER_KEYS, f"{ctx}.hyperresolution")
-
     tacco_annotate = sc_cfg.get("tacco_annotate")
     if tacco_annotate is not None:
         tacco_map = _ensure_mapping(tacco_annotate, f"{ctx}.tacco_annotate")
@@ -325,28 +319,101 @@ def _validate_sections(section_map: Dict[str, Any], ctx: str) -> None:
             raise ConfigError(ASSIGNMENT_GUIDANCE_MIGRATION_ERROR)
 
 
-def _validate_router(router: Dict[str, Any]) -> None:
-    for platform, conf_map in router.items():
-        conf_map = _ensure_mapping(conf_map, f"router.{platform}")
-        for confounding, route in conf_map.items():
-            route_map = _ensure_mapping(route, f"router.{platform}.{confounding}")
+def _validate_router(
+    router: Dict[str, Any],
+    profiles: Dict[str, Any] | None = None,
+) -> None:
+    _reject_unknown_keys(router, ROUTE_NAMESPACES, "router")
+    for namespace in ROUTE_NAMESPACES:
+        routes = _ensure_mapping(router.get(namespace, {}), f"router.{namespace}")
+        for selector, route in routes.items():
+            route_map = _ensure_mapping(route, f"router.{namespace}.{selector}")
             if "ot_solver" in route_map:
                 raise ConfigError(
-                    f"router.{platform}.{confounding}.ot_solver is no longer supported; "
+                    f"router.{namespace}.{selector}.ot_solver is no longer supported; "
                     "replace ot_solver -> ot.ga.solver + ot.lr.solver"
                 )
-            _reject_unknown_keys(route_map, ROUTE_LEAF_KEYS, f"router.{platform}.{confounding}")
-            required = {
-                "mode",
-                "task",
-                "svc_kind",
-                "strategy",
-            }
+            _reject_unknown_keys(
+                route_map,
+                ROUTE_LEAF_KEYS,
+                f"router.{namespace}.{selector}",
+            )
+            required = ROUTE_LEAF_KEYS
             missing = sorted(k for k in required if route_map.get(k) in (None, ""))
             if missing:
                 raise ConfigError(
-                    f"Missing required route keys in router.{platform}.{confounding}: {missing}"
+                    f"Missing required route keys in router.{namespace}.{selector}: {missing}"
                 )
+            if profiles is not None and route_map["profile"] not in profiles:
+                raise ConfigError(
+                    f"Unknown profile {route_map['profile']!r} in "
+                    f"router.{namespace}.{selector}"
+                )
+
+
+def resolve_semantic_route(
+    raw_config: Dict[str, Any],
+    *,
+    svc_type: str | None = None,
+    application_mode: str | None = None,
+    cf: str | None = None,
+) -> Dict[str, Any]:
+    """Resolve one Application or Benchmark route from its domain selector."""
+    if svc_type is None and cf is None:
+        raise ConfigError("Exactly one route selector is required: svc_type or cf")
+    if svc_type is None and application_mode is not None:
+        raise ConfigError("application_mode requires svc_type='sc-SVC'")
+
+    router = raw_config.get("router", {})
+    if svc_type is not None:
+        routes = router.get("application", {})
+        if svc_type == "sc-SVC-sr":
+            raise ConfigError(
+                "sc-SVC-sr was removed; use svc_type='sc-SVC' with application_mode='sr'"
+            )
+        if svc_type == "sc-SVC":
+            if application_mode is None:
+                raise ConfigError("application_mode is required for sc-SVC")
+            if application_mode not in {"cluster", "sr"}:
+                raise ConfigError("application_mode must be one of: cluster, sr")
+            selector = f"sc-SVC:{application_mode}"
+        else:
+            if application_mode is not None:
+                raise ConfigError("application_mode is only valid for sc-SVC")
+            selector = svc_type
+        route = routes.get(selector)
+        if route is None:
+            raise ConfigError(
+                f"invalid svc_type {svc_type!r}; available values: {sorted(routes)}"
+            )
+        warning = None
+        if cf is not None:
+            warning = (
+                f"Both selectors were provided: cf={cf!r} is ignored; "
+                f"reconstructing application svc_type={svc_type!r}"
+            )
+        return {
+            "mode": "application",
+            "application_route": svc_type,
+            **(
+                {"application_mode": application_mode}
+                if application_mode is not None
+                else {}
+            ),
+            **copy.deepcopy(route),
+            "warning": warning,
+        }
+
+    routes = router.get("benchmark", {})
+    route = routes.get(cf)
+    if route is None:
+        raise ConfigError(f"invalid cf {cf!r}; available values: {sorted(routes)}")
+    return {
+        "mode": "benchmark",
+        "confounding": cf,
+        **copy.deepcopy(route),
+        "warning": None,
+    }
 
 
 def _validate_locked_params(locked: Dict[str, Any]) -> None:
@@ -357,6 +424,11 @@ def _validate_locked_params(locked: Dict[str, Any]) -> None:
 
 def _validate_raw_config(raw: Dict[str, Any]) -> None:
     _reject_unknown_keys(raw, TOP_LEVEL_KEYS, "config root")
+    if raw.get("version") != ENGINE_CONFIG_VERSION:
+        raise ConfigError(
+            f"config version must be {ENGINE_CONFIG_VERSION}; "
+            f"actual={raw.get('version')!r}"
+        )
 
     defaults = _ensure_mapping(raw.get("defaults", {}), "defaults")
     _validate_sections(defaults, "defaults")
@@ -366,22 +438,10 @@ def _validate_raw_config(raw: Dict[str, Any]) -> None:
         _validate_sections(_ensure_mapping(profile_cfg, f"profiles.{name}"), f"profiles.{name}")
 
     router = _ensure_mapping(raw.get("router", {}), "router")
-    _validate_router(router)
+    _validate_router(router, profiles)
 
     locked = _ensure_mapping(raw.get("locked_params", {}), "locked_params")
     _validate_locked_params(locked)
-
-
-def load_raw_config(path: str | Path) -> Dict[str, Any]:
-    config_path = Path(path)
-    if not config_path.exists():
-        raise ConfigError(f"Config file not found: {config_path}")
-    with config_path.open("r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    if not isinstance(raw, dict):
-        raise ConfigError("Config root must be a mapping")
-    _validate_raw_config(raw)
-    return raw
 
 
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -412,45 +472,38 @@ def set_by_dotted_path(config: Dict[str, Any], dotted_key: str, value: Any, crea
     cur[leaf] = value
 
 
-def _resolve_runtime_route(raw_config: Dict[str, Any], merged: Dict[str, Any]) -> Dict[str, Any]:
-    runtime = merged.setdefault("runtime", {})
-    platform = runtime.get("platform")
-    if not platform:
-        raise ConfigError("runtime.platform is required")
-
-    confounding = runtime.get("confounding")
-    if not confounding and platform in APPLICATION_DEFAULT_CF:
-        confounding = APPLICATION_DEFAULT_CF[platform]
-        runtime["confounding"] = confounding
-
-    if platform == "sim2real" and not confounding:
-        raise ConfigError("runtime.confounding is required when runtime.platform=sim2real")
-
-    router = raw_config.get("router", {})
-    route = router.get(platform, {}).get(confounding)
-    if route is None:
-        available = sorted(router.get(platform, {}).keys())
-        raise ConfigError(
-            f"No route found for platform={platform}, confounding={confounding}. "
-            f"Available confounding values for {platform}: {available}"
-        )
-
-    runtime.update(route)
-    hyperresolution = merged.get("sc", {}).get("hyperresolution", {})
-    if runtime.get("task") == "sc_svc" and hyperresolution.get("enabled"):
-        strategy = hyperresolution.get("strategy")
-        if not strategy:
-            raise ConfigError("sc.hyperresolution.strategy is required when enabled")
-        runtime["strategy"] = strategy
-    return route
-
-
 def _validate_runtime(merged: Dict[str, Any]) -> None:
     runtime = merged.get("runtime", {})
-    required = ["platform", "confounding", "mode", "task", "svc_kind", "strategy"]
+    required = ["mode", "task", "svc_kind", "strategy"]
     missing = [k for k in required if runtime.get(k) in (None, "")]
     if missing:
         raise ConfigError(f"Missing runtime keys after router resolution: {missing}")
+    mode = runtime["mode"]
+    if mode == "application":
+        if not runtime.get("application_route") or runtime.get("confounding") is not None:
+            raise ConfigError(
+                "Application runtime requires application_route and no confounding"
+            )
+        application_route = runtime["application_route"]
+        application_mode = runtime.get("application_mode")
+        if application_route == "sc-SVC":
+            if application_mode not in {"cluster", "sr"}:
+                raise ConfigError(
+                    "Application sc-SVC runtime requires application_mode cluster or sr"
+                )
+        elif application_mode not in (None, ""):
+            raise ConfigError("Only Application sc-SVC may set application_mode")
+    elif mode == "benchmark":
+        if (
+            not runtime.get("confounding")
+            or runtime.get("application_route") is not None
+            or runtime.get("application_mode") not in (None, "")
+        ):
+            raise ConfigError(
+                "Benchmark runtime requires confounding and no application_route"
+            )
+    else:
+        raise ConfigError(f"Unknown runtime.mode: {mode!r}")
 
 
 def _validate_resolved_config(merged: Dict[str, Any]) -> None:
@@ -485,18 +538,17 @@ def _resolve_local_refinement(merged: Dict[str, Any]) -> None:
         _validate_local_refinement(configured, "resolved.local_refinement")
 
     task = str(merged["runtime"]["task"])
-    defaults = {"sp_svc": 0.2, "sc_svc_sr": 0.0}
-    if task not in defaults:
+    if task not in {"sp_svc", "sc_svc_sr", "sc_svc_super_resolution"}:
         if configured is not None and "strength" in configured:
             raise ConfigError(
                 f"runtime.task={task} does not accept local_refinement.strength"
             )
         return
-
-    strength = defaults[task]
-    if configured is not None and "strength" in configured:
-        strength = float(configured["strength"])
-    merged["local_refinement"] = {"strength": strength}
+    if configured is None or "strength" not in configured:
+        raise ConfigError(
+            f"runtime.task={task} requires local_refinement.strength in authority"
+        )
+    merged["local_refinement"] = {"strength": float(configured["strength"])}
 
 
 def _paths_overlap(left: str, right: str) -> bool:
@@ -549,10 +601,13 @@ def merge_unified_config(
             "runtime/router ot_solver -> ot.ga.solver + ot.lr.solver"
         )
 
+    unknown_runtime = sorted(set(runtime_overrides) - RUNTIME_KEYS)
+    if unknown_runtime:
+        raise ConfigError(f"Unknown runtime override keys: {unknown_runtime}")
     for key, value in runtime_overrides.items():
-        if value is None and key != "seed":
+        if value is None:
             continue
-        set_by_dotted_path(merged, f"runtime.{key}", value, create_missing=False)
+        merged.setdefault("runtime", {})[key] = copy.deepcopy(value)
 
     for key, value in io_overrides.items():
         if value is None:
@@ -568,16 +623,6 @@ def merge_unified_config(
             + ", ".join(forbidden_sections)
         )
     override_paths = _leaf_paths(algorithm_overrides)
-    identity_paths = sorted(
-        guarded
-        for guarded in ALGORITHM_IDENTITY_PATHS
-        if any(_paths_overlap(key, guarded) for key in override_paths)
-    )
-    if identity_paths:
-        raise ConfigError(
-            "algorithm_overrides cannot modify run identity through: "
-            + ", ".join(identity_paths)
-        )
     for key in override_paths:
         if any(_paths_overlap(key, locked) for locked in locked_keys):
             raise ConfigError(
@@ -586,24 +631,6 @@ def merge_unified_config(
             )
     merged = deep_merge(merged, algorithm_overrides)
 
-    _resolve_runtime_route(raw_config, merged)
     _resolve_local_refinement(merged)
     _validate_resolved_config(merged)
     return ResolvedConfig(merged)
-
-
-def infer_default_profile(raw_config: Dict[str, Any], runtime_overrides: Dict[str, Any]) -> str | None:
-    """Pick a profile based on explicit runtime route, if a direct match exists."""
-    runtime = runtime_overrides
-    if not runtime.get("platform"):
-        return None
-
-    profiles = raw_config.get("profiles", {})
-    for name, profile_cfg in profiles.items():
-        pr = profile_cfg.get("runtime", {})
-        if runtime.get("platform") and pr.get("platform") != runtime.get("platform"):
-            continue
-        if runtime.get("confounding") and pr.get("confounding") != runtime.get("confounding"):
-            continue
-        return name
-    return None

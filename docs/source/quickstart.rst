@@ -1,158 +1,115 @@
 Quick Start
 ===========
 
-REVISE has two public entry points: Benchmark and Application. Paper notebooks
-require a repository checkout and their corresponding external data.
+For new data, copy one Application template locally, edit its data-specific
+fields, and run it. REVISE does not infer a route from a filename or convert
+one mode to another.
 
-Benchmark
----------
+1. Choose the template
+----------------------
 
-Run one Sim2Real-ST confounding family from the repository root:
+.. list-table::
+   :header-rows: 1
+   :widths: 3 3 2
+
+   * - Spatial observations
+     - Template
+     - Public type
+   * - Visium HD bins or pseudo-cells
+     - ``VisiumHD.yaml``
+     - ``sp-SVC``
+   * - Segmented Xenium cells
+     - ``Xenium.yaml``
+     - ``sc-SVC``, ``cluster`` mode
+   * - Multi-cell Visium spots
+     - ``Visium.yaml``
+     - ``sc-SVC``, ``sr`` mode
+
+``sc-SVC`` requires ``application.mode``. The maintained Xenium request uses
+``cluster`` mode and one selected broad cell type. The Visium request uses
+``sr`` mode to reconstruct virtual cells from multi-cell spots. ``sp-SVC``
+does not accept a mode.
+
+For an installed package, use the :ref:`Application templates <application-templates>`
+copy step to create the local YAML that you will edit. A source checkout keeps
+the same three templates under ``configs/application/``.
+
+2. Quick run
+------------
+
+Before every run, update ``inputs.st.path`` and ``inputs.reference.path``, the
+optional reference ``filter_column``/``filter_value``,
+``global_anchoring.broad_column``, cluster-mode
+``local_refinement.subtype_column``, preprocessing thresholds, and
+``output.dir``. The full schema and output rules are owned by
+:doc:`application-reference`.
+
+For Visium HD bins or pseudo-cells, set the ST/reference paths and the broad
+annotation column in your local ``VisiumHD.yaml`` copy.
 
 .. code-block:: bash
 
-   python reproduce/benchmark_main.py \
-     --confounding segmentation \
-     --data-root raw_data/Sim2Real-ST \
-     --sample-name P2CRC/cut_part1 \
-     --dataset-task segmentation \
-     --output-root output/benchmark
+   revise-reconstruct --config VisiumHD.yaml
 
-This command runs one confounding family, which may contain multiple leaf
-cases.
-
-``--confounding`` accepts ``segmentation``, ``bin2cell``, ``batch_effect``,
-``spot_size``, ``gene_panel``, or ``gene_dropout``. Run the bounded multi-family
-launcher with:
+For Xenium segmented cells, configure your local ``Xenium.yaml`` copy and
+select one concrete broad cell type. The final output directory is determined
+automatically; see :doc:`application-reference` for that contract.
 
 .. code-block:: bash
 
-   bash reproduce/benchmark_main.sh
+   revise-reconstruct --config Xenium.yaml --select-ct T
+   revise-reconstruct --config Xenium.yaml --select-ct Fibroblast
+   revise-reconstruct --config Xenium.yaml --select-ct "Mono/Macro"
 
-Benchmark analysis notebooks are tracked under ``reproduce/benchmark/``.
+``--select-ct`` has priority over the YAML's
+``local_refinement.select_cell_type``. It is valid only for ``sc-SVC`` cluster
+mode and must name one non-empty concrete broad cell type; values such as
+``all`` and wildcards are rejected.
 
-Application inputs
-------------------
+For multi-cell Visium spots, configure your local ``Visium.yaml`` copy; an
+exact PM prior is optional for this route.
 
-For ``--sample-name sample``, ``--st-file st.h5ad``, and
-``--sc-ref-file sc_ref.h5ad``, use the flat input layout resolved by the CLI:
+.. code-block:: bash
+
+   revise-reconstruct --config Visium.yaml
+
+From a source checkout, the equivalent commands use the maintained repository
+templates:
+
+.. code-block:: bash
+
+   python reconstruct.py --config configs/application/VisiumHD.yaml
+   python reconstruct.py --config configs/application/Xenium.yaml --select-ct T
+   python reconstruct.py --config configs/application/Xenium.yaml --select-ct Fibroblast
+   python reconstruct.py --config configs/application/Xenium.yaml --select-ct "Mono/Macro"
+   python reconstruct.py --config configs/application/Visium.yaml
+
+``paths.root_dir: .`` means the command launch directory, not the YAML
+directory. Input and output paths are relative children of that root.
+
+3. Inspect the promised artifacts
+---------------------------------
+
+``sp-SVC`` and ``sc-SVC`` sr mode publish one
+``<output-dir>/<output-name>.h5ad`` (or ``svc.h5ad`` without a name). ``sc-SVC``
+cluster mode publishes and returns a fixed pair in the selected cell type's
+final directory:
 
 .. code-block:: text
 
-   data/
-   |-- sample_st.h5ad
-   `-- sc_ref.h5ad
+   <output-dir>/<output-name>_spatial.h5ad
+   <output-dir>/<output-name>_expr.h5ad
 
-The resolved paths are ``data/sample_st.h5ad`` and ``data/sc_ref.h5ad``. Both
-inputs require non-empty ``X``, unique ``obs_names`` and unique ``var_names``.
-The ST input requires two spatial coordinate columns in ``obsm["spatial"]``.
-Every route requires the configured broad annotation in reference ``obs``
-(``Level1`` by default). Only iST-SVC requires the configured subtype
-annotation (``Level2`` by default). sST-SVC composition and expression
-allocation use the broad assignment and do not require a subtype column. The
-inputs must share at least one gene.
+Without an output name, the pair is ``spatial.h5ad`` and ``expr.h5ad``. Each
+public H5AD records its route/mode and points to the run's
+``provenance.json``. A directory alone is not success evidence: check the
+expected artifact(s) and a succeeded manifest.
 
-If the reference has the default ``Patient`` column, its values are matched to
-``--sample-name``. Select another column with ``--patient-key``.
+Next steps
+----------
 
-Application command
--------------------
-
-.. code-block:: bash
-
-   python reconstruct.py \
-     --svc-type hST-SVC \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output
-
-Use ``--svc-type iST-SVC`` for molecular completion and ``--svc-type
-sST-SVC`` for spot super-resolution. ``--cell-type-col`` selects the broad
-reference annotation on every route. ``--sub-cell-type-col`` selects the
-refined annotation required only by iST-SVC. sST-SVC uses the broad
-assignment for composition and expression allocation. iST-SVC accepts only
-``--ist-mapping mean|random`` for result assembly and defaults to ``mean``.
-With ``select_ct: null``, the first iST run stops after GA and writes
-``selection_assessment.json`` plus ``GA_posterior.csv`` (whose first column is
-``spot_id``); repeat ``--select-ct`` for the concrete types to continue.
-Its application profile defaults to TACCO; install it with
-``python -m pip install ".[tacco]"`` from source or ``python -m pip install
-"revise-svc[tacco]"`` from a published package. If TACCO is unavailable and a
-different algorithm is acceptable, explicitly add ``--ot-method pot``. REVISE
-never switches algorithms automatically.
-
-For sST-SVC, optional segmentation-derived centers use a DataFrame in
-``st_adata.uns["revise_cell_locations"]`` with a unique ``cell_id`` index and
-``spot_name/x/y`` columns. Its assignments agree with
-``uns["all_cells_in_spot"]`` and its coordinates use the same coordinate system
-and scale as ``obsm["spatial"]``; rows without centers remain at the spot center.
-The optional sample-local probability prior is resolved from the prepared ST
-path as ``<st-parent>/<st-stem>_PM_on_cell.csv``. Its rows must exactly equal
-the active virtual-cell IDs and its columns must exactly equal the active
-normalized cell-type labels. Values must be numeric and finite within
-``[0, 1]``; every row must sum to one with zero relative tolerance and an
-absolute tolerance of ``1e-6``. REVISE only reorders exact axes and never clips
-or normalizes PM. It is not a case table, cohort registry, or generic assignment
-posterior. Without that file, those coordinates are retained while inferred
-cell types are assigned to the existing rows by a seeded random permutation.
-
-After installation, the equivalent package command is:
-
-.. code-block:: bash
-
-   revise-reconstruct \
-     --svc-type hST-SVC \
-     --sample-name sample \
-     --data-root data \
-     --st-file st.h5ad \
-     --sc-ref-file sc_ref.h5ad \
-     --output-root output
-
-Append ``--dry-run`` to validate the resolved route, inputs, and dependencies
-without running reconstruction.
-
-Application output
-------------------
-
-Every public selector publishes exactly one file:
-
-.. code-block:: text
-
-   <output-root>/<sample-name>/<svc-type>/SVC.h5ad
-
-The canonical run's ``provenance.json`` records
-``result={filename,type}``, the route, stages, configuration, per-role input
-identities, software identity, and artifacts. Only iST-SVC adds a top-level
-``assembly`` record. Its ``mean`` mode owns spatial ``obs``/coordinates and
-expression ``var`` while filling ``X`` with per-cluster means. ``random`` uses
-the same carrier ownership but records the seeded donor IDs and their hash.
-
-Paper reproduction notebooks
-----------------------------
-
-Curated application notebooks under ``reproduce/case/`` are 1.x historical
-reproduction material, not current 2.0 output. Their historical carrier
-filenames remain unchanged for reproduction only.
-
-Application utilities
----------------------
-
-Build optional morphology-derived priors with the installed package command:
-
-.. code-block:: bash
-
-   revise-build-histology-priors \
-     --st-h5ad st.h5ad \
-     --mask segmented_cells.tif \
-     --out-h5ad st_with_histology_priors.h5ad
-
-Compute biology-facing post-reconstruction metrics through the package-owned
-analysis layer:
-
-.. code-block:: bash
-
-   revise-compute-biological-metrics \
-     --input-h5ad output/sample/hST-SVC/SVC.h5ad \
-     --output-dir output/sample/biological_metrics
+- :doc:`concepts` explains what the three data shapes and two sc-SVC modes
+  mean scientifically.
+- :doc:`gallery` indexes the preserved Application notebook snapshots; the
+  Sim2Real-ST Benchmark notebooks remain in their separate navigation section.
+  Neither is a replacement for this current reconstruction entry.
