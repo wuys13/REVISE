@@ -69,6 +69,8 @@ def test_execute_reuse_and_config_or_artifact_changes(tmp_path, fake_solver):
     doc = yaml.safe_load(config.read_text())
     doc['analysis']['partition']['parameters'] = {'window': 10}
     config.write_text(yaml.safe_dump(doc))
+    from revise.batch.runner import run_batch
+    run_batch(config)
     assert run_analysis_batch(config)['summary']['succeeded'] == 1
     assert 'analysis adapter ran' in (target / '.revise' / 'analysis' / 'partition.log').read_text()
 
@@ -110,7 +112,7 @@ def test_reconstruction_rerun_invalidates_analysis_summary(tmp_path, fake_solver
     from revise.batch.runner import run_batch
     config, target = prepared_batch(tmp_path, {'partition': adapter()})
     run_analysis_batch(config)
-    sample = tmp_path / 'data' / 'CRC' / 'one' / 'sample.yaml'
+    sample = tmp_path / 'data' / 'CRC' / 'one' / 'batch.yaml'
     doc = yaml.safe_load(sample.read_text())
     doc['execution']['seed'] = 43
     sample.write_text(yaml.safe_dump(doc))
@@ -130,7 +132,7 @@ def test_analysis_cli_reports_incomplete_nonzero(tmp_path, fake_solver):
 def test_changed_sample_configuration_requires_reconstruction(tmp_path, fake_solver):
     from revise.batch.analysis import run_analysis_batch
     config, _ = prepared_batch(tmp_path, {'partition': adapter()})
-    sample = tmp_path / 'data' / 'CRC' / 'one' / 'sample.yaml'
+    sample = tmp_path / 'data' / 'CRC' / 'one' / 'batch.yaml'
     doc = yaml.safe_load(sample.read_text())
     doc['execution']['seed'] = 43
     sample.write_text(yaml.safe_dump(doc))
@@ -146,6 +148,8 @@ def test_placeholder_cannot_claim_ownership_of_foreign_analysis(tmp_path, fake_s
     doc = yaml.safe_load(config.read_text())
     doc['analysis']['partition'] = adapter()
     config.write_text(yaml.safe_dump(doc))
+    from revise.batch.runner import run_batch
+    run_batch(config)
     assert run_analysis_batch(config)['summary']['failed'] == 1
     assert artifact.read_text() == 'keep'
 
@@ -183,6 +187,8 @@ def test_publication_failure_restores_previous_analysis(tmp_path, fake_solver, m
     doc = yaml.safe_load(config.read_text())
     doc['analysis']['partition']['version'] = '2'
     config.write_text(yaml.safe_dump(doc))
+    from revise.batch.runner import run_batch
+    run_batch(config)
     replace = analysis.os.replace
     def fail_publish(source, destination):
         if str(source).endswith('/artifacts'):
@@ -208,7 +214,7 @@ def test_failed_analysis_does_not_prevent_other_samples(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     from revise.batch.analysis import run_analysis_batch
     config, target = prepared_batch(tmp_path, {'partition': adapter()})
-    make_sample(tmp_path / 'data' / 'CRC' / 'two', sample_id='second', cell_types=['T'])
+    make_sample(tmp_path / 'data' / 'CRC' / 'two', cell_types=['T'])
     run_batch(config)
     (target / 'spatial.h5ad').write_bytes(b'broken')
     report = run_analysis_batch(config)
@@ -246,3 +252,41 @@ def test_blocked_reconstruction_invalidates_local_analysis_summary(tmp_path, fak
     (target / 'spatial.h5ad').write_bytes(b'broken')
     run_analysis_batch(config)
     assert json.loads((target / 'analysis' / 'analysis.json').read_text())['status'] == 'blocked'
+
+
+@pytest.mark.parametrize('change', ['add', 'remove', 'edit'])
+def test_analysis_rechecks_configuration_chain(tmp_path, fake_solver, change):
+    from revise.batch.analysis import run_analysis_batch
+    from revise.batch.runner import run_batch
+    config, target = prepared_batch(tmp_path, {'partition': adapter()})
+    parent = tmp_path / 'data' / 'CRC' / 'batch.yaml'
+    if change != 'add':
+        parent.write_text('execution: {seed: 1}\n')
+        run_batch(config)
+    run_analysis_batch(config)
+    if change == 'remove':
+        parent.unlink()
+    else:
+        parent.write_text('execution: {seed: 2}\n')
+    assert run_analysis_batch(config)['summary']['blocked'] == 1
+
+
+def test_analysis_uses_sample_level_aspects(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    from revise.batch.analysis import run_analysis_batch
+    config, target = prepared_batch(tmp_path, {'partition': adapter()})
+    path = tmp_path / 'data' / 'CRC' / 'one' / 'batch.yaml'
+    doc = yaml.safe_load(path.read_text())
+    doc['analysis'] = {'partition': adapter('fail_metrics')}
+    path.write_text(yaml.safe_dump(doc))
+    run_batch(config)
+    assert run_analysis_batch(config)['summary']['failed'] == 1
+
+
+def test_different_project_config_cannot_use_another_inventory(tmp_path, fake_solver):
+    from revise.batch.analysis import run_analysis_batch
+    config, _ = prepared_batch(tmp_path, {'partition': adapter()})
+    alternate = tmp_path / 'other.yaml'
+    alternate.write_text(config.read_text())
+    with pytest.raises(ValueError, match='inventory'):
+        run_analysis_batch(alternate)

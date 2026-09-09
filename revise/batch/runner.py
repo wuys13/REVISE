@@ -1,4 +1,4 @@
-"""Sequential reconstruction of explicit sample packages, with verified reuse."""
+"""Sequential reconstruction of standard ST samples, with verified reuse."""
 from __future__ import annotations
 
 from collections import Counter
@@ -16,7 +16,8 @@ import traceback
 
 import yaml
 
-from .sample import file_identity, prepare_sample
+from .config import discover_samples, load_batch_config, resolve_sample
+from .sample import file_identity, read_sample
 
 
 DEFAULT_CELL_TYPES = ['T', 'Macro', 'Fibroblast']
@@ -72,9 +73,9 @@ def _code_identity() -> dict:
 
 
 def _cell_types(document: dict) -> list[str | None]:
-    modality = document['sample']['modality']
+    modality = document['modality']
     if modality not in ROUTES:
-        raise ValueError('sample.modality must be hST, iST, or sST')
+        raise ValueError('modality must be hST, iST, or sST')
     if modality != 'iST':
         return [None]
     labels = document.get('local_refinement', {}).get('cell_types', DEFAULT_CELL_TYPES)
@@ -94,8 +95,9 @@ def _cell_types(document: dict) -> list[str | None]:
 def application_document(sample, cell_type: str | None, output_root: Path) -> dict:
     """Translate package paths to the unchanged single-run root-path contract."""
     doc = deepcopy(sample.document)
-    for field in ('sample', 'preparation'):
+    for field in ('modality', 'coordinates', 'enabled', 'analysis', 'input_root', 'output_root'):
         doc.pop(field, None)
+    doc['schema_version'] = 1
     doc['application'] = dict(ROUTES[sample.modality])
     doc['paths'] = {'root_dir': '/'}
     doc['inputs']['st'] = {'path': str(sample.st_path).lstrip('/'), 'format': 'h5ad'}
@@ -235,10 +237,10 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
         config_path.write_text(yaml.safe_dump(document, sort_keys=False))
         source, loaded = load_application_yaml(config_path)
         config = compile_application_config(loaded, source=source)
-        identities = {'sample_yaml': file_identity(sample.root / 'sample.yaml'), 'spatial': file_identity(sample.st_path), 'reference': file_identity(sample.reference_path)}
+        identities = {'spatial': file_identity(sample.st_path), 'reference': file_identity(sample.reference_path)}
         if config.pm_on_cell_path is not None:
             identities['pm_on_cell'] = file_identity(config.pm_on_cell_path)
-        fingerprint = _digest({'sample': sample.document['sample'], 'inputs': identities, 'preparation': sample.metadata,
+        fingerprint = _digest({'sample': sample.sample_id, 'inputs': identities, 'metadata': sample.metadata,
                                'config': document, 'code': code})
         if _reusable(_read_json(state_path), fingerprint):
             return dict(result, status='reused')
@@ -249,6 +251,7 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
         returncode = _execute(config_path, control / 'reconstruction.log')
         if returncode:
             raise RuntimeError(f'Reconstruction exited {returncode}; see {control / "reconstruction.log"}')
+        verify_configuration(sample.metadata['configuration'])
         if any(file_identity(Path(item['path'])) != item for item in identities.values()):
             raise ValueError('Input changed during reconstruction; retry with stable inputs')
         paths = output_paths(config)
@@ -289,7 +292,7 @@ def _invalidate_handoffs(root: Path, *, status: str, active: set[Path] | None = 
         record = _read_json(handoff)
         state = _read_json(state_path)
         if record.get('schema_version') == 1 and state.get('directory') == str(handoff.parent):
-            record.update(status=status, reason='sample_preparation_failed' if status == 'failed' else 'task_no_longer_requested')
+            record.update(status=status, reason='sample_validation_failed' if status == 'failed' else 'task_no_longer_requested')
             state['status'] = status
             _json(handoff, record)
             _json(state_path, state)
@@ -309,27 +312,14 @@ def _batch_lock(root: Path):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def load_batch_config(config_path: str | Path) -> tuple[dict, Path, Path]:
-    """Resolve separate input/output trees independently of the working directory."""
-    config_path = Path(config_path).resolve()
-    batch = yaml.safe_load(config_path.read_text())
-    required = {'schema_version', 'input_root', 'output_root'}
-    if (not isinstance(batch, dict) or type(batch.get('schema_version')) is not int
-            or batch['schema_version'] != 1 or not required <= set(batch)
-            or set(batch) - required - {'analysis'}):
-        raise ValueError('batch YAML requires schema_version: 1, input_root and output_root; optional analysis')
-    roots = []
-    for key in ('input_root', 'output_root'):
-        value = batch[key]
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f'{key} must be a non-empty path')
-        roots.append((config_path.parent / value).resolve())
-    root, output = roots
-    if root.is_relative_to(output) or output.is_relative_to(root):
-        raise ValueError('input_root and output_root must not overlap')
-    if not root.is_dir():
-        raise ValueError(f'input_root is not a directory: {root}')
-    return batch, root, output
+def verify_configuration(configuration: dict):
+    """Re-resolve the complete hierarchy, including previously absent YAML files."""
+    resolved = resolve_sample(configuration['project_config'], configuration['sample_dir'])
+    if (resolved.config_chain != configuration['chain']
+            or resolved.document != configuration['effective']
+            or not resolved.document.get('enabled', True)):
+        raise ValueError('Sample configuration changed; rerun reconstruction first')
+    return resolved
 
 
 def _output_directory(output: Path, relative: Path) -> Path:
@@ -342,53 +332,56 @@ def _output_directory(output: Path, relative: Path) -> Path:
 
 
 def run_batch(config_path: str | Path) -> dict:
-    """Prepare inputs and reconstruct into a separate output tree."""
+    """Read standard inputs and reconstruct into a separate output tree."""
     _, root, output = load_batch_config(config_path)
+    config_path = Path(config_path).resolve()
     output.mkdir(parents=True, exist_ok=True)
     with _batch_lock(output):
-        return _run_samples(root, output)
+        return _run_samples(config_path, root, output)
 
 
-def _run_samples(root: Path, output: Path) -> dict:
-    paths = sorted(root.rglob('sample.yaml'))
-    if not paths:
-        raise ValueError(f'No sample.yaml files under {root}')
-    entries = []
-    for path in paths:
-        try:
-            if path.is_symlink():
-                raise ValueError('sample.yaml must not be a symlink')
-            document = yaml.safe_load(path.read_text())
-            sample_id = document['sample']['id']
-            if not isinstance(sample_id, str) or not sample_id.strip():
-                raise ValueError('sample.id must be a non-empty string')
-            entries.append((path, document, sample_id, None))
-        except Exception as exc:
-            entries.append((path, None, None, f'{type(exc).__name__}: {exc}'))
-    counts = Counter(item[2] for item in entries if item[2] is not None)
-    report = {'schema_version': 1, 'status': 'running', 'input_root': str(root), 'output_root': str(output), 'tasks': [], 'summary': {}}
+def _run_samples(config_path: Path, root: Path, output: Path) -> dict:
+    paths = discover_samples(root)
     report_path = output / 'batch_status.json'
+    sample_ids = {path.relative_to(root).as_posix() for path in paths}
+    # Removed samples must not retain a current result in the previous inventory.
+    for previous in _read_json(report_path).get('tasks', []):
+        if previous.get('sample_id') in sample_ids or not previous.get('directory'):
+            continue
+        directory = Path(previous['directory'])
+        try:
+            _output_directory(output, directory.relative_to(output))
+        except ValueError:
+            continue
+        _invalidate_handoffs(directory, status='inactive', only=directory)
+    if not paths:
+        raise ValueError(f'No spatial.h5ad samples under {root}; migrate old sample.yaml packages to schema_version: 2')
+    report = {'schema_version': 1, 'status': 'running', 'project_config': str(config_path), 'input_root': str(root),
+              'output_root': str(output), 'tasks': [], 'summary': {}}
     _json(report_path, report)
     code = _code_identity()
-    for path, document, sample_id, error in entries:
-        destination = output / path.parent.relative_to(root)
+    for path in paths:
+        sample_id = path.relative_to(root).as_posix()
+        destination = output / path.relative_to(root)
         sample_control = destination / '.revise'
         safe_destination = False
         try:
-            _output_directory(output, path.parent.relative_to(root))
+            _output_directory(output, path.relative_to(root))
             safe_destination = True
             if sample_control.is_symlink() or (sample_control.exists() and not sample_control.is_dir()):
                 raise ValueError(f'Sample control directory must be an ordinary directory: {sample_control}')
-            if error:
-                raise ValueError(error)
-            if counts[sample_id] > 1:
-                raise ValueError(f'Duplicate sample.id: {sample_id}')
-            if any(other != path and other.parent in path.parent.parents for other in paths):
-                raise ValueError('A sample directory cannot be nested inside another sample directory')
-            labels = _cell_types(document)
-            sample = prepare_sample(path)
+            if path == root or any(other != path and (other in path.parents or path in other.parents) for other in paths):
+                raise ValueError('A sample must be below input_root and cannot contain another sample')
+            resolved = resolve_sample(config_path, path)
+            if not resolved.document.get('enabled', True):
+                _invalidate_handoffs(destination, status='inactive')
+                if sample_control.exists():
+                    _json(sample_control / 'sample.json', {'sample_id': sample_id, 'status': 'inactive'})
+                continue
+            labels = _cell_types(resolved.document)
+            sample = read_sample(resolved)
         except Exception as exc:
-            task = {'sample_id': sample_id, 'sample_yaml': str(path), 'status': 'failed', 'error': f'{type(exc).__name__}: {exc}'}
+            task = {'sample_id': sample_id, 'sample_dir': str(path), 'status': 'failed', 'error': f'{type(exc).__name__}: {exc}'}
             report['tasks'].append(task)
             if safe_destination:
                 _invalidate_handoffs(destination, status='failed')
@@ -397,7 +390,7 @@ def _run_samples(root: Path, output: Path) -> dict:
         else:
             active = {destination / label if label is not None else destination for label in labels}
             _invalidate_handoffs(destination, status='inactive', active=active)
-            _json(sample_control / 'sample.json', {'sample_id': sample_id, 'status': 'prepared'})
+            _json(sample_control / 'sample.json', {'sample_id': sample_id, 'status': 'validated'})
             for label in labels:
                 report['tasks'].append(_run_task(sample, label, code, destination))
                 _json(report_path, report)

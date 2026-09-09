@@ -1,0 +1,5 @@
+# Optional sample override. This replaces the whole inherited reference block,
+# including any filter_column/filter_value. No reference file is copied.
+inputs:
+  reference:
+    path: ../../../SC/special_reference.h5ad

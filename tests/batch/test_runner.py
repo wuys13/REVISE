@@ -10,12 +10,12 @@ import pytest
 import yaml
 
 
-def make_sample(root, *, sample_id='sample', modality='iST', cell_types=None):
+def make_sample(root, *, modality='iST', cell_types=None):
     root.mkdir(parents=True)
     obs = pd.DataFrame({'Level1': ['T', 'Macro', 'Fibroblast'], 'Level2': ['a', 'b', 'c']}, index=['u1', 'u2', 'u3'])
     data = ad.AnnData(np.ones((3, 3)), obs=obs)
     data.obsm['spatial'] = np.array([[0, 0], [1, 1], [2, 2]], dtype=float)
-    data.write_h5ad(root / 'source.h5ad')
+    data.write_h5ad(root / 'spatial.h5ad')
     data.write_h5ad(root / 'reference.h5ad')
     local = {'subtype_column': 'Level2', 'alpha': 0.2, 'resolutions': [0.5]}
     if cell_types is not None:
@@ -25,20 +25,18 @@ def make_sample(root, *, sample_id='sample', modality='iST', cell_types=None):
     if modality == 'sST':
         local = {'strength': 0.2, 'match_spot_sum': True}
         data.obs['n_cells'] = 2
-        data.write_h5ad(root / 'source.h5ad')
+        data.write_h5ad(root / 'spatial.h5ad')
     document = {
-        'schema_version': 1, 'sample': {'id': sample_id, 'modality': modality},
-        'inputs': {'st': {'path': 'source.h5ad', 'format': 'h5ad'},
-                   'reference': {'path': 'reference.h5ad', 'format': 'h5ad'}},
-        'preparation': {'spatial': {'matrix': 'X', 'spatial_key': 'spatial', 'coordinate_unit': 'um'},
-                        'reference': {'matrix': 'X'}},
+        'modality': modality,
+        'inputs': {'reference': {'path': 'reference.h5ad', 'format': 'h5ad'}},
+        'coordinates': {'unit': 'um'},
         'algorithm': {'ot_method': 'pot'},
         'preprocessing': {'spatial': {'min_transcript_counts': None, 'min_cell_counts': 1},
                           'reference': {'min_transcript_counts': None, 'min_cell_counts': 1}},
         'global_anchoring': {'broad_column': 'Level1'}, 'local_refinement': local,
         'execution': {'seed': 42}, 'output': {'ist_mapping': 'paired'} if modality == 'iST' else {},
     }
-    (root / 'sample.yaml').write_text(yaml.safe_dump(document))
+    (root / 'batch.yaml').write_text(yaml.safe_dump(document))
     return document
 
 
@@ -50,7 +48,7 @@ def result_root(root):
 
 def batch_config(tmp_path):
     path = tmp_path / 'batch.yaml'
-    path.write_text(yaml.safe_dump({'schema_version': 1, 'input_root': 'data', 'output_root': 'results'}))
+    path.write_text(yaml.safe_dump({'schema_version': 2, 'input_root': 'data', 'output_root': 'results'}))
     return path
 
 
@@ -122,7 +120,7 @@ def test_failure_isolated_and_stale_success_invalidated(tmp_path, fake_solver):
     assert runner.run_batch(config)['summary'] == {'succeeded': 2, 'failed': 1, 'reused': 0}
     assert runner.run_batch(config)['summary'] == {'succeeded': 0, 'failed': 1, 'reused': 2}
     doc['execution']['seed'] = 43
-    (root / 'sample.yaml').write_text(yaml.safe_dump(doc))
+    (root / 'batch.yaml').write_text(yaml.safe_dump(doc))
     original = runner._execute
     runner._execute = lambda *args: 1
     try:
@@ -133,13 +131,13 @@ def test_failure_isolated_and_stale_success_invalidated(tmp_path, fake_solver):
     assert runner.run_batch(config)['summary'] == {'succeeded': 2, 'failed': 1, 'reused': 0}
 
 
-def test_duplicate_ids_rejected_without_running(tmp_path, fake_solver):
+def test_same_sample_names_in_different_groups_have_distinct_ids(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
-    make_sample(tmp_path / 'data' / 'a')
-    make_sample(tmp_path / 'data' / 'b')
+    make_sample(tmp_path / 'data' / 'CRC' / 'one', cell_types=['T'])
+    make_sample(tmp_path / 'data' / 'BRCA' / 'one', cell_types=['T'])
     result = run_batch(batch_config(tmp_path))
-    assert result['summary']['failed'] == 2
-    assert fake_solver == []
+    assert result['summary']['succeeded'] == 2
+    assert {task['sample_id'] for task in result['tasks']} == {'CRC/one', 'BRCA/one'}
 
 
 @pytest.mark.parametrize('modality', ['hST', 'sST'])
@@ -177,28 +175,27 @@ def test_unsafe_or_colliding_type_directories_rejected(tmp_path, fake_solver, la
     assert not fake_solver
 
 
-def test_preparation_failure_invalidates_old_handoff(tmp_path, fake_solver):
+def test_invalid_input_invalidates_old_handoff(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     root = tmp_path / 'data' / 'one'
     make_sample(root, cell_types=['T'])
     config = batch_config(tmp_path)
     run_batch(config)
-    (root / 'source.h5ad').unlink()
+    (root / 'reference.h5ad').unlink()
     assert run_batch(config)['summary']['failed'] == 1
     assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
 
 
-def test_renamed_sample_and_removed_types_do_not_reuse_old_handoffs(tmp_path, fake_solver):
+def test_removed_types_do_not_reuse_old_handoffs(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     root = tmp_path / 'data' / 'one'
     doc = make_sample(root, cell_types=['T', 'Macro'])
     config = batch_config(tmp_path)
     run_batch(config)
-    doc['sample']['id'] = 'renamed'
     doc['local_refinement']['cell_types'] = ['T']
-    (root / 'sample.yaml').write_text(yaml.safe_dump(doc))
+    (root / 'batch.yaml').write_text(yaml.safe_dump(doc))
     assert run_batch(config)['summary']['succeeded'] == 1
-    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['sample_id'] == 'renamed'
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['sample_id'] == 'one'
     assert json.loads((result_root(root) / 'Macro' / 'reconstruction.json').read_text())['status'] == 'inactive'
     assert (result_root(root) / 'Macro' / 'spatial.h5ad').exists()
 
@@ -219,16 +216,13 @@ def test_bad_task_directory_does_not_stop_other_tasks(tmp_path, fake_solver, obs
     assert list(external.iterdir()) == []
 
 
-def test_publication_cannot_overwrite_original_input(tmp_path, fake_solver):
+def test_reconstruction_preserves_original_input(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     root = tmp_path / 'data' / 'one'
-    doc = make_sample(root, modality='hST')
-    (root / 'source.h5ad').rename(root / 'SVC.h5ad')
-    doc['inputs']['st']['path'] = 'SVC.h5ad'
-    (root / 'sample.yaml').write_text(yaml.safe_dump(doc))
-    original = (root / 'SVC.h5ad').read_bytes()
+    make_sample(root, modality='hST')
+    original = (root / 'spatial.h5ad').read_bytes()
     assert run_batch(batch_config(tmp_path))['summary']['succeeded'] == 1
-    assert (root / 'SVC.h5ad').read_bytes() == original
+    assert (root / 'spatial.h5ad').read_bytes() == original
     assert (result_root(root) / 'SVC.h5ad').exists()
 
 
@@ -278,29 +272,27 @@ def test_task_config_failure_invalidates_previous_success(tmp_path, fake_solver)
     config = batch_config(tmp_path)
     run_batch(config)
     document['output']['name'] = 'forbidden'
-    (root / 'sample.yaml').write_text(yaml.safe_dump(document))
+    (root / 'batch.yaml').write_text(yaml.safe_dump(document))
     assert run_batch(config)['summary']['failed'] == 1
     assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'failed'
 
 
-def test_symlink_sample_yaml_cannot_relocate_package(tmp_path, fake_solver):
+def test_directory_symlink_is_not_discovered(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     external = tmp_path / 'external'
     make_sample(external, cell_types=['T'])
-    root = tmp_path / 'data' / 'one'
-    root.mkdir(parents=True)
-    (root / 'sample.yaml').symlink_to(external / 'sample.yaml')
-    assert run_batch(batch_config(tmp_path))['summary']['failed'] == 1
-    assert not (external / 'inputs').exists()
-    assert not fake_solver
+    make_sample(tmp_path / 'data' / 'one', cell_types=['T'])
+    (tmp_path / 'data' / 'linked').symlink_to(external, target_is_directory=True)
+    assert run_batch(batch_config(tmp_path))['summary']['succeeded'] == 1
+    assert fake_solver == ['T']
 
 
-def test_reconstruction_writes_only_prepared_inputs_to_input_tree(tmp_path, fake_solver):
+def test_reconstruction_never_writes_input_tree(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
     root = tmp_path / 'data' / 'CRC' / 'one'
     make_sample(root)
     run_batch(batch_config(tmp_path))
-    assert sorted(p.name for p in root.iterdir()) == ['inputs', 'reference.h5ad', 'sample.yaml', 'source.h5ad']
+    assert sorted(p.name for p in root.iterdir()) == ['batch.yaml', 'reference.h5ad', 'spatial.h5ad']
     assert not (tmp_path / 'data' / 'batch_status.json').exists()
     assert (tmp_path / 'results' / 'batch_status.json').is_file()
 
@@ -310,7 +302,7 @@ def test_input_output_roots_must_not_overlap(tmp_path, fake_solver, output):
     from revise.batch.runner import run_batch
     make_sample(tmp_path / 'data' / 'one')
     config = batch_config(tmp_path)
-    config.write_text(yaml.safe_dump({'schema_version': 1, 'input_root': 'data', 'output_root': output}))
+    config.write_text(yaml.safe_dump({'schema_version': 2, 'input_root': 'data', 'output_root': output}))
     with pytest.raises(ValueError, match='overlap'):
         run_batch(config)
     assert not fake_solver
@@ -318,9 +310,80 @@ def test_input_output_roots_must_not_overlap(tmp_path, fake_solver, output):
 
 def test_blocked_sample_destination_does_not_stop_other_samples(tmp_path, fake_solver):
     from revise.batch.runner import run_batch
-    make_sample(tmp_path / 'data' / 'one', sample_id='one', cell_types=['T'])
-    make_sample(tmp_path / 'data' / 'two', sample_id='two', cell_types=['T'])
+    make_sample(tmp_path / 'data' / 'one', cell_types=['T'])
+    make_sample(tmp_path / 'data' / 'two', cell_types=['T'])
     (tmp_path / 'results').mkdir()
     (tmp_path / 'results' / 'one').write_text('keep')
     report = run_batch(batch_config(tmp_path))
     assert report['summary'] == {'succeeded': 1, 'failed': 1, 'reused': 0}
+
+
+@pytest.mark.parametrize('change', ['add', 'remove', 'edit'])
+def test_ancestor_configuration_changes_invalidate_reuse(tmp_path, fake_solver, change):
+    from revise.batch.runner import run_batch
+    root = tmp_path / 'data' / 'CRC' / 'one'
+    make_sample(root, cell_types=['T'])
+    parent = root.parent / 'batch.yaml'
+    if change != 'add':
+        parent.write_text('execution: {seed: 1}\n')
+    config = batch_config(tmp_path)
+    run_batch(config)
+    assert run_batch(config)['summary']['reused'] == 1
+    if change == 'remove':
+        parent.unlink()
+    else:
+        parent.write_text('execution: {seed: 2}\n')
+    assert run_batch(config)['summary']['succeeded'] == 1
+
+
+def test_shared_defaults_need_no_sample_yaml_or_reference_copy(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    root = tmp_path / 'data' / 'CRC' / 'one'
+    document = make_sample(root, cell_types=['T'])
+    second = root.parent / 'two'
+    second.mkdir()
+    (second / 'spatial.h5ad').write_bytes((root / 'spatial.h5ad').read_bytes())
+    shared = tmp_path / 'SC'
+    shared.mkdir()
+    (root / 'reference.h5ad').rename(shared / 'ref.h5ad')
+    document['inputs']['reference']['path'] = '../../SC/ref.h5ad'
+    (root / 'batch.yaml').unlink()
+    (root.parent / 'batch.yaml').write_text(yaml.safe_dump(document))
+    before = {str(p): p.read_bytes() for p in (tmp_path / 'data').rglob('*') if p.is_file()}
+    result = run_batch(batch_config(tmp_path))
+    assert result['summary']['succeeded'] == 2
+    after = {str(p): p.read_bytes() for p in (tmp_path / 'data').rglob('*') if p.is_file()}
+    assert before == after
+    assert not list((tmp_path / 'data').rglob('reference.h5ad'))
+
+
+def test_disabled_sample_becomes_inactive(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    root = tmp_path / 'data' / 'one'
+    doc = make_sample(root, cell_types=['T'])
+    config = batch_config(tmp_path)
+    run_batch(config)
+    doc['enabled'] = False
+    (root / 'batch.yaml').write_text(yaml.safe_dump(doc))
+    result = run_batch(config)
+    assert result['summary'] == {'succeeded': 0, 'failed': 0, 'reused': 0}
+    assert json.loads((result_root(root) / 'T' / 'reconstruction.json').read_text())['status'] == 'inactive'
+
+
+def test_nested_samples_both_rejected(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    make_sample(tmp_path / 'data' / 'one', cell_types=['T'])
+    make_sample(tmp_path / 'data' / 'one' / 'nested', cell_types=['T'])
+    assert run_batch(batch_config(tmp_path))['summary']['failed'] == 2
+    assert not fake_solver
+
+
+def test_project_yaml_symlink_is_rejected_before_writing(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch
+    make_sample(tmp_path / 'data' / 'one')
+    config = batch_config(tmp_path)
+    alias = tmp_path / 'alias.yaml'
+    alias.symlink_to(config)
+    with pytest.raises(ValueError, match='symlink'):
+        run_batch(alias)
+    assert not (tmp_path / 'results').exists()

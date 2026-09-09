@@ -73,7 +73,7 @@ def _subsets(modality):
 def _sample(root, modality):
     root.mkdir(parents=True)
     st, ref = _subsets(modality)
-    st.write_h5ad(root / 'source.h5ad')
+    st.write_h5ad(root / 'spatial.h5ad')
     ref.write_h5ad(root / 'reference.h5ad')
     local = {'strength': 0.2}
     if modality == 'iST':
@@ -81,11 +81,9 @@ def _sample(root, modality):
     elif modality == 'sST':
         local['match_spot_sum'] = True
     document = {
-        'schema_version': 1, 'sample': {'id': f'real-{modality}', 'modality': modality},
-        'inputs': {'st': {'path': 'source.h5ad', 'format': 'h5ad'},
-                   'reference': {'path': 'reference.h5ad', 'format': 'h5ad'}},
-        'preparation': {'spatial': {'matrix': 'X', 'spatial_key': 'spatial', 'coordinate_unit': 'pixel'},
-                        'reference': {'matrix': 'X'}},
+        'modality': modality,
+        'inputs': {'reference': {'path': 'reference.h5ad', 'format': 'h5ad'}},
+        'coordinates': {'unit': 'pixel'},
         'algorithm': {'ot_method': 'tacco' if modality == 'iST' else 'pot'},
         'preprocessing': {
             'spatial': {'min_transcript_counts': None, 'min_counts': 1, 'min_cell_counts': 1},
@@ -93,7 +91,7 @@ def _sample(root, modality):
         'global_anchoring': {'broad_column': 'Level1'}, 'local_refinement': local,
         'execution': {'seed': 42}, 'output': {'ist_mapping': 'paired'} if modality == 'iST' else {},
     }
-    path = root / 'sample.yaml'
+    path = root / 'batch.yaml'
     path.write_text(yaml.safe_dump(document))
     return path
 
@@ -104,18 +102,19 @@ def test_real_batch_matches_direct_single_run(tmp_path, modality):
     from revise.application.config import compile_application_config, load_application_yaml
     from revise.application.publication import output_paths
     from revise.batch.runner import application_document, run_batch
-    from revise.batch.sample import prepare_sample
+    from revise.batch.sample import read_sample
+    from revise.batch.config import resolve_sample
 
     sample_path = _sample(tmp_path / 'data' / 'CRC' / modality, modality)
     batch_path = tmp_path / 'batch.yaml'
-    batch_path.write_text(yaml.safe_dump({'schema_version': 1, 'input_root': 'data', 'output_root': 'results'}))
+    batch_path.write_text(yaml.safe_dump({'schema_version': 2, 'input_root': 'data', 'output_root': 'results'}))
     report = run_batch(batch_path)
     if report['summary']['failed']:
         logs = {str(path): path.read_text()[-12000:] for path in (tmp_path / 'results').rglob('reconstruction.log')}
         pytest.fail(f'Actual batch route failed: {json.dumps(report)}\nLogs: {logs}')
     assert report['summary'] == {'succeeded': 1, 'failed': 0, 'reused': 0}
 
-    prepared = prepare_sample(sample_path)
+    prepared = read_sample(resolve_sample(batch_path, sample_path.parent))
     document = deepcopy(application_document(prepared, 'T' if modality == 'iST' else None, tmp_path / 'direct'))
     document['output']['dir'] = str(tmp_path / 'direct').lstrip('/')
     direct_yaml = tmp_path / 'direct.yaml'

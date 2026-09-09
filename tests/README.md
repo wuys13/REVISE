@@ -83,7 +83,8 @@ environment variables documented in their modules and CI jobs.
 | `integration/solvers/test_tacco_solver_smoke.py` | Optional TACCO installation | Real TACCO 0.5.0 GA/LR smoke and import order | TACCO/CI release gate | Tiny solver smoke; no parity claim |
 | `integration/solvers/test_local_refinement_solver_smoke.py` | Installed POT/TACCO | Real posterior-conditioned local OT candidate | Local-refinement solver/release gate | Tiny matrices; skipped solvers are not evidence |
 | `application/test_ist_publication.py` | iST publication | Paired identity, mean/random assembly and transactional switching | Output-mode edits | Small synthetic carriers only |
-| `batch/test_sample.py` | Standard packages | Explicit metadata, source preservation and preparation reuse | Intake edits | H5AD fixtures and isolated SpatialData-reader boundary |
+| `batch/test_config.py` | Hierarchical configuration | Inheritance, declaring-file paths, discovery and configuration snapshots | Batch input edits | YAML and directory fixtures |
+| `batch/test_sample.py` | Standard H5AD inputs | Read-only protocol validation and shared reference identity | Batch input edits | Backed H5AD fixtures; no conversion |
 | `batch/test_runner.py` | Batch execution and handoff | Failure isolation, invalidation, path safety and pairing roles | Batch lifecycle edits | Solver stand-in; no scientific validation |
 | `batch/test_analysis.py` | Analysis adapters | Execution, reuse, prerequisites, failures and rollback | Analysis framework edits | Actual fixture adapters; no impact algorithms |
 | `batch/test_cli.py` | Batch entrypoints | Source help and installed script declarations | CLI/package edits | Declaration and launch behavior |

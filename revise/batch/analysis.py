@@ -13,7 +13,7 @@ import traceback
 
 from .runner import (
     ANALYSIS_ASPECTS, _batch_lock, _code_identity, _digest, _json,
-    _output_directory, _read_json, _reusable, load_batch_config,
+    _output_directory, _read_json, _reusable, load_batch_config, verify_configuration,
 )
 from .sample import file_identity
 
@@ -52,6 +52,7 @@ def _verified_handoff(root: Path) -> dict:
     record = _read_json(root / 'reconstruction.json')
     if record.get('status') != 'succeeded' or record.get('fingerprint') != state.get('fingerprint'):
         raise ValueError('Reconstruction handoff is not current')
+    verify_configuration(record['inputs']['configuration'])
     identities = list(state.get('inputs', {}).values()) + list(record['inputs']['sources'].values())
     if any(file_identity(Path(item['path'])) != item for item in identities):
         raise ValueError('Reconstruction inputs changed; rerun reconstruction first')
@@ -134,13 +135,13 @@ def _run_aspect(root: Path, record: dict, name: str, spec: dict, code: dict) -> 
 
 def run_analysis_batch(config_path: str | Path) -> dict:
     """Run configured aspects against the latest reconstruction batch inventory."""
-    batch, inputs, output = load_batch_config(config_path)
-    specs = _specifications(batch)
+    _, inputs, output = load_batch_config(config_path)
     if not output.is_dir():
         raise ValueError('Run batch reconstruction before batch analysis')
     with _batch_lock(output):
         inventory = _read_json(output / 'batch_status.json')
-        if (inventory.get('input_root') != str(inputs) or inventory.get('output_root') != str(output)
+        if (inventory.get('project_config') != str(Path(config_path).resolve())
+                or inventory.get('input_root') != str(inputs) or inventory.get('output_root') != str(output)
                 or inventory.get('status') not in {'completed', 'completed_with_failures'}):
             raise ValueError('A completed reconstruction batch inventory is required')
         report = {'schema_version': 1, 'status': 'running', 'input_root': str(inputs),
@@ -160,6 +161,7 @@ def run_analysis_batch(config_path: str | Path) -> dict:
                 _output_directory(root, Path('.revise'))
                 summary_safe = True
                 record = _verified_handoff(root)
+                specs = _specifications(record['inputs']['configuration']['effective'])
             except (OSError, ValueError, KeyError) as exc:
                 if summary_safe:
                     _json(root / 'analysis' / 'analysis.json', {'status': 'blocked', 'error': str(exc)})

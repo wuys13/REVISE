@@ -1,1 +1,1 @@
-"""Standard sample packages and sequential reconstruction batches."""
+"""Standard ST directories, hierarchical configuration and sequential batches."""
