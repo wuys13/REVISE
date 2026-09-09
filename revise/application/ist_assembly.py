@@ -18,6 +18,44 @@ def _cluster_keys(adata, source):
     return [(type(value), value) for value in labels.to_numpy(dtype=object)]
 
 
+def _cluster_means(expression):
+    """Compute sparse-preserving donor means in first-seen cluster order."""
+    expression_keys = _cluster_keys(expression, 'expression carrier')
+    if not expression_keys:
+        raise ValueError('expression carrier SVC cluster set must be nonempty')
+    if not expression.var_names.is_unique:
+        raise ValueError('expression var_names must be unique')
+    values = expression.X.data if sparse.issparse(expression.X) else expression.X
+    if not np.isfinite(values).all():
+        raise ValueError('expression X must contain only finite values')
+    donors = {}
+    for index, key in enumerate(expression_keys):
+        donors.setdefault(key, []).append(index)
+    clusters = list(donors)
+    if sparse.issparse(expression.X):
+        # A sparse averaging operator avoids densifying cluster-by-gene blocks.
+        rows, columns, weights = [], [], []
+        for row, key in enumerate(clusters):
+            indices = donors[key]
+            rows.extend([row] * len(indices))
+            columns.extend(indices)
+            weights.extend([1.0 / len(indices)] * len(indices))
+        averaging = sparse.csr_matrix((weights, (rows, columns)), shape=(len(clusters), expression.n_obs))
+        means = (averaging @ expression.X).tocsr()
+    else:
+        means = np.vstack([expression.X[donors[key]].mean(axis=0) for key in clusters])
+    return means, clusters
+
+
+def cluster_means(expression):
+    """Return donor expression means and their first-seen cluster labels."""
+    means, clusters = _cluster_means(expression)
+    output_values = means.data if sparse.issparse(means) else means
+    if not np.isfinite(output_values).all():
+        raise ValueError("cluster means must contain only finite values")
+    return means, [key[1] for key in clusters]
+
+
 def assemble_ist(spatial, expression, *, mapping: str, seed: int):
     """Assign cluster means or sampled donors to the spatial observation axis."""
     spatial_keys = _cluster_keys(spatial, 'spatial carrier')
@@ -29,29 +67,17 @@ def assemble_ist(spatial, expression, *, mapping: str, seed: int):
     values = expression.X.data if sparse.issparse(expression.X) else expression.X
     if not np.isfinite(values).all():
         raise ValueError('expression X must contain only finite values')
-    donors = {}
-    for index, key in enumerate(expression_keys):
-        donors.setdefault(key, []).append(index)
     metadata = {'ist_mapping': mapping, 'expression_source': 'expression_carrier.X_as_is'}
     obs = spatial.obs.copy(deep=True)
     if mapping == 'mean':
-        if sparse.issparse(expression.X):
-            # A sparse averaging operator avoids densifying cluster-by-gene blocks.
-            rows, columns, weights = [], [], []
-            clusters = list(donors)
-            for row, key in enumerate(clusters):
-                indices = donors[key]
-                rows.extend([row] * len(indices))
-                columns.extend(indices)
-                weights.extend([1.0 / len(indices)] * len(indices))
-            averaging = sparse.csr_matrix((weights, (rows, columns)), shape=(len(clusters), expression.n_obs))
-            means = averaging @ expression.X
-            lookup = {key: i for i, key in enumerate(clusters)}
-            output_x = means[[lookup[key] for key in spatial_keys]].tocsr()
-        else:
-            means = {key: expression.X[indices].mean(axis=0) for key, indices in donors.items()}
-            output_x = np.vstack([means[key] for key in spatial_keys])
+        means, clusters = _cluster_means(expression)
+        lookup = {key: i for i, key in enumerate(clusters)}
+        positions = [lookup[key] for key in spatial_keys]
+        output_x = means[positions].tocsr() if sparse.issparse(means) else means[positions]
     elif mapping == 'random':
+        donors = {}
+        for index, key in enumerate(expression_keys):
+            donors.setdefault(key, []).append(index)
         if not expression.obs_names.is_unique or any(not str(name) for name in expression.obs_names):
             raise ValueError('expression obs_names must be unique and nonempty for random mapping')
         for indices in donors.values():

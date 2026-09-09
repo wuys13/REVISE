@@ -57,6 +57,21 @@ def _read(path: Path, *, project: bool) -> tuple[dict, dict]:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f'inputs.{role}.path must be explicit')
         spec['path'] = str((path.parent / value).resolve())
+    analysis = document.get('analysis', {})
+    if not isinstance(analysis, dict):
+        raise ValueError(f'analysis must be a mapping in {path}')
+    for aspect, spec in analysis.items():
+        if not isinstance(spec, dict):
+            raise ValueError(f'analysis.{aspect} must be a mapping in {path}')
+        resources = spec.get('resources', {})
+        if not isinstance(resources, dict):
+            raise ValueError(f'analysis.{aspect}.resources must be a mapping in {path}')
+        for name, value in resources.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f'analysis.{aspect}.resources names must be non-empty strings')
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f'analysis.{aspect}.resources.{name}.path must be explicit')
+            resources[name] = str((path.parent / value).resolve())
     return document, {'path': str(path), 'sha256': sha256(content).hexdigest()}
 
 
@@ -67,7 +82,10 @@ def _load_project(path: Path) -> tuple[dict, Path, Path, dict]:
         value = document.get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f'{key} must be explicit')
-        roots.append((path.parent / value).resolve())
+        root = path.parent / value
+        if root.is_symlink():
+            raise ValueError(f'{key} must not be a symlink: {root}')
+        roots.append(root.resolve())
     input_root, output_root = roots
     if input_root == output_root or input_root in output_root.parents or output_root in input_root.parents:
         raise ValueError('input_root and output_root must not overlap')

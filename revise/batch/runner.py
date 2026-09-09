@@ -16,12 +16,11 @@ import traceback
 
 import yaml
 
-from .config import discover_samples, load_batch_config, resolve_sample
+from .config import ResolvedSample, discover_samples, load_batch_config, resolve_sample
 from .sample import file_identity, read_sample
 
 
 DEFAULT_CELL_TYPES = ['T', 'Macro', 'Fibroblast']
-ANALYSIS_ASPECTS = ('partition', 'spatial_diversity', 'spatial_regions')
 ROUTES = {'hST': {'svc_type': 'sp-SVC'},
           'iST': {'svc_type': 'sc-SVC', 'mode': 'cluster'},
           'sST': {'svc_type': 'sc-SVC', 'mode': 'sr'}}
@@ -54,9 +53,18 @@ def _digest(value) -> str:
 
 
 def _code_identity() -> dict:
-    """Hash installed/source runtime files, including uncommitted edits."""
+    """Hash reconstruction runtime files, excluding analysis-only code."""
     package = Path(__file__).resolve().parents[1]
-    files = sorted(package.rglob('*.py')) + sorted(package.rglob('*.yaml'))
+    excluded = {
+        Path('batch') / '__init__.py',
+        Path('batch') / 'analysis.py',
+        Path('batch') / 'cli.py',
+        Path('batch') / 'inputs.py',
+    }
+    files = [path for path in sorted(package.rglob('*.py'))
+             if path.relative_to(package) not in excluded]
+    files.extend(sorted(package.rglob('*.yaml')))
+    files = [path for path in files if 'analysis' not in path.relative_to(package).parts]
     import reconstruct
     files.append(Path(reconstruct.__file__).resolve())
     digest = sha256()
@@ -70,6 +78,37 @@ def _code_identity() -> dict:
         except PackageNotFoundError:
             dependencies[name] = None
     return {'sha256': digest.hexdigest(), 'python': sys.version, 'dependencies': dependencies}
+
+
+def _reconstruction_document(document: dict) -> dict:
+    """Return only settings that can affect the existing reconstruction engine."""
+    result = deepcopy(document)
+    result.pop('analysis', None)
+    return result
+
+
+def _reconstruction_inputs(sample, document: dict) -> dict[str, dict[str, str]]:
+    identities = {
+        'spatial': file_identity(sample.st_path),
+        'reference': file_identity(sample.reference_path),
+    }
+    prior = document.get('inputs', {}).get('pm_on_cell')
+    if prior is not None:
+        identities['pm_on_cell'] = file_identity(Path('/') / prior['path'])
+    return identities
+
+
+def _reconstruction_fingerprint(sample, document: dict, identities: dict, code: dict,
+                                *, cell_type: str | None = None) -> str:
+    return _digest({
+        'fingerprint_version': 2,
+        'sample': sample.sample_id,
+        'inputs': identities,
+        'config': _reconstruction_document(document),
+        'project_config': str(Path(sample.metadata['configuration']['project_config']).resolve()),
+        'cell_type': cell_type,
+        'code': code,
+    })
 
 
 def _cell_types(document: dict) -> list[str | None]:
@@ -189,16 +228,49 @@ def _handoff(sample, config, paths: dict, fingerprint: str) -> dict:
     mapping = config.ist_mapping if sample.modality == 'iST' else None
     return {
         'schema_version': 1, 'status': 'succeeded', 'sample_id': sample.sample_id,
+        'directory': str(config.output_dir),
         'modality': sample.modality, 'cell_type': config.select_cell_type,
         'ist_mapping': mapping, 'fingerprint': fingerprint,
         'inputs': sample.metadata, 'outputs': outputs, 'provenance': provenance,
         'coordinates': sample.metadata['coordinates'], 'pairing': pairing,
         'expression_semantics': ('reference_expression_by_cluster_' + mapping
                                  if mapping in {'mean', 'random'} else 'native_reconstruction_carriers'),
-        'analysis': {'status': 'not_run', 'state_path': 'analysis/analysis.json', 'aspects': {name: f'analysis/{name}' for name in ANALYSIS_ASPECTS},
+        'analysis': {'status': 'not_run', 'state_path': 'analysis/analysis.json',
                      'storage': 'paired observations/windows share tables; independent axes use separate files',
                      'current_ist_spatial_carrier_contract': mapping == 'paired' if sample.modality == 'iST' else None},
     }
+
+
+def _configuration_audit(sample) -> dict:
+    """Re-read the full source chain for the mutable audit record."""
+    configuration = sample.metadata['configuration']
+    resolved = resolve_sample(configuration['project_config'], configuration['sample_dir'])
+    audit = deepcopy(configuration)
+    audit.update(chain=resolved.config_chain, effective=resolved.document,
+                 input_root=str(resolved.input_root), output_root=str(resolved.output_root))
+    if (_digest(_reconstruction_document(sample.document))
+            != _digest(_reconstruction_document(resolved.document))):
+        raise ValueError('Sample configuration changed; rerun reconstruction first')
+    return audit
+
+
+def _task_result(result: dict, status: str, *, state: dict | None = None,
+                 handoff: dict | None = None, error: str | None = None) -> dict:
+    record = dict(result, status=status)
+    if state is not None:
+        if state.get('fingerprint') is not None:
+            record['fingerprint'] = state['fingerprint']
+        if state.get('artifacts'):
+            record['artifacts'] = state['artifacts']
+    if handoff is not None:
+        if handoff.get('outputs'):
+            record['outputs'] = handoff['outputs']
+        if handoff.get('provenance'):
+            record['provenance'] = handoff['provenance']
+    if error is not None:
+        record['error'] = error
+    record['log_path'] = str(Path(result['directory']) / '.revise' / 'reconstruction.log')
+    return record
 
 
 def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> dict:
@@ -217,6 +289,12 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
             if directory.is_symlink() or not directory.resolve().is_relative_to(output_root):
                 raise ValueError(f'Package output directory must not be a symlink: {directory}')
         document = application_document(sample, cell_type, output_root)
+        audit = _configuration_audit(sample)
+        if (Path(audit['output_root']) / sample.sample_id != output_root
+                or Path(audit['input_root']) / sample.sample_id != sample.root):
+            raise ValueError('Input or output root changed during execution')
+        sample.metadata = deepcopy(sample.metadata)
+        sample.metadata['configuration'] = audit
         source_paths = [Path(item['path']) for item in sample.metadata['sources'].values()]
         source_paths.extend((sample.st_path, sample.reference_path))
         prior = document['inputs'].get('pm_on_cell')
@@ -237,33 +315,37 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
         config_path.write_text(yaml.safe_dump(document, sort_keys=False))
         source, loaded = load_application_yaml(config_path)
         config = compile_application_config(loaded, source=source)
-        identities = {'spatial': file_identity(sample.st_path), 'reference': file_identity(sample.reference_path)}
-        if config.pm_on_cell_path is not None:
-            identities['pm_on_cell'] = file_identity(config.pm_on_cell_path)
-        fingerprint = _digest({'sample': sample.sample_id, 'inputs': identities, 'metadata': sample.metadata,
-                               'config': document, 'code': code})
-        if _reusable(_read_json(state_path), fingerprint):
-            return dict(result, status='reused')
-        state.update(fingerprint=fingerprint, code=code, inputs=identities)
+        identities = _reconstruction_inputs(sample, document)
+        fingerprint = _reconstruction_fingerprint(
+            sample, sample.document, identities, code, cell_type=cell_type)
+        previous = _read_json(state_path)
+        if _reusable(previous, fingerprint):
+            previous['configuration_audit'] = audit
+            _json(state_path, previous)
+            handoff = _read_json(handoff_path)
+            return _task_result(result, 'reused', state=previous, handoff=handoff)
+        state.update(fingerprint=fingerprint, code=code, inputs=identities,
+                     configuration_audit=audit)
         _json(state_path, state)
         _json(root / 'analysis' / 'analysis.json', {'status': 'not_run', 'reconstruction_fingerprint': fingerprint})
         _json(handoff_path, dict(result, schema_version=1, status='running'))
         returncode = _execute(config_path, control / 'reconstruction.log')
         if returncode:
             raise RuntimeError(f'Reconstruction exited {returncode}; see {control / "reconstruction.log"}')
-        verify_configuration(sample.metadata['configuration'])
-        if any(file_identity(Path(item['path'])) != item for item in identities.values()):
-            raise ValueError('Input changed during reconstruction; retry with stable inputs')
         paths = output_paths(config)
         handoff = _handoff(sample, config, paths, fingerprint)
-        for name in ANALYSIS_ASPECTS:
-            (root / 'analysis' / name).mkdir(parents=True, exist_ok=True)
         _json(handoff_path, handoff)
         artifacts = [file_identity(path) for path in paths.values()]
         artifacts.extend(handoff['provenance'].values())
         artifacts.append(file_identity(handoff_path))
+        if _code_identity() != code:
+            raise ValueError('Reconstruction code changed during execution; retry with stable code')
+        verify_configuration(sample.metadata['configuration'])
+        if any(file_identity(Path(item['path'])) != item for item in identities.values()):
+            raise ValueError('Input changed during reconstruction; retry with stable inputs')
         _json(state_path, dict(state, status='succeeded', artifacts=artifacts))
-        return dict(result, status='succeeded')
+        return _task_result(result, 'succeeded', state=dict(state, status='succeeded', artifacts=artifacts),
+                            handoff=handoff)
     except Exception as exc:
         error = f'{type(exc).__name__}: {exc}'
         if writable:
@@ -273,7 +355,7 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
             _json(handoff_path, dict(result, schema_version=1, status='failed', error=error))
         else:
             _invalidate_handoffs(output_root, status='failed', only=root)
-        return dict(result, status='failed', error=error)
+        return _task_result(result, 'failed', state=state, error=error)
 
 
 def _invalidate_handoffs(root: Path, *, status: str, active: set[Path] | None = None,
@@ -315,8 +397,13 @@ def _batch_lock(root: Path):
 def verify_configuration(configuration: dict):
     """Re-resolve the complete hierarchy, including previously absent YAML files."""
     resolved = resolve_sample(configuration['project_config'], configuration['sample_dir'])
-    if (resolved.config_chain != configuration['chain']
-            or resolved.document != configuration['effective']
+    for key in ('input_root', 'output_root'):
+        if key in configuration and configuration[key] != str(getattr(resolved, key)):
+            raise ValueError('Input or output root changed; rerun reconstruction first')
+    effective = configuration.get('effective')
+    if (not isinstance(effective, dict)
+            or _digest(_reconstruction_document(resolved.document))
+            != _digest(_reconstruction_document(effective))
             or not resolved.document.get('enabled', True)):
         raise ValueError('Sample configuration changed; rerun reconstruction first')
     return resolved
@@ -329,6 +416,122 @@ def _output_directory(output: Path, relative: Path) -> Path:
         if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
             raise ValueError(f'Output directory must be an ordinary directory: {directory}')
     return directory
+
+
+def _validate_task_selection(resolved: ResolvedSample, cell_type: str | None) -> None:
+    labels = _cell_types(resolved.document)
+    if resolved.document.get('modality') == 'iST':
+        if cell_type is None or cell_type not in labels:
+            raise ValueError(f'cell_type must be one of the configured iST types: {labels}')
+    elif cell_type is not None:
+        raise ValueError('cell_type is only valid for iST samples')
+
+
+def _selected_sample(input_root: Path, sample_id: str) -> Path:
+    if (not isinstance(sample_id, str) or not sample_id.strip() or sample_id != sample_id.strip()
+            or '\\' in sample_id or Path(sample_id).is_absolute()):
+        raise ValueError('sample_id must be a relative path under input_root')
+    relative = Path(sample_id)
+    if not relative.parts or any(part in {'', '.', '..'} for part in relative.parts):
+        raise ValueError('sample_id must be a normalized relative path under input_root')
+    candidate = input_root / relative
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(input_root) or resolved.relative_to(input_root).as_posix() != sample_id:
+        raise ValueError('sample_id must be a relative path under input_root')
+    current = input_root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f'Selected sample must not contain symlinked directories: {candidate}')
+    if not candidate.is_dir() or not (candidate / 'spatial.h5ad').is_file():
+        raise ValueError(f'Unknown sample_id: {sample_id}')
+    samples = discover_samples(input_root)
+    if any(other != candidate and (other in candidate.parents or candidate in other.parents)
+           for other in samples):
+        raise ValueError('A selected sample cannot contain or be contained by another sample')
+    return candidate
+
+
+def _task_root(output: Path, sample_id: str, cell_type: str | None) -> Path:
+    destination = _output_directory(output, Path(sample_id))
+    return destination / cell_type if cell_type is not None else destination
+
+
+def run_reconstruction_task(config_path: str | Path, sample_id: str, *, cell_type: str | None = None) -> dict:
+    """Run exactly one standard ST reconstruction task under the shared lock."""
+    _, input_root, output = load_batch_config(config_path)
+    config_path = Path(config_path).resolve()
+    sample_dir = _selected_sample(input_root, sample_id)
+    resolved = resolve_sample(config_path, sample_dir)
+    _validate_task_selection(resolved, cell_type)
+    destination = output / Path(sample_id)
+    task_root = _task_root(output, sample_id, cell_type)
+    output.mkdir(parents=True, exist_ok=True)
+    with _batch_lock(output):
+        if not resolved.document.get('enabled', True):
+            _invalidate_handoffs(destination, status='inactive', only=task_root)
+            return {'sample_id': sample_id, 'cell_type': cell_type,
+                    'directory': str(task_root), 'status': 'inactive'}
+        try:
+            sample = read_sample(resolved)
+        except Exception as exc:
+            _invalidate_handoffs(destination, status='failed', only=task_root)
+            return _task_result(
+                {'sample_id': sample_id, 'cell_type': cell_type, 'directory': str(task_root)},
+                'failed', error=f'{type(exc).__name__}: {exc}')
+        return _run_task(sample, cell_type, _code_identity(), destination)
+
+
+def _artifacts_belong_to(root: Path, state: dict) -> bool:
+    for item in state.get('artifacts', []):
+        try:
+            path = Path(item['path'])
+            if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):
+                return False
+        except (KeyError, OSError, ValueError):
+            return False
+    return True
+
+
+def verify_reconstruction_task(resolved: ResolvedSample, cell_type: str | None = None) -> dict:
+    """Return a current handoff for one task without acquiring the output lock."""
+    if not isinstance(resolved, ResolvedSample):
+        raise TypeError('resolved must be a ResolvedSample')
+    _validate_task_selection(resolved, cell_type)
+    if not resolved.document.get('enabled', True):
+        raise ValueError('Sample is disabled')
+    sample = read_sample(resolved)
+    destination = _output_directory(resolved.output_root, Path(resolved.sample_id))
+    root = _task_root(resolved.output_root, resolved.sample_id, cell_type)
+    control = root / '.revise'
+    for directory in (root, control, root / 'analysis'):
+        if directory.is_symlink() or not directory.resolve().is_relative_to(destination.resolve()):
+            raise ValueError(f'Package output directory must not be a symlink: {directory}')
+    state = _read_json(control / 'task.json')
+    if state.get('directory') != str(root) or not _artifacts_belong_to(root, state):
+        raise ValueError('Reconstruction task ownership or artifacts are invalid')
+    document = application_document(sample, cell_type, destination)
+    identities = _reconstruction_inputs(sample, document)
+    fingerprint = _reconstruction_fingerprint(
+        sample, sample.document, identities, _code_identity(), cell_type=cell_type)
+    if not _reusable(state, fingerprint) or state.get('inputs') != identities:
+        raise ValueError('Reconstruction is not successful or its artifacts changed')
+    handoff = _read_json(root / 'reconstruction.json')
+    if (handoff.get('status') != 'succeeded' or handoff.get('fingerprint') != fingerprint
+            or handoff.get('directory') != str(root)
+            or handoff.get('sample_id') != resolved.sample_id
+            or handoff.get('cell_type') != cell_type):
+        raise ValueError('Reconstruction handoff is not current')
+    configuration = handoff.get('inputs', {}).get('configuration')
+    if not isinstance(configuration, dict):
+        raise ValueError('Reconstruction handoff is missing configuration provenance')
+    if (Path(configuration.get('project_config', '')).resolve() != resolved.project_config
+            or Path(configuration.get('sample_dir', '')).resolve() != resolved.root):
+        raise ValueError('Reconstruction handoff belongs to another project or sample')
+    verify_configuration(configuration)
+    if handoff.get('inputs', {}).get('sources') != sample.metadata.get('sources'):
+        raise ValueError('Reconstruction input provenance is not current')
+    return handoff
 
 
 def run_batch(config_path: str | Path) -> dict:
@@ -367,7 +570,7 @@ def _run_samples(config_path: Path, root: Path, output: Path) -> dict:
         safe_destination = False
         try:
             _output_directory(output, path.relative_to(root))
-            safe_destination = True
+            safe_destination = path != root
             if sample_control.is_symlink() or (sample_control.exists() and not sample_control.is_dir()):
                 raise ValueError(f'Sample control directory must be an ordinary directory: {sample_control}')
             if path == root or any(other != path and (other in path.parents or path in other.parents) for other in paths):
