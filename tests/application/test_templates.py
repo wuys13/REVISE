@@ -71,7 +71,8 @@ EXPECTED = {
         "mode": "sr",
         "output_name": "REVISEVisiumMouseBrain_sc-SVC",
         "output_dir": "results/visium_mouse_brain_revise",
-        "ot_method": "pot",
+        "ot_method": "tacco",
+        "sr_cell_count_method": "cyto_linear_v1",
         "st_path": "raw_data/visium_mouse_brain/ST_mouse_brain_prepared.h5ad",
         "reference_path": "raw_data/visium_mouse_brain/scRNA_mouse_brain_prepared.h5ad",
         "pm_on_cell_path": "raw_data/visium_mouse_brain/PM_on_cell.csv",
@@ -136,7 +137,10 @@ def test_packaged_template_is_canonical_and_source_mirror_is_byte_exact(filename
     }
     if "pm_on_cell_path" in expected:
         expected_inputs["pm_on_cell"] = {"path": expected["pm_on_cell_path"]}
-    assert document["algorithm"] == {"ot_method": expected["ot_method"]}
+    expected_algorithm = {"ot_method": expected["ot_method"]}
+    if "sr_cell_count_method" in expected:
+        expected_algorithm["sr_cell_count_method"] = expected["sr_cell_count_method"]
+    assert document["algorithm"] == expected_algorithm
     assert document["inputs"] == expected_inputs
     assert document["preprocessing"] == expected["preprocessing"]
     assert document["global_anchoring"] == {"broad_column": "Level1"}

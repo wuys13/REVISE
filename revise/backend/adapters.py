@@ -544,7 +544,15 @@ class ScSvcSuperResolutionApplicationStrategy(RunnerBackedStrategy):
         ctx.runner = ScSrAppRunner(adata_st, adata_sc, conf, ctx.logger)
 
     def solve_ot(self, ctx) -> None:
-        ctx.runner_config.sr_allocation_callback = ctx.record_sr_allocation
+        cell_count = ctx.application_config_metadata.get("cell_count")
+
+        def record_sr_allocation(evidence) -> None:
+            record = dict(evidence)
+            if cell_count is not None:
+                record["cell_count"] = dict(cell_count)
+            ctx.record_sr_allocation(record)
+
+        ctx.runner_config.sr_allocation_callback = record_sr_allocation
         super().solve_ot(ctx)
 
     def finalize_svc(self, ctx) -> SVC:

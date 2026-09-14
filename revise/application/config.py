@@ -68,6 +68,7 @@ class ApplicationConfig:
     local_refinement_graph_spatial_neighbors: int | None
     local_refinement_match_spot_sum: bool | None
     ot_method: str | None
+    sr_cell_count_method: str | None
     pm_on_cell_path: Path | None
     output_root: Path
     output_dir: Path
@@ -167,6 +168,7 @@ _TOP_LEVEL_KEYS = {
 _SVC_TYPES = {"sp-SVC", "sc-SVC"}
 _SC_SVC_MODES = {"cluster", "sr"}
 _ST_FORMATS = {"h5ad", "spatialdata", "auto"}
+_SR_CELL_COUNT_METHODS = {"transcript_heuristic", "cyto_linear_v1"}
 _ALL_CELL_TYPES = {"", "all", "*", "__all__", "all_cell_types"}
 _MIGRATION_MESSAGES = {
     "application.sample_name": "use output.name",
@@ -440,10 +442,37 @@ def compile_application_config(
     algorithm = _mapping(document["algorithm"], "algorithm")
     if "base_config" in algorithm:
         raise ApplicationConfigError("algorithm.base_config is not public; the engine config is internally managed")
-    _reject_unknown(algorithm, {"ot_method"}, "algorithm")
-    ot_method = _optional_string(algorithm.get("ot_method"), "algorithm.ot_method")
+    _reject_unknown(
+        algorithm,
+        {"ot_method", "sr_cell_count_method"},
+        "algorithm",
+    )
+    raw_ot_method = algorithm.get("ot_method")
+    if raw_ot_method is None and svc_type == "sc-SVC" and mode == "sr":
+        raw_ot_method = "tacco"
+    ot_method = _optional_string(
+        raw_ot_method,
+        "algorithm.ot_method",
+    )
     if ot_method is not None and ot_method not in {"pot", "tacco"}:
         raise ApplicationConfigError("algorithm.ot_method must be pot or tacco")
+    if "sr_cell_count_method" in algorithm and not (
+        svc_type == "sc-SVC" and mode == "sr"
+    ):
+        raise ApplicationConfigError(
+            "algorithm.sr_cell_count_method is only valid for sc-SVC sr mode"
+        )
+    sr_cell_count_method = None
+    if svc_type == "sc-SVC" and mode == "sr":
+        sr_cell_count_method = _string(
+            algorithm.get("sr_cell_count_method", "cyto_linear_v1"),
+            "algorithm.sr_cell_count_method",
+        )
+        if sr_cell_count_method not in _SR_CELL_COUNT_METHODS:
+            raise ApplicationConfigError(
+                "algorithm.sr_cell_count_method must be one of: "
+                "transcript_heuristic, cyto_linear_v1"
+            )
 
     inputs = _mapping(document["inputs"], "inputs")
     _reject_unknown(inputs, {"st", "reference", "pm_on_cell"}, "inputs")
@@ -660,6 +689,7 @@ def compile_application_config(
         local_refinement_graph_spatial_neighbors=graph_spatial_neighbors,
         local_refinement_match_spot_sum=match_spot_sum,
         ot_method=ot_method,
+        sr_cell_count_method=sr_cell_count_method,
         pm_on_cell_path=pm_path,
         output_root=output_root,
         output_dir=output_dir,

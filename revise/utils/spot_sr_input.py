@@ -13,6 +13,10 @@ from scipy.spatial import cKDTree
 ALL_CELLS_IN_SPOT_KEY = "all_cells_in_spot"
 CELL_LOCATIONS_KEY = "revise_cell_locations"
 ESTIMATED_CELL_COUNT_COL = "estimated_cell_count"
+SR_CELL_COUNT_PROVENANCE_KEY = "revise_sr_cell_count"
+SR_CELL_COUNT_METHODS = frozenset(
+    {"transcript_heuristic", "cyto_linear_v1"}
+)
 
 
 def ensure_all_cells_in_spot(
@@ -24,6 +28,7 @@ def ensure_all_cells_in_spot(
     target_median_cells: int = 4,
     min_cells_per_spot: int = 1,
     max_cells_per_spot: int = 12,
+    cell_count_method: str = "transcript_heuristic",
 ) -> AnnData:
     """Ensure a spot-to-virtual-cell mapping exists for sc-SVC sr-mode inputs.
 
@@ -40,10 +45,16 @@ def ensure_all_cells_in_spot(
        available, assign real benchmark cell ids to the nearest spot. This keeps
        evaluation indices meaningful and avoids fabricating ids that cannot be
        matched back to the benchmark ground truth.
-    3. In normal application mode, estimate the number of virtual cells from
-       each spot's transcript count. This is intentionally a conservative
-       allocation heuristic, not a claim that true cell boundaries are known.
+    3. In normal application mode, estimate the number of virtual cells with
+       the configured cell-count method. This is an allocation estimate, not a
+       claim that true cell boundaries are known.
     """
+
+    if cell_count_method not in SR_CELL_COUNT_METHODS:
+        raise ValueError(
+            "cell_count_method must be one of: "
+            "transcript_heuristic, cyto_linear_v1"
+        )
 
     if key in st_adata.uns and st_adata.uns[key] is not None:
         mapping = _validate_all_cells_in_spot(
@@ -75,12 +86,15 @@ def ensure_all_cells_in_spot(
             )
         return st_adata
 
-    mapping = _build_mapping_from_transcript_counts(
-        st_adata,
-        target_median_cells=target_median_cells,
-        min_cells_per_spot=min_cells_per_spot,
-        max_cells_per_spot=max_cells_per_spot,
-    )
+    if cell_count_method == "cyto_linear_v1":
+        mapping = _build_mapping_from_cyto_linear_v1(st_adata)
+    else:
+        mapping = _build_mapping_from_transcript_counts(
+            st_adata,
+            target_median_cells=target_median_cells,
+            min_cells_per_spot=min_cells_per_spot,
+            max_cells_per_spot=max_cells_per_spot,
+        )
     st_adata.uns[key] = mapping
     _validate_optional_cell_locations(st_adata, mapping)
     _write_estimated_cell_count(st_adata, mapping)
@@ -88,10 +102,10 @@ def ensure_all_cells_in_spot(
         counts = st_adata.obs[ESTIMATED_CELL_COUNT_COL]
         logger.warning(
             "[spot-sr-input] st_adata.uns['%s'] is missing; generated default "
-            "virtual-cell ids from spot transcript counts "
-            "(target_median_cells=%d, min=%d, median=%.2f, max=%d).",
+            "virtual-cell ids with %s "
+            "(min=%d, median=%.2f, max=%d).",
             key,
-            target_median_cells,
+            cell_count_method,
             int(counts.min()),
             float(np.median(counts)),
             int(counts.max()),
@@ -282,6 +296,51 @@ def _build_mapping_from_transcript_counts(
             f"{spot_id}_vc_{idx:02d}" for idx in range(int(n_cells))
         ]
     return mapping
+
+
+def _build_mapping_from_cyto_linear_v1(
+    st_adata: AnnData,
+) -> Dict[str, List[str]]:
+    expression_score = _cyto_linear_v1_expression_score(st_adata)
+    estimated = np.maximum(
+        1,
+        np.rint(-13.2645109457 + 0.000681111936 * expression_score),
+    ).astype(np.int64)
+
+    mapping: Dict[str, List[str]] = {}
+    for spot_id, n_cells in zip(st_adata.obs_names.astype(str), estimated):
+        mapping[str(spot_id)] = [
+            f"{spot_id}_vc_{idx:02d}" for idx in range(int(n_cells))
+        ]
+    return mapping
+
+
+def _cyto_linear_v1_expression_score(st_adata: AnnData) -> np.ndarray:
+    """Compute the fixed count-model score from full-gene ``X``."""
+    raw_x = st_adata.X
+    if sparse.issparse(raw_x):
+        matrix = raw_x.tocsr().astype(np.float64, copy=False)
+        totals = np.asarray(matrix.sum(axis=1), dtype=np.float64).reshape(-1)
+        scores = np.zeros(matrix.shape[0], dtype=np.float64)
+        for row in range(matrix.shape[0]):
+            start, stop = matrix.indptr[row : row + 2]
+            if start == stop or totals[row] == 0.0:
+                continue
+            values = matrix.data[start:stop]
+            scores[row] = np.log2(
+                1.0 + 1e6 * values / totals[row]
+            ).sum()
+        return scores
+
+    matrix = np.asarray(raw_x, dtype=np.float64)
+    totals = matrix.sum(axis=1)
+    proportions = np.divide(
+        matrix,
+        totals[:, None],
+        out=np.zeros_like(matrix, dtype=np.float64),
+        where=totals[:, None] != 0.0,
+    )
+    return np.log2(1.0 + 1e6 * proportions).sum(axis=1)
 
 
 def _build_mapping_from_nearest_ground_truth_cells(

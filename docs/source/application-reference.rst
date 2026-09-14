@@ -90,7 +90,8 @@ non-negative integers.
 ``algorithm.ot_method`` is optional and, when supplied, is ``pot`` or
 ``tacco``. It selects both Global Anchoring and Local Refinement solvers. A
 missing or failing solver stops the request; REVISE does not substitute the
-other solver automatically.
+other solver automatically. sc-SVC SR defaults to ``tacco``; its Visium
+template records that choice explicitly.
 
 Cluster-mode fields
 -------------------
@@ -126,6 +127,24 @@ SR mode accepts ``strength`` and optional graph/mass controls:
        exp_neighbors: 10
        spatial_neighbors: 10
      match_spot_sum: true
+
+SR mode also accepts one cell-count method under ``algorithm``:
+
+.. code-block:: yaml
+
+   algorithm:
+     ot_method: tacco
+     sr_cell_count_method: cyto_linear_v1
+
+``cyto_linear_v1`` is the default. Before spatial or gene filtering, it uses
+the full-gene spot matrix ``X`` to compute
+``R_s = sum_g(log2(1 + 1e6 * X_sg / sum_g(X_sg)))`` and then
+``N_s = max(1, rint(-13.2645109457 + 0.000681111936 * R_s))``. Sparse input
+stays sparse and the estimate has no upper cap. Set
+``sr_cell_count_method: transcript_heuristic`` only to reproduce the previous
+median-four, 1--12-cell behavior. If ``uns["all_cells_in_spot"]`` is already
+present, that supplied mapping remains authoritative and neither estimator is
+run.
 
 ``strength: 0.0`` does not skip Local Refinement; it turns off posterior
 blending in its cost. SR inputs can optionally declare one exact
