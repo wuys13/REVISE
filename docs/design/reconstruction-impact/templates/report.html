@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{TITLE}}</title>
+  <style>
+    :root{
+      color-scheme:light;
+      --page:#f4f5f2;
+      --paper:#fff;
+      --ink:#243333;
+      --muted:#52665e;
+      --faint:#6d7a73;
+      --line:#d7dfda;
+      --line-strong:#9eb5ae;
+      --wash:#eef3ef;
+      --wash-strong:#e4ede8;
+      --accent:#1c6661;
+      --content-measure:76ch;
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html{background:var(--page)}
+    body{
+      margin:0;
+      min-width:0;
+      background:var(--page);
+      color:var(--ink);
+      font:15px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      text-rendering:optimizeLegibility;
+    }
+    img,svg,video,canvas{display:block;max-width:100%;height:auto}
+    button,input,select,textarea{font:inherit}
+    a{color:var(--accent);text-underline-offset:3px}
+    a:hover{color:#124b47}
+    :focus-visible{outline:2px solid #27736c;outline-offset:3px}
+    main{max-width:1560px;margin:0 auto;padding:32px clamp(18px,4vw,52px) 72px}
+    .report-layout{
+      display:grid;
+      grid-template-columns:clamp(196px,18vw,248px) minmax(0,1fr);
+      align-items:start;
+      gap:clamp(28px,4vw,64px);
+    }
+    .toc-panel{
+      position:sticky;
+      top:24px;
+      min-width:0;
+      max-height:calc(100vh - 48px);
+      color:var(--muted);
+    }
+    .toc-details{max-height:inherit;overflow-y:auto;overflow-x:hidden}
+    .toc-details>summary{
+      display:none;
+      color:var(--ink);
+      cursor:pointer;
+      font-weight:700;
+      list-style:none;
+    }
+    .toc-details>summary::-webkit-details-marker{display:none}
+    .toc-details>summary::after{content:"＋";float:right;color:var(--accent);font-weight:500}
+    .toc-details[open]>summary::after{content:"－"}
+    .toc-label{
+      margin:0 0 12px;
+      color:var(--faint);
+      font-size:11px;
+      font-weight:750;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+    }
+    .reading-toc{min-width:0}
+    .toc-list,.toc-list ul{list-style:none;margin:0;padding:0}
+    .toc-list ul{margin:3px 0 6px;padding-inline-start:14px}
+    .toc-list li{min-width:0}
+    .toc-list>li+li{margin-top:7px}
+    .toc-list ul>li+li{margin-top:2px}
+    .toc-list a{
+      display:block;
+      min-width:0;
+      padding:3px 8px;
+      color:var(--muted);
+      overflow-wrap:anywhere;
+      text-decoration:none;
+      line-height:1.4;
+    }
+    .toc-list a:hover{background:var(--wash);color:var(--ink)}
+    .toc-list a[aria-current="location"]{
+      background:var(--wash-strong);
+      color:#163f3d;
+      font-weight:700;
+    }
+    .report-content{min-width:0;max-width:1120px;overflow-wrap:anywhere}
+    header,.transition,.layer-intro,.module-intro,.identity,.report-purpose,.active-section{max-width:var(--content-measure)}
+    .report-kicker{
+      margin:0 0 10px;
+      color:var(--accent);
+      font-size:12px;
+      font-weight:750;
+      letter-spacing:.06em;
+    }
+    h1{margin:0 0 14px;font-size:clamp(28px,3vw,38px);line-height:1.25;letter-spacing:-.025em;overflow-wrap:anywhere}
+    h2{
+      margin:60px 0 13px;
+      border-top:1px solid var(--line-strong);
+      padding-top:18px;
+      font-size:clamp(22px,2.7vw,30px);
+      line-height:1.25;
+      letter-spacing:-.015em;
+      scroll-margin-top:24px;
+    }
+    h3{margin:30px 0 8px;font-size:20px;line-height:1.35;scroll-margin-top:24px}
+    h4{margin:24px 0 8px;font-size:16px;line-height:1.4;scroll-margin-top:24px}
+    p{margin:8px 0 14px}
+    .identity{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+    .report-purpose{margin-top:20px;color:#3f514a}
+    .active-section{
+      min-height:1.5em;
+      margin:18px 0 0;
+      color:var(--accent);
+      font-size:12px;
+      font-weight:650;
+    }
+    .transition{color:var(--muted)}
+    .overview-layer,.overview-main,.overview-hd,.body-layer,.hd-all,.audit-layer,.reference-details,.evidence-index{scroll-margin-top:24px}
+    .overview-table,.evidence-table,.foundation-table,.judgment-table,.comparison-table,.figure-evidence-table{
+      width:100%;
+      min-width:0;
+      border-collapse:collapse;
+      table-layout:auto;
+      background:var(--paper);
+    }
+    .table-scroll{
+      max-width:100%;
+      min-width:0;
+      margin:18px 0;
+      overflow-x:auto;
+      overflow-y:visible;
+      overscroll-behavior-x:contain;
+      -webkit-overflow-scrolling:touch;
+      background:var(--paper);
+      border-block:1px solid var(--line);
+    }
+    .table-scroll>table{width:100%;min-width:0}
+    th,td{
+      padding:11px 12px;
+      border-bottom:1px solid #dfe5df;
+      vertical-align:top;
+      text-align:left;
+      overflow-wrap:anywhere;
+    }
+    thead th{background:#e6eeea;color:#314945;font-size:12px;font-weight:750}
+    tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+    .judgment-table th,.judgment-table td,.comparison-table th,.comparison-table td,.figure-evidence-table th,.figure-evidence-table td{padding:9px 10px}
+    .judgment-table thead th,.comparison-table thead th,.figure-evidence-table thead th{background:var(--wash);color:#314945;font-size:12px}
+    .overview-table th:first-child{width:20%}
+    .overview-cell{width:26.666%;font-size:13px}
+    .overview-judgment{display:block;color:#34524c;font-weight:700}
+    .overview-headline{display:block;margin-top:7px;font-variant-numeric:tabular-nums}
+    .overview-headline strong{color:#1d514c}
+    .module-link{font-weight:700}
+    .evidence-question .question-label,.evidence-question .scope,.evidence-question .direction{display:block}
+    .evidence-question .scope{margin-top:5px;color:var(--accent);font-weight:700}
+    .evidence-question .direction{margin-top:7px;color:var(--muted);font-size:12px;font-weight:400}
+    .evidence-conclusions{font-size:14px}
+    .proof-metrics{margin-bottom:8px;font-size:12px;font-variant-numeric:tabular-nums}
+    .scale-proof-table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:11px}
+    .scale-proof-table th,.scale-proof-table td{padding:3px 4px;border:1px solid #dfe5df;white-space:nowrap}
+    .scale-proof-table th{background:#f0f4f0;font-weight:600;white-space:normal;overflow-wrap:normal;line-height:1.3}
+    .scale-proof-note{margin:2px 0 5px;color:var(--muted);font-size:11px;white-space:normal}
+    .local-matrix{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;table-layout:fixed}
+    .local-matrix th,.local-matrix td{width:25%;padding:6px;border:1px solid #dfe5df;text-align:right;overflow-wrap:normal;word-break:normal}
+    .local-matrix th:first-child{text-align:left;background:#f0f4f0}
+    .matrix-condition,.matrix-support{display:block;margin-top:4px;color:var(--muted);font-size:11px;font-weight:400;line-height:1.35}
+    .foundation-source,.section-summary{
+      max-width:var(--content-measure);
+      padding:10px 0;
+      border-block:1px solid var(--line);
+      color:#3e554d;
+    }
+    .section-summary.pending{color:var(--muted)}
+    .compact-note,.compact-note p{color:var(--muted);font-size:12px}
+    .compact-records{margin:12px 0;padding-inline-start:22px}
+    .proof-condition{margin-bottom:8px;color:var(--muted);font-size:12px}
+    .proof-links{font-size:12px}
+    .proof-links.empty,.empty{color:#78827c}
+    .csv-link{display:inline-block;margin:2px 4px 2px 0}
+    .audit-layer{padding:4px 0 10px}
+    details summary{cursor:pointer;color:var(--accent);font-weight:700;list-style-position:inside}
+    details summary::marker{color:var(--accent)}
+    .foundation-audit,.reference-details,.figure-audit{
+      margin:24px 0;
+      padding:0;
+      border-block:1px solid var(--line);
+      background:transparent;
+      border-radius:0;
+    }
+    .foundation-audit>summary,.reference-details>summary,.figure-audit>summary{padding:10px 0}
+    .report-module{margin:30px 0 46px;scroll-margin-top:24px}
+    .report-module h3{border:0;padding:0}
+    .node-narrative,.notebook-narrative{
+      max-width:var(--content-measure);
+      margin:20px 0 12px;
+      padding:11px 0;
+      border-block:1px solid var(--line);
+      background:transparent;
+    }
+    .node-narrative.pending,.notebook-narrative.pending{color:var(--muted)}
+    .node-narrative .narrative-title{margin:0 0 6px;font-size:17px}
+    .node-narrative .narrative-lead{margin:4px 0 8px}
+    .narrative-interpretations{margin:6px 0 8px;padding-inline-start:20px}
+    .narrative-next{margin:6px 0 0;color:#3f5f58}
+    .notebook-narrative h3{margin:0 0 5px;font-size:16px}
+    .reading-layer{margin:38px 0 54px;scroll-margin-top:24px}
+    .reading-group{margin:26px 0 38px;scroll-margin-top:24px}
+    .reading-group>h3{margin-top:0}
+    .result-lead{max-width:var(--content-measure);margin:10px 0 18px;color:#304841;font-size:16px;line-height:1.6}
+    .figure-entry{
+      display:grid;
+      grid-template-columns:minmax(15rem,24ch) minmax(0,1fr);
+      align-items:start;
+      gap:20px;
+      margin:24px 0;
+      padding-top:16px;
+      border-top:1px solid var(--line);
+    }
+    .figure-explanation{max-width:var(--content-measure);margin:0;color:var(--muted);font-size:13px}
+    .figure-explanation h4{margin:0 0 6px;color:var(--ink);font-size:15px}
+    .global-figure-note{margin-top:16px;padding-top:10px;border-top:1px dashed var(--line-strong)}
+    .figure-entry figure{min-width:0}
+    .baseline-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:18px 0 24px}
+    .baseline-panel{
+      min-width:0;
+      padding:12px 0 14px;
+      border-block:1px solid var(--line-strong);
+      background:transparent;
+    }
+    .baseline-panel h3,.baseline-panel h4{margin-top:0}
+    .baseline-panel p:last-child{margin-bottom:0}
+    .reading-next{max-width:var(--content-measure);margin:22px 0 0;padding-top:12px;border-top:1px solid var(--line);color:#3f5f58}
+    .gain-audit{
+      max-width:var(--content-measure);
+      margin:22px 0;
+      padding:11px 0;
+      border-block:1px dashed var(--line-strong);
+      color:#3f514a;
+      font-size:13px;
+    }
+    .gain-audit p:last-child{margin-bottom:0}
+    .figure-evidence-table th{width:18%}
+    .figure-evidence-table .evidence-figure{width:auto}
+    .figure-grid{display:grid;grid-template-columns:1fr;gap:14px}
+    figure.evidence-figure{margin:0;padding:8px;background:#fbfcfa;border:1px solid var(--line);border-radius:4px}
+    figure.evidence-figure img{width:100%;max-width:100%;height:auto;object-fit:contain;margin:auto}
+    figure.evidence-figure.shared img{max-width:100%}
+    figcaption{margin-top:7px;color:#54605a;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+    .figure-reference{display:block;margin:3px 0;font-size:12px}
+    .figure-original{display:inline-block;margin-top:7px;font-size:12px}
+    .web-question{margin:34px 0 42px;padding-top:18px;border-top:1px solid var(--line-strong);scroll-margin-top:24px}
+    .web-question>h3,.web-question>h4{margin-top:0}
+    .web-question .foundation-table td{overflow-wrap:normal}
+    .web-question .foundation-table td:first-child{white-space:nowrap}
+    .scope-results{margin:14px 0;padding-inline-start:22px}
+    .scope-results li+li{margin-top:6px}
+    pre,code{max-width:100%;overflow-wrap:anywhere;white-space:pre-wrap}
+    .evidence-index{margin-top:58px}
+    @media(max-width:1024px){
+      main{padding-top:20px}
+      .report-layout{display:block}
+      .toc-panel{
+        position:sticky;
+        top:0;
+        z-index:10;
+        max-height:none;
+        margin-bottom:26px;
+        padding:9px 0;
+        background:var(--page);
+        border-bottom:1px solid var(--line);
+      }
+      .toc-details{max-height:calc(100vh - 30px)}
+      .toc-details>summary{display:block;padding:4px 0}
+      .toc-details:not([open]) .toc-list{display:none}
+      .toc-label{display:none}
+      .report-content{max-width:none}
+      .report-content [id]{scroll-margin-top:78px}
+    }
+    @media(max-width:700px){
+      main{padding:14px 14px 52px}
+      .toc-panel{margin-bottom:20px}
+      h1{font-size:24px}
+      h2{margin-top:46px;padding-top:15px;font-size:23px}
+      h3{font-size:19px}
+      th,td{padding:9px 10px}
+      .table-scroll.has-overflow::before{content:"横向滚动可查看完整表格";display:block;padding:7px 10px;color:var(--muted);font-size:11px;position:sticky;left:0}
+      .table-scroll>.foundation-table{min-width:560px}
+      .table-scroll>.overview-table{min-width:820px}
+      .baseline-scope .table-scroll>.foundation-table{min-width:350px}
+      .overview-table th:first-child{width:24%}
+      .overview-cell{width:auto}
+      .figure-entry{grid-template-columns:1fr;gap:10px}
+      .baseline-grid{grid-template-columns:1fr;gap:22px}
+      .figure-grid{grid-template-columns:1fr}
+      .judgment-table,.comparison-table,.figure-evidence-table{table-layout:auto}
+    }
+    @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+  </style>
+</head>
+<body>
+  <main class="report-shell">
+    <div class="report-layout">
+      <aside class="toc-panel" aria-label="报告目录">
+        <details class="toc-details" open>
+          <summary>报告目录</summary>
+          <p class="toc-label">Report contents</p>
+          <nav class="reading-toc" aria-label="报告目录">{{NAV}}</nav>
+        </details>
+      </aside>
+      <div class="report-content">
+        <header id="report-header">
+          <p class="report-kicker">Raw → Recon · 标准化对照报告</p>
+          <h1>{{TITLE}}</h1>
+          <p class="identity">{{IDENTITY}}</p>
+          <p class="report-purpose">从总体差异、局部邻域到空间位置，逐层比较同一样本重建前后的分群、基因信息和状态分布。每项结果结合其比较条件与图形证据阅读。</p>
+          <p class="active-section" id="active-section" role="status" aria-live="polite">当前阅读位置：样本总览</p>
+        </header>
+        <section id="overview" class="report-overview">
+          <h2>样本总览</h2>
+          <p class="transition">五项固定问题概括本样本的 Raw → Recon 差异；点击行标题进入相应证据。</p>
+          {{OVERVIEW}}
+        </section>
+        <section id="body" class="report-body">
+          {{BODY}}
+        </section>
+        <section id="evidence-index" class="evidence-index">
+          <h2>证据索引</h2>
+          <p>下列原始表格与图片可用于核对正文中的定量对照和解释条件。</p>
+          {{EVIDENCE_LINKS}}
+        </section>
+      </div>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const toc = document.querySelector('.toc-panel');
+      const tocDetails = document.querySelector('.toc-details');
+      const activeLabel = document.getElementById('active-section');
+      if (!toc || !tocDetails) return;
+
+      const links = Array.from(toc.querySelectorAll('a[href^="#"]'));
+      const entries = links.map((link) => {
+        const id = decodeURIComponent(link.getAttribute('href').slice(1));
+        return {id, link, target: document.getElementById(id)};
+      }).filter((entry) => entry.id && entry.target);
+
+      const targetAncestors = (target) => {
+        const details = [];
+        let current = target;
+        while (current && current !== document.body) {
+          if (current.tagName === 'DETAILS') details.push(current);
+          current = current.parentElement;
+        }
+        return details;
+      };
+
+      const openTargetDetails = (target) => {
+        targetAncestors(target).forEach((details) => { details.open = true; });
+      };
+
+      const entryForTarget = (target) => {
+        let current = target;
+        while (current && current !== document.body) {
+          const entry = entries.find((candidate) => candidate.target === current);
+          if (entry) return entry;
+          current = current.parentElement;
+        }
+        return null;
+      };
+
+      const markActive = (target) => {
+        const entry = typeof target === 'string'
+          ? entries.find((candidate) => candidate.id === target)
+          : entryForTarget(target);
+        if (!entry) return;
+        entries.forEach((candidate) => {
+          const selected = candidate.id === entry.id;
+          candidate.link.classList.toggle('is-active', selected);
+          if (selected) candidate.link.setAttribute('aria-current', 'location');
+          else candidate.link.removeAttribute('aria-current');
+        });
+        if (activeLabel) activeLabel.textContent = `当前阅读位置：${entry.link.textContent.trim()}`;
+        if (!window.matchMedia('(max-width: 1024px)').matches) {
+          const box = tocDetails.getBoundingClientRect();
+          const linkBox = entry.link.getBoundingClientRect();
+          if (linkBox.bottom > box.bottom) tocDetails.scrollTop += linkBox.bottom - box.bottom + 12;
+          else if (linkBox.top < box.top) tocDetails.scrollTop -= box.top - linkBox.top + 12;
+        }
+      };
+
+      const reveal = (target, smooth) => {
+        if (!target) return;
+        openTargetDetails(target);
+        markActive(target);
+        window.requestAnimationFrame(() => {
+          target.scrollIntoView({
+            behavior: smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto',
+            block: 'start',
+            inline: 'nearest'
+          });
+        });
+      };
+
+      const resolveTarget = (id) => {
+        const exact = document.getElementById(id);
+        if (exact) return exact;
+        // Old evidence-row links now point to their question; removed All
+        // placeholders lead to the existing independent global results.
+        const questionId = id.startsWith('row-module-') ? id.slice(4) : id;
+        const modules = Array.from(document.querySelectorAll('.report-content [id^="module-"]'));
+        const candidates = modules.filter((target) => questionId === target.id || questionId.startsWith(target.id + '-'));
+        const allScope = /-all(?:-|$)/.test(id);
+        const matching = candidates.filter((target) => !allScope || target.id.endsWith('-all'));
+        matching.sort((a, b) => b.id.length - a.id.length);
+        return matching[0] || (allScope ? document.getElementById('hd-all') : null);
+      };
+
+      const targetFromHash = () => {
+        if (!window.location.hash) return null;
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        return id ? resolveTarget(id) : null;
+      };
+
+      const revealHash = (smooth) => {
+        const target = targetFromHash();
+        if (target) reveal(target, smooth);
+      };
+
+      tocDetails.addEventListener('toggle', () => {
+        if (!window.matchMedia('(max-width: 1024px)').matches) tocDetails.open = true;
+      });
+
+      document.addEventListener('click', (event) => {
+        const link = event.target instanceof Element ? event.target.closest('a[href^="#"]') : null;
+        if (!link || !document.documentElement.contains(link)) return;
+        const target = resolveTarget(decodeURIComponent(link.getAttribute('href').slice(1)));
+        if (!target) return;
+        event.preventDefault();
+        const nextHash = `#${encodeURIComponent(target.id)}`;
+        if (window.location.hash !== nextHash) window.history.pushState(null, '', nextHash);
+        reveal(target, true);
+        if (window.matchMedia('(max-width: 1024px)').matches) tocDetails.open = false;
+      });
+
+      window.addEventListener('hashchange', () => revealHash(false));
+      window.addEventListener('popstate', () => revealHash(false));
+
+      let framePending = false;
+      const updatePosition = () => {
+        framePending = false;
+        const offset = window.matchMedia('(max-width: 1024px)').matches ? 100 : 40;
+        const candidates = entries.filter(({target}) =>
+          target.getClientRects().length &&
+          !targetAncestors(target).some((details) => details !== target && !details.open)
+        );
+        const preceding = candidates.filter(({target}) => target.getBoundingClientRect().top <= offset);
+        const next = preceding.at(-1) || candidates[0];
+        if (next) markActive(next.target);
+      };
+      window.addEventListener('scroll', () => {
+        if (!framePending) {
+          framePending = true;
+          window.requestAnimationFrame(updatePosition);
+        }
+      }, {passive:true});
+      const updateTables = () => document.querySelectorAll('.table-scroll').forEach((wrapper) => {
+        wrapper.classList.toggle('has-overflow', wrapper.scrollWidth > wrapper.clientWidth + 1);
+      });
+      window.addEventListener('resize', updateTables);
+      document.addEventListener('toggle', updateTables, true);
+      updateTables();
+      updatePosition();
+
+      if (window.matchMedia('(max-width: 1024px)').matches) tocDetails.open = false;
+      window.requestAnimationFrame(() => revealHash(false));
+    })();
+  </script>
+</body>
+</html>
