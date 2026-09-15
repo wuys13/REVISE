@@ -1,0 +1,734 @@
+{
+  "schema_version": 1,
+  "purpose": "Freeze existing descriptive metrics before format migration and seed/sensitivity corrections; not a verified reconstruction handoff or new scientific run.",
+  "source_commit": "3bd0934b37b794830a0be8f355f24067afe512a9",
+  "source_file_sha256_at_commit": {
+    "revise/analysis/reconstruction_impact.py": "b6a5ab270a6fe16e995f1d58a362567836b524876846baf5b3c164e740900842",
+    "revise/analysis/basic/partition_change.py": "99c202b5d561b72c1f3f28bb09df4758a1fed22207b150113195356eb9eae585",
+    "revise/analysis/basic/spatial_region.py": "64aaa14b2b898c933d34a2d70f8015283dcc45c702e85a07b74149c0ef980407",
+    "reproduce/case/reconstruction_impact/build_notebooks.py": "8d923b59f5272634e05bec55fcd66377bbd274a9722fb8c1a3fbb4c4c2afbec3",
+    "reproduce/case/reconstruction_impact/compute_route_checkpoint.py": "416085fc12b4771232236fd934bafb31e026e2e097339e0341704e0804639f84"
+  },
+  "routes": [
+    {
+      "sample_id": "P1CRC_VisiumHD",
+      "status": "legacy_analysis_baseline_only",
+      "manifest": {
+        "analysis_contract_version": 4,
+        "anatomy_scale": {
+          "cell_equivalent_um": 8.0,
+          "coordinate_unit": "coordinate",
+          "main_window_area_um2": 1024.0,
+          "main_window_cells_per_side": 4.0,
+          "main_window_side_um": 32.0,
+          "microns_per_coordinate": 0.27380817798463214,
+          "min_parent_units": 4,
+          "origin_x_um": 147.91449127123377,
+          "origin_y_um": 3374.3497596329853
+        },
+        "inputs": {
+          "level2_reference": {
+            "path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
+            "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+          },
+          "raw": {
+            "path": "raw_data/Real_application/P1CRC_HD.h5ad",
+            "sha256": "45e97b87a5f44d5b66f62603bee15db9b5aa6f9ad6e4d8dd4fddcd0e4b6699a2"
+          },
+          "reconstructed": {
+            "path": "results/sp_SVC_case/P1CRC/sp_SVC.h5ad",
+            "sha256": "c801e7040e8ff9a2238fcfeae95726a1db76cc3417066b4badec3c3b357a757b"
+          }
+        },
+        "partition_preprocessing": {
+          "feature_selection": "raw_canonical_seurat_v3_shared",
+          "leiden_backend": "igraph",
+          "leiden_random_state": 42,
+          "raw_qc_min_cells": 3,
+          "raw_qc_min_genes": 50
+        },
+        "raw_level2_mapping": {
+          "Fibroblast": {
+            "method": "pot",
+            "n_mapped_level2": 4,
+            "n_missing": 0,
+            "n_raw_units": 23298,
+            "n_reference_cells": 21803,
+            "n_reference_level2": 4,
+            "parent": "Fibroblast",
+            "reference_filter_column": null,
+            "reference_filter_value": null,
+            "source": "raw_expression_reference_level2"
+          },
+          "Mono_Macro": {
+            "method": "pot",
+            "n_mapped_level2": 4,
+            "n_missing": 0,
+            "n_raw_units": 24307,
+            "n_reference_cells": 18856,
+            "n_reference_level2": 4,
+            "parent": "Mono_Macro",
+            "reference_filter_column": null,
+            "reference_filter_value": null,
+            "source": "raw_expression_reference_level2"
+          },
+          "T": {
+            "method": "pot",
+            "n_mapped_level2": 4,
+            "n_missing": 0,
+            "n_raw_units": 10475,
+            "n_reference_cells": 28695,
+            "n_reference_level2": 4,
+            "parent": "T",
+            "reference_filter_column": null,
+            "reference_filter_value": null,
+            "source": "raw_expression_reference_level2"
+          }
+        },
+        "route": "sp_svc",
+        "sampling": {
+          "full_switch": false,
+          "global_input": 30000,
+          "global_raw_qc_retained": 25060
+        }
+      },
+      "small_file_identities": [
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/manifest.json",
+          "sha256": "2a686bf9673429109f25a2d775ee76d4648b73ce7d8df99fa734fc16b616067b"
+        },
+        {
+          "path": "configs/analysis/reconstruction_impact_visiumhd_p1crc.yaml",
+          "sha256": "dc4d63e7a42f43c27b8647c8d842897002924dbee1f979055a48fae2c7cc9ecc"
+        },
+        {
+          "path": "reproduce/case/reconstruction_impact/VisiumHD_sp_SVC_Reconstruction_Impact.ipynb",
+          "sha256": "f048c918b6c504178f533c4f1416f9506bf9763161e689fde8b7bc9f88302b46"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/Fibroblast/st_unit/partition_summary.csv",
+          "sha256": "121f22d689d3b5c4a3c9a45eaa649953b60d2677016cbfc59c858d83b0719b44"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/Fibroblast/st_unit/raw_to_recon_same_resolution_summary.csv",
+          "sha256": "08c86bbe692a2b19950c5b4e1c7171262601e27bd837299676ec2abc6e809921"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/Mono_Macro/st_unit/partition_summary.csv",
+          "sha256": "6e41144cd55e12adc80caad9f163caff755ba551af92950c89450b9ac17a91dd"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/Mono_Macro/st_unit/raw_to_recon_same_resolution_summary.csv",
+          "sha256": "9f355acab53c1582c4a8c6f97299124418f3710e690d22c814c283c95e10e56c"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/T/st_unit/partition_summary.csv",
+          "sha256": "6483da31d12b07240be5d45389b492f450bf9dd02e246f338d6e9838744015aa"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/T/st_unit/raw_to_recon_same_resolution_summary.csv",
+          "sha256": "596186c41bf75ad0b992922d58f48d53540bccc0bfafe4492aced66f56e8ffc5"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/global/st_unit/partition_summary.csv",
+          "sha256": "d8debb4645f7abb05d50aa1a08a0781548a948e4dbd7a99fb462545cfc57cfcc"
+        },
+        {
+          "path": "output/reconstruction_impact/P1CRC_VisiumHD/global/st_unit/raw_to_recon_same_resolution_summary.csv",
+          "sha256": "d61d611c9ddc79c5d948bb5d4e51dd4b4ab8f1ed347fd8ee87b84626a950d8d3"
+        }
+      ],
+      "partition_tables": {
+        "Fibroblast/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_expression",
+            "n_units": "23298",
+            "n_raw_clusters": "4",
+            "n_recon_clusters": "4",
+            "matched_accuracy": "0.4232552150399176",
+            "st_unit_change_fraction": "0.5767447849600824",
+            "matched_macro_f1": "0.28412163298679255",
+            "balanced_cluster_change": "0.7158783670132074",
+            "ARI": "0.1257633162919521",
+            "AMI": "0.16689811481272407",
+            "NMI": "0.16704292396997572",
+            "VI": "1.8575808388991846",
+            "status": "ok",
+            "resolution": "0.3",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "ok",
+            "headline_eligible": "True"
+          }
+        ],
+        "Fibroblast/st_unit/raw_to_recon_same_resolution_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_same_resolution",
+            "n_units": "23298",
+            "n_raw_clusters": "4",
+            "n_recon_clusters": "6",
+            "matched_accuracy": "0.3659970812945317",
+            "st_unit_change_fraction": "0.6340029187054683",
+            "matched_macro_f1": "0.23614383675743908",
+            "balanced_cluster_change": "0.7638561632425609",
+            "ARI": "0.10480663149630931",
+            "AMI": "0.1493510256401189",
+            "NMI": "0.149544660958637",
+            "VI": "2.4104821058321426",
+            "status": "ok"
+          }
+        ],
+        "Mono_Macro/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_expression",
+            "n_units": "24307",
+            "n_raw_clusters": "6",
+            "n_recon_clusters": "6",
+            "matched_accuracy": "0.3143127494137491",
+            "st_unit_change_fraction": "0.6856872505862509",
+            "matched_macro_f1": "0.23215750391291246",
+            "balanced_cluster_change": "0.7678424960870875",
+            "ARI": "0.015442943237071792",
+            "AMI": "0.10985433997818492",
+            "NMI": "0.11018241360018428",
+            "VI": "2.4875938849384656",
+            "status": "ok",
+            "resolution": "0.06",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "ok",
+            "headline_eligible": "True"
+          }
+        ],
+        "Mono_Macro/st_unit/raw_to_recon_same_resolution_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_same_resolution",
+            "n_units": "24307",
+            "n_raw_clusters": "6",
+            "n_recon_clusters": "11",
+            "matched_accuracy": "0.3208129345456041",
+            "st_unit_change_fraction": "0.6791870654543959",
+            "matched_macro_f1": "0.17397319723637575",
+            "balanced_cluster_change": "0.8260268027636243",
+            "ARI": "0.07429496601620687",
+            "AMI": "0.14027235464783855",
+            "NMI": "0.14075608406193255",
+            "VI": "3.1500601682269753",
+            "status": "ok"
+          }
+        ],
+        "T/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_expression",
+            "n_units": "10475",
+            "n_raw_clusters": "3",
+            "n_recon_clusters": "5",
+            "matched_accuracy": "0.32019093078758953",
+            "st_unit_change_fraction": "0.6798090692124105",
+            "matched_macro_f1": "0.16656997557779896",
+            "balanced_cluster_change": "0.833430024422201",
+            "ARI": "0.00020868629596604654",
+            "AMI": "0.0223087013397364",
+            "NMI": "0.022665517978945192",
+            "VI": "2.0470918837915875",
+            "status": "ok",
+            "resolution": "0.02",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "unmatched_cluster_complexity",
+            "headline_eligible": "False"
+          }
+        ],
+        "T/st_unit/raw_to_recon_same_resolution_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_same_resolution",
+            "n_units": "10475",
+            "n_raw_clusters": "3",
+            "n_recon_clusters": "19",
+            "matched_accuracy": "0.3629594272076372",
+            "st_unit_change_fraction": "0.6370405727923628",
+            "matched_macro_f1": "0.05902364749232023",
+            "balanced_cluster_change": "0.9409763525076797",
+            "ARI": "0.039084785366990595",
+            "AMI": "0.044404590205875456",
+            "NMI": "0.04573243741858613",
+            "VI": "2.586341145827842",
+            "status": "ok"
+          }
+        ],
+        "global/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_expression",
+            "n_units": "25060",
+            "n_raw_clusters": "11",
+            "n_recon_clusters": "11",
+            "matched_accuracy": "0.5563048683160414",
+            "st_unit_change_fraction": "0.4436951316839586",
+            "matched_macro_f1": "0.27782447428959656",
+            "balanced_cluster_change": "0.7221755257104034",
+            "ARI": "0.42985751476327216",
+            "AMI": "0.49313793005611306",
+            "NMI": "0.4936750349666014",
+            "VI": "1.939999145977473",
+            "status": "ok",
+            "resolution": "0.06",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "ok",
+            "headline_eligible": "True"
+          }
+        ],
+        "global/st_unit/raw_to_recon_same_resolution_summary.csv": [
+          {
+            "comparison_edge": "raw_to_recon_same_resolution",
+            "n_units": "25060",
+            "n_raw_clusters": "11",
+            "n_recon_clusters": "12",
+            "matched_accuracy": "0.5560255387071029",
+            "st_unit_change_fraction": "0.4439744612928971",
+            "matched_macro_f1": "0.2546254115435153",
+            "balanced_cluster_change": "0.7453745884564846",
+            "ARI": "0.4304034446916473",
+            "AMI": "0.4886142038091432",
+            "NMI": "0.4892037555797218",
+            "VI": "1.9808319658788238",
+            "status": "ok"
+          }
+        ]
+      },
+      "handoff_status": "not_verified",
+      "h5ad_digest_validation": "existing manifest values retained; not rehashed for this snapshot",
+      "missing_provenance": [
+        "engine_run_manifest",
+        "generation_command",
+        "generation_environment",
+        "verified_reconstruction_handoff"
+      ],
+      "current_axes": [
+        {
+          "path": "raw_data/Real_application/P1CRC_HD.h5ad",
+          "file_size_bytes_at_snapshot": 1158673200,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 507684,
+            "unique": true,
+            "sha256": "e9479981a7f6a637e21c32221a013778abc907645a0f5707f9b133f87c98e3e7"
+          },
+          "var": {
+            "n": 18085,
+            "unique": true,
+            "sha256": "e37871e8150cb9b31bf0d215d8e44519ab0aadcc79e7de54faba12a4a6111d7b"
+          }
+        },
+        {
+          "path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "file_size_bytes_at_snapshot": 1600498681,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 222815,
+            "unique": true,
+            "sha256": "c69cffd09ed51b07cac14f2f6df3b11f88f284b4e8a0660469e34c480cc1a3de"
+          },
+          "var": {
+            "n": 18071,
+            "unique": true,
+            "sha256": "c8fe0eb7f6d9eb95a1834a2b6440de4ef57b68466e4fedc2544085f7a3d23d23"
+          }
+        },
+        {
+          "path": "results/sp_SVC_case/P1CRC/sp_SVC.h5ad",
+          "file_size_bytes_at_snapshot": 7644180445,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 424433,
+            "unique": true,
+            "sha256": "45f413fad58cf7f16d20d2ad76e411f1129d0886021c31f7d3ab07aa0dcfc84a"
+          },
+          "var": {
+            "n": 12926,
+            "unique": true,
+            "sha256": "dd6dc46b57f53abef00893cc5a49350a093ea57512f2713ef2a1fc60fec63f94"
+          }
+        }
+      ]
+    },
+    {
+      "sample_id": "P2CRC_Xenium_ThreeParents",
+      "status": "legacy_analysis_baseline_only",
+      "manifest": {
+        "analysis_contract_version": 4,
+        "anatomy_scale": {
+          "cell_equivalent_um": 8.0,
+          "coordinate_unit": "coordinate",
+          "main_window_area_um2": 576.0,
+          "main_window_cells_per_side": 3.0,
+          "main_window_side_um": 24.0,
+          "microns_per_coordinate": 0.2125,
+          "min_parent_units": 4,
+          "origin_x_um": 8355.3882159348,
+          "origin_y_um": -100.3192451015774
+        },
+        "inputs": {
+          "level2_reference": {
+            "path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
+            "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+          },
+          "raw": {
+            "path": "raw_data/Real_application/P2CRC_Xenium.h5ad",
+            "sha256": "2e0f31756e6dc2f84d258d48ec02ee38b1c188e815eb1910536f348afabaa840"
+          }
+        },
+        "parents": {
+          "Fibroblast": {
+            "cohort_audit": {
+              "carrier_units": 17455,
+              "excluded_raw_level1_mismatch": 219,
+              "parent": "Fibroblast",
+              "raw_level1_parent_units": 17236
+            },
+            "expression_h5ad": "results/sc_SVC_case/P2CRC_Xenium/Fibroblast/expr.h5ad",
+            "raw_level2_mapping": {
+              "method": "tacco",
+              "n_mapped_level2": 4,
+              "n_missing": 0,
+              "n_raw_units": 17236,
+              "n_reference_cells": 2087,
+              "n_reference_level2": 4,
+              "parent": "Fibroblast",
+              "reference_filter_column": "Patient",
+              "reference_filter_value": "P2CRC",
+              "source": "raw_expression_reference_level2"
+            },
+            "spatial_expression_identical": true
+          },
+          "Mono_Macro": {
+            "cohort_audit": {
+              "carrier_units": 17605,
+              "excluded_raw_level1_mismatch": 248,
+              "parent": "Mono_Macro",
+              "raw_level1_parent_units": 17357
+            },
+            "expression_h5ad": "results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/expr.h5ad",
+            "raw_level2_mapping": {
+              "method": "tacco",
+              "n_mapped_level2": 4,
+              "n_missing": 0,
+              "n_raw_units": 17357,
+              "n_reference_cells": 3505,
+              "n_reference_level2": 4,
+              "parent": "Mono_Macro",
+              "reference_filter_column": "Patient",
+              "reference_filter_value": "P2CRC",
+              "source": "raw_expression_reference_level2"
+            },
+            "spatial_expression_identical": true
+          },
+          "T": {
+            "cohort_audit": {
+              "carrier_units": 14219,
+              "excluded_raw_level1_mismatch": 232,
+              "parent": "T",
+              "raw_level1_parent_units": 13987
+            },
+            "expression_h5ad": "results/sc_SVC_case/P2CRC_Xenium/T/expr.h5ad",
+            "raw_level2_mapping": {
+              "method": "tacco",
+              "n_mapped_level2": 4,
+              "n_missing": 0,
+              "n_raw_units": 13987,
+              "n_reference_cells": 4964,
+              "n_reference_level2": 4,
+              "parent": "T",
+              "reference_filter_column": "Patient",
+              "reference_filter_value": "P2CRC",
+              "source": "raw_expression_reference_level2"
+            },
+            "spatial_expression_identical": true
+          }
+        },
+        "route": "sc_svc"
+      },
+      "small_file_identities": [
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/manifest.json",
+          "sha256": "a93064bbe2846b636f5e7614ce401c9c543c5eae38eb206e4ef5e6c9090d975b"
+        },
+        {
+          "path": "configs/analysis/reconstruction_impact_xenium_p2crc_fibroblast.yaml",
+          "sha256": "c55d2f52e15ea06847524dcef0aa6191b38b9fe43b9f70c40c762c945528b481"
+        },
+        {
+          "path": "reproduce/case/reconstruction_impact/Xenium_sc_SVC_Fibroblast_Reconstruction_Impact.ipynb",
+          "sha256": "f13b53eb7994d997345a95b0b00a4607163ae43a6e4bfb9c322fc2a35db72a63"
+        },
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/Fibroblast/st_unit/partition_summary.csv",
+          "sha256": "a79f81e585830cb4c101c957b2e4234e5b55fe1de0ee4d800f177c828b3a3f94"
+        },
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/Fibroblast/st_unit/raw_to_final_svc_complexity_diagnostic_summary.csv",
+          "sha256": "397eb5cdffb796120a41a459b91da9759a4a66ae2bb361f191109b753b3e949d"
+        },
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/Mono_Macro/st_unit/partition_summary.csv",
+          "sha256": "043b92acedfaa8aff68992b6ca0dd56612b539ffdc66e6ec250639c833750f84"
+        },
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/Mono_Macro/st_unit/raw_to_final_svc_complexity_diagnostic_summary.csv",
+          "sha256": "acd69d2c051a2e892d4accef3e009527dc3e007038f5c93a93f1bfd07e4891b3"
+        },
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/T/st_unit/partition_summary.csv",
+          "sha256": "60025c442697ae0900db5f4dc8196c518fae79838bc0d6b7bc86df8137202119"
+        },
+        {
+          "path": "output/reconstruction_impact/P2CRC_Xenium_ThreeParents/T/st_unit/raw_to_final_svc_complexity_diagnostic_summary.csv",
+          "sha256": "e53d85a5ed2c666a9598d9a0e9dbe546ef983afea1c15158ee575f25dd378f2c"
+        }
+      ],
+      "partition_tables": {
+        "Fibroblast/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_final_svc",
+            "n_units": "17236",
+            "n_raw_clusters": "10",
+            "n_recon_clusters": "10",
+            "matched_accuracy": "0.4214434903689951",
+            "st_unit_change_fraction": "0.5785565096310049",
+            "matched_macro_f1": "0.39561820096249667",
+            "balanced_cluster_change": "0.6043817990375033",
+            "ARI": "0.24848044345530018",
+            "AMI": "0.3417714433509913",
+            "NMI": "0.34251821459853876",
+            "VI": "2.7479635416516808",
+            "status": "ok",
+            "resolution": "1.06",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "ok",
+            "headline_eligible": "True"
+          }
+        ],
+        "Fibroblast/st_unit/raw_to_final_svc_complexity_diagnostic_summary.csv": [
+          {
+            "comparison_edge": "raw_to_final_svc_complexity_diagnostic",
+            "n_units": "17236",
+            "n_raw_clusters": "5",
+            "n_recon_clusters": "10",
+            "matched_accuracy": "0.48746809004409375",
+            "st_unit_change_fraction": "0.5125319099559063",
+            "matched_macro_f1": "0.2793341069135102",
+            "balanced_cluster_change": "0.7206658930864898",
+            "ARI": "0.2849580703757907",
+            "AMI": "0.3756846588370245",
+            "NMI": "0.3760583395707814",
+            "VI": "2.181728877305167",
+            "status": "ok"
+          }
+        ],
+        "Mono_Macro/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_final_svc",
+            "n_units": "17357",
+            "n_raw_clusters": "8",
+            "n_recon_clusters": "8",
+            "matched_accuracy": "0.5192717635536095",
+            "st_unit_change_fraction": "0.4807282364463905",
+            "matched_macro_f1": "0.574330886387875",
+            "balanced_cluster_change": "0.425669113612125",
+            "ARI": "0.2888560999951626",
+            "AMI": "0.4156238462157964",
+            "NMI": "0.4160644547994499",
+            "VI": "2.191342824826988",
+            "status": "ok",
+            "resolution": "0.52",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "ok",
+            "headline_eligible": "True"
+          }
+        ],
+        "Mono_Macro/st_unit/raw_to_final_svc_complexity_diagnostic_summary.csv": [
+          {
+            "comparison_edge": "raw_to_final_svc_complexity_diagnostic",
+            "n_units": "17357",
+            "n_raw_clusters": "7",
+            "n_recon_clusters": "8",
+            "matched_accuracy": "0.5183499452670393",
+            "st_unit_change_fraction": "0.48165005473296074",
+            "matched_macro_f1": "0.5547217265812832",
+            "balanced_cluster_change": "0.44527827341871684",
+            "ARI": "0.2669704765870762",
+            "AMI": "0.40520408097965066",
+            "NMI": "0.40560466737718737",
+            "VI": "2.1403179917040314",
+            "status": "ok"
+          }
+        ],
+        "T/st_unit/partition_summary.csv": [
+          {
+            "comparison_edge": "raw_to_final_svc",
+            "n_units": "13987",
+            "n_raw_clusters": "7",
+            "n_recon_clusters": "7",
+            "matched_accuracy": "0.5061128190462572",
+            "st_unit_change_fraction": "0.49388718095374284",
+            "matched_macro_f1": "0.444670100361861",
+            "balanced_cluster_change": "0.5553298996381391",
+            "ARI": "0.2955069378621402",
+            "AMI": "0.3887053593497904",
+            "NMI": "0.38914551000392755",
+            "VI": "2.18736543042131",
+            "status": "ok",
+            "resolution": "0.54",
+            "resolution_source": "matched_cluster_count",
+            "matched_cluster_status": "ok",
+            "headline_eligible": "True"
+          }
+        ],
+        "T/st_unit/raw_to_final_svc_complexity_diagnostic_summary.csv": [
+          {
+            "comparison_edge": "raw_to_final_svc_complexity_diagnostic",
+            "n_units": "13987",
+            "n_raw_clusters": "6",
+            "n_recon_clusters": "7",
+            "matched_accuracy": "0.6009866304425537",
+            "st_unit_change_fraction": "0.39901336955744626",
+            "matched_macro_f1": "0.5361559912697215",
+            "balanced_cluster_change": "0.46384400873027853",
+            "ARI": "0.33554545622815124",
+            "AMI": "0.38417212598332484",
+            "NMI": "0.38454026625454785",
+            "VI": "2.2103565192758663",
+            "status": "ok"
+          }
+        ]
+      },
+      "handoff_status": "not_verified",
+      "h5ad_digest_validation": "existing manifest values retained; not rehashed for this snapshot",
+      "missing_provenance": [
+        "engine_run_manifest",
+        "generation_command",
+        "generation_environment",
+        "verified_reconstruction_handoff",
+        "spatial_and_expression_output_digests"
+      ],
+      "current_axes": [
+        {
+          "path": "raw_data/Real_application/P2CRC_Xenium.h5ad",
+          "file_size_bytes_at_snapshot": 264857917,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 340837,
+            "unique": true,
+            "sha256": "c02f533a136d0f3c00eb0e5a51aa7018b763fec500dfa0c6c5a4b23e79f34708"
+          },
+          "var": {
+            "n": 422,
+            "unique": true,
+            "sha256": "29c9135187ac4f23a829ba2b9137d6237cd2eb1deb04afa092dc0a0234549cc8"
+          }
+        },
+        {
+          "path": "raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "file_size_bytes_at_snapshot": 1600498681,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 222815,
+            "unique": true,
+            "sha256": "c69cffd09ed51b07cac14f2f6df3b11f88f284b4e8a0660469e34c480cc1a3de"
+          },
+          "var": {
+            "n": 18071,
+            "unique": true,
+            "sha256": "c8fe0eb7f6d9eb95a1834a2b6440de4ef57b68466e4fedc2544085f7a3d23d23"
+          }
+        },
+        {
+          "path": "results/sc_SVC_case/P2CRC_Xenium/Fibroblast/expr.h5ad",
+          "file_size_bytes_at_snapshot": 13067013,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 2087,
+            "unique": true,
+            "sha256": "0cfdf308439aa3901c5694cb24e61d873f479d6bf8617b2b0cb7950141b11998"
+          },
+          "var": {
+            "n": 13088,
+            "unique": true,
+            "sha256": "40d033ebd92204243d2e69182dbc32d25ab808b4b9356ba22e46abb1e2aac6cd"
+          }
+        },
+        {
+          "path": "results/sc_SVC_case/P2CRC_Xenium/Fibroblast/spatial.h5ad",
+          "file_size_bytes_at_snapshot": 13664218,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 17455,
+            "unique": true,
+            "sha256": "f53567e8b8916bd96b90d6cf02339cbce92eae8101bbffa7902aab054a4ae7a9"
+          },
+          "var": {
+            "n": 343,
+            "unique": true,
+            "sha256": "7b823a1645833967d17d69dad9bd09a8b44b98381035e3c5bb1543df95dc7491"
+          }
+        },
+        {
+          "path": "results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/expr.h5ad",
+          "file_size_bytes_at_snapshot": 22990235,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 3505,
+            "unique": true,
+            "sha256": "36235150477a32509f59bfd5ca7b0cf9af08c3c585df9527798694523c827ecd"
+          },
+          "var": {
+            "n": 13088,
+            "unique": true,
+            "sha256": "40d033ebd92204243d2e69182dbc32d25ab808b4b9356ba22e46abb1e2aac6cd"
+          }
+        },
+        {
+          "path": "results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/spatial.h5ad",
+          "file_size_bytes_at_snapshot": 14376254,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 17605,
+            "unique": true,
+            "sha256": "6ec93e66b53d135e8baff533e5a3f944bdcbd9240cafa20b608bb9f0b7577324"
+          },
+          "var": {
+            "n": 343,
+            "unique": true,
+            "sha256": "7b823a1645833967d17d69dad9bd09a8b44b98381035e3c5bb1543df95dc7491"
+          }
+        },
+        {
+          "path": "results/sc_SVC_case/P2CRC_Xenium/T/expr.h5ad",
+          "file_size_bytes_at_snapshot": 32420300,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 4964,
+            "unique": true,
+            "sha256": "b0444375cc4da00f3f395522ee623e355b75556332e0be30b9b076e5962e4555"
+          },
+          "var": {
+            "n": 13088,
+            "unique": true,
+            "sha256": "40d033ebd92204243d2e69182dbc32d25ab808b4b9356ba22e46abb1e2aac6cd"
+          }
+        },
+        {
+          "path": "results/sc_SVC_case/P2CRC_Xenium/T/spatial.h5ad",
+          "file_size_bytes_at_snapshot": 11676682,
+          "axis_digest_encoding": "JSON UTF-8 string array, compact separators, original order",
+          "obs": {
+            "n": 14219,
+            "unique": true,
+            "sha256": "10dadec07bfeb85891c034f5fedc6f85ecd7fc84817d50bcb24b9a17d9cb76d4"
+          },
+          "var": {
+            "n": 343,
+            "unique": true,
+            "sha256": "7b823a1645833967d17d69dad9bd09a8b44b98381035e3c5bb1543df95dc7491"
+          }
+        }
+      ]
+    }
+  ]
+}

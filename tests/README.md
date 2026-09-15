@@ -82,6 +82,36 @@ environment variables documented in their modules and CI jobs.
 | `integration/distribution/test_artifacts.py` | Build metadata and artifacts | Exact wheel/sdist contents and clean installation | Release candidate | Packaging only |
 | `integration/solvers/test_tacco_solver_smoke.py` | Optional TACCO installation | Real TACCO 0.5.0 GA/LR smoke and import order | TACCO/CI release gate | Tiny solver smoke; no parity claim |
 | `integration/solvers/test_local_refinement_solver_smoke.py` | Installed POT/TACCO | Real posterior-conditioned local OT candidate | Local-refinement solver/release gate | Tiny matrices; skipped solvers are not evidence |
+| `application/test_ist_publication.py` | iST publication | Paired identity, mean/random assembly and transactional switching | Output-mode edits | Small synthetic carriers only |
+| `batch/test_config.py` | Hierarchical configuration | Inheritance, declaring-file paths, discovery and configuration snapshots | Batch input edits | YAML and directory fixtures |
+| `batch/test_sample.py` | Standard H5AD inputs | Read-only protocol validation and shared reference identity | Batch input edits | Backed H5AD fixtures; no conversion |
+| `batch/test_runner.py` | Batch execution and handoff | Failure isolation, invalidation, path safety and pairing roles | Batch lifecycle edits | Solver stand-in; no scientific validation |
+| `batch/test_analysis.py` | Analysis adapters | Execution, reuse, prerequisites, failures and rollback | Analysis framework edits | Actual fixture adapters; no impact algorithms |
+| `batch/test_cli.py` | Batch entrypoints | Source help and installed script declarations | CLI/package edits | Declaration and launch behavior |
+| `integration/batch/test_real_sample_parity.py` | Real route integration | Batch/direct parity for hST, iST, sST | Batch/application integration | Opt-in bounded real subsets; not full protocols |
+| `repository/test_case_notebook_style_contract.py` | Case notebook source | Static presentation and workflow contract | Notebook edits | No execution evidence |
+| `preprocess/test_sim2real_pseudospot_contract.py` | Pseudospot preparation | Mapping and preparation contracts | Preprocessing edits | Synthetic fixtures |
+
+| `analysis/test_impact_outputs.py` | Impact CSV writer | Long-table identity, scientific fields and deterministic serialization | Writer changes | Computed small objects; no biological validity |
+| `analysis/test_impact_report.py` | Impact report | Published artifact verification, stale-state visibility and notebook rendering | Report changes | Synthetic published tables only |
+| `analysis/test_paired_moran.py` | Paired Moran core | Full gene availability and same-graph numerical comparison | Moran changes | Small arrays and Scanpy numerical reference |
+| `analysis/test_partition_change.py` | Partition helpers | Raw QC, assignment mapping and resolution selection | Partition changes | Synthetic carriers |
+| `analysis/test_pathway_activity_adapter.py` | Pathway aspect | Full axes, explicit coverage and score publication | AUCell integration | Synthetic carriers and provider stand-in |
+| `analysis/test_reconstruction_impact.py` | Impact orchestration | Comparison edges, seeded rarefaction and sensitivity | Impact changes | Synthetic carriers and windows |
+| `analysis/test_reconstruction_impact_adapter.py` | Impact aspect | Independent cohorts, exact labels and full anatomy context | Impact integration | Synthetic input and helper boundaries |
+| `analysis/test_spatial_region.py` | Spatial region helpers | Window support, diversity and region thresholds | Spatial changes | Synthetic spatial arrangements |
+| `batch/test_analysis_api.py` | Single-task analysis API | Public handoff and aspect invocation | Batch API changes | Fixture adapters |
+| `batch/test_analysis_dependencies.py` | Analysis identity | Shared source changes invalidate reuse | Dependency changes | Synthetic module edits |
+| `batch/test_analysis_ownership.py` | Analysis publication | Exact artifact ownership and rollback | Publication changes | Local file fixtures |
+| `batch/test_example_adapter.py` | Example adapter | Public input-view example | Example changes | Synthetic handoff |
+| `batch/test_expression_views.py` | Expression views | Full-gene mean projection, axes and provenance | Expression input changes | Sparse synthetic carriers |
+| `batch/test_inputs.py` | Analysis input views | Role-specific axes, mapping and alignment | Input changes | Synthetic H5AD |
+| `batch/test_public_api.py` | Batch exports | Public import surface | API changes | Static import contract |
+| `batch/test_reconstruction_api.py` | Single-task reconstruction API | Configuration and lifecycle parity | Batch API changes | Solver stand-in |
+| `batch/test_scientific_aspects.py` | Scientific batch integration | Actual impact calculations through handoff, publication and reuse | Cross-module changes | Tiny scientific fixture with reconstruction solver stand-in |
+| `batch/test_task_boundaries.py` | Task validation | Declared task ownership and path boundaries | Batch changes | Local filesystem fixtures |
+| `batch/test_task_workflow.py` | Task workflow | Single and batch lifecycle consistency | Workflow changes | Solver stand-in |
+| `repository/test_reconstruction_impact_notebooks.py` | Impact notebook source | Route definitions and source structure | Notebook changes | Static source only |
 
 When adding a test module, place it under its production owner, add it to this
 table, and state both what it detects and what it cannot prove.

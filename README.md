@@ -20,6 +20,14 @@ workflows used to study reconstruction under controlled confounding factors.
 
 ## Install
 
+[Batch reconstruction and analysis](docs/design/batch/README.md) supports
+standard `spatial.h5ad` sample directories, inherited `batch.yaml` configuration,
+shared references, separate outputs, resumable reconstruction and analysis adapters. Start with the
+[batch templates](configs/batch/) and the
+[reconstruction-impact analysis plan](docs/design/reconstruction-impact/README.md).
+Configure each scientific aspect explicitly; aspects without an entrypoint are
+reported as `not_implemented`.
+
 REVISE supports Python 3.10 and 3.11.
 
 ```bash
