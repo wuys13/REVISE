@@ -156,6 +156,9 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
     ):
         assert removed not in wheel_names
     assert "revise-reconstruct = reconstruct:main" in entry_points
+    assert "revise-batch-reconstruct = revise.batch.cli:main" in entry_points
+    assert "revise-batch-analyze = revise.batch.cli:analysis_main" in entry_points
+    assert "revise-prepare-sample" not in entry_points
     assert (
         "revise-build-histology-priors = revise.preprocess.cli:main"
         in entry_points
@@ -183,6 +186,8 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "pyproject.toml",
         "MANIFEST.in",
         "reconstruct.py",
+        "batch_reconstruct.py",
+        "batch_analyze.py",
         "reproduce/benchmark_main.py",
         "reproduce/benchmark_main.sh",
     }
@@ -191,6 +196,7 @@ def test_distribution_contents_match_runtime_and_source_contract(built_distribut
         "revise/**/*.yaml",
         "configs/application/*.yaml",
         "configs/benchmark/*.yaml",
+        "configs/batch/**/*.yaml",
         "constraints/*.txt",
     ]:
         expected_sdist.update(
@@ -324,6 +330,10 @@ def test_each_distribution_installs_outside_checkout(built_distributions, role):
     assert probe.stdout.splitlines()[0] == __version__
     assert str(venv) in probe.stdout
     assert str(ROOT) not in probe.stdout
+    for command in ("revise-batch-reconstruct", "revise-batch-analyze"):
+        help_result = _run([venv / "bin" / command, "--help"], cwd=root, env=env)
+        assert help_result.returncode == 0, help_result.stderr
+        assert "--config" in help_result.stdout
     histology_help = _run(
         [venv / "bin" / "revise-build-histology-priors", "--help"],
         cwd=root,

@@ -563,22 +563,32 @@ def summarize_cluster_change_by_anatomy(
 
 
 def summarize_diversity_by_anatomy(window_metrics: pd.DataFrame) -> pd.DataFrame:
-    """Summarize Raw, reconstructed and delta Neff with median and IQR."""
-    required = {"level1_region", "valid_window", "neff_raw", "neff_recon", "delta_neff"}
+    """Summarize every available diversity metric and Raw baseline with IQR."""
+    required = {"level1_region", "valid_window"}
     if missing := required - set(window_metrics.columns):
         raise KeyError(f"Window metrics are missing columns: {sorted(missing)}")
+    metrics = ("k_obs", "entropy", "neff", "evenness")
+    source_columns = []
+    for metric in metrics:
+        source_columns.extend(
+            [
+                f"{metric}_raw",
+                f"{metric}_recon",
+                f"delta_{metric}",
+                f"{metric}_level2",
+                f"delta_{metric}_vs_raw_level2",
+            ]
+        )
+    source_columns = [column for column in source_columns if column in window_metrics]
+    if not source_columns:
+        raise KeyError("Window metrics contain no diversity metric columns")
     rows = []
     for region, frame in _region_frames(window_metrics):
         valid = frame.loc[frame["valid_window"]]
-        rows.append(
-            {
-                "level1_region": region,
-                "n_valid_windows": int(valid.shape[0]),
-                **_distribution(valid["neff_raw"], "neff_raw"),
-                **_distribution(valid["neff_recon"], "neff_recon"),
-                **_distribution(valid["delta_neff"], "delta_neff"),
-            }
-        )
+        row = {"level1_region": region, "n_valid_windows": int(valid.shape[0])}
+        for column in source_columns:
+            row.update(_distribution(valid[column], column))
+        rows.append(row)
     return pd.DataFrame(rows)
 
 

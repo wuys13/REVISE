@@ -32,7 +32,6 @@ from revise.analysis.basic.partition_change import (
 from revise.analysis.basic.spatial_region import (
     assign_anatomy_candidates,
     assign_square_windows,
-    compute_window_diversity,
     compute_rarefied_window_diversity,
     convert_coordinates_to_microns,
     select_region_threshold,
@@ -82,6 +81,16 @@ class PartitionAnalysis:
     complexity_resolution: float
     change_by_level1: pd.DataFrame
     matched_cluster_status: str
+
+    @property
+    def matched_k_sweep(self) -> pd.DataFrame:
+        """Return the sweep used to choose the matched-K comparison resolution."""
+        return self.sweep
+
+    @property
+    def raw_complexity_sweep(self) -> pd.DataFrame:
+        """Return the Raw-side resolution/Level1-ARI complexity sweep."""
+        return self.complexity_sweep
 
 
 @dataclass(frozen=True)
@@ -342,7 +351,7 @@ def run_partition_analysis(
 
     representation_audit: dict[str, int | bool] = {}
     complexity_comparisons: dict[str, PartitionComparison]
-    complexity_sweep = pd.DataFrame()
+    matched_k_sweep = pd.DataFrame()
 
     def matched_sweep(graph: AnnData, target: int) -> tuple[pd.Series, pd.DataFrame, pd.Series]:
         coarse = np.round(np.arange(0.1, 1.5 + 0.001, 0.1), 2).tolist()
@@ -384,7 +393,7 @@ def run_partition_analysis(
                 comparison_edge="raw_to_recon_same_resolution",
             )
         }
-        recon_expression_labels, complexity_sweep, matched = matched_sweep(
+        recon_expression_labels, matched_k_sweep, matched = matched_sweep(
             recon_graph, int(raw_labels.nunique())
         )
         comparisons = {
@@ -417,7 +426,7 @@ def run_partition_analysis(
                 comparison_edge="raw_to_final_svc_complexity_diagnostic",
             )
         }
-        raw_labels, complexity_sweep, matched = matched_sweep(raw_graph, int(final_labels.nunique()))
+        raw_labels, matched_k_sweep, matched = matched_sweep(raw_graph, int(final_labels.nunique()))
         comparisons = {
             "raw_to_final_svc": compare_partitions(
                 raw_labels,
@@ -428,18 +437,18 @@ def run_partition_analysis(
         matched_resolution = float(matched["resolution"])
     matched_comparison = next(iter(comparisons.values()))
     return PartitionAnalysis(
-        matched_resolution,
-        "matched_cluster_count",
-        complexity_sweep,
-        audit,
-        comparisons,
-        representation_audit,
-        features,
-        complexity_comparisons,
-        sweep,
-        resolution,
-        summarize_change_by_level1(matched_comparison.assignments, level1),
-        str(matched["status"]),
+        resolution=matched_resolution,
+        resolution_source="matched_cluster_count",
+        sweep=matched_k_sweep,
+        audit=audit,
+        comparisons=comparisons,
+        representation_audit=representation_audit,
+        feature_names=features,
+        complexity_comparisons=complexity_comparisons,
+        complexity_sweep=sweep,
+        complexity_resolution=resolution,
+        change_by_level1=summarize_change_by_level1(matched_comparison.assignments, level1),
+        matched_cluster_status=str(matched["status"]),
     )
 
 
@@ -561,6 +570,7 @@ def compute_spatial_impact(
     min_parent_units: int = 4,
     rarefaction_draws: int = 200,
     threshold_bootstraps: int = 500,
+    random_state: int = 42,
     cell_equivalent_um: float = 8.0,
     anatomy_analysis: AnatomyRegionAnalysis | None = None,
     tumor_label: str = "Tumor",
@@ -613,6 +623,7 @@ def compute_spatial_impact(
         raw_level2_labels=raw_level2_labels,
         min_parent_units=min_parent_units,
         n_draws=rarefaction_draws,
+        random_state=random_state,
     )
     changed = unit_changed.astype(bool).reindex(paired_windows.index)
     window_change = (
@@ -640,10 +651,12 @@ def compute_spatial_impact(
     state_threshold, state_bootstrap = select_region_threshold(
         valid_metrics["neff_recon"].to_numpy(),
         n_bootstrap=threshold_bootstraps,
+        random_state=random_state,
     )
     gain_threshold, gain_bootstrap = select_region_threshold(
         valid_metrics.loc[valid_metrics["delta_neff"] > 0, "delta_neff"].to_numpy(),
         n_bootstrap=threshold_bootstraps,
+        random_state=random_state,
     )
     metrics["in_state_region"] = pd.Series(pd.NA, index=metrics.index, dtype="boolean")
     metrics["in_gain_region"] = pd.Series(pd.NA, index=metrics.index, dtype="boolean")
@@ -680,21 +693,38 @@ def compute_spatial_impact(
     scale_rows = []
     for side in candidates:
         assignments = assign_square_windows(paired_um, window_side_length=side, origin=origin)
-        scale_metrics = compute_window_diversity(
+        scale_metrics = compute_rarefied_window_diversity(
             assignments,
             raw_labels,
             reconstructed_labels,
-            min_units_per_window=min_parent_units,
+            raw_level2_labels=raw_level2_labels,
+            min_parent_units=min_parent_units,
+            n_draws=rarefaction_draws,
+            random_state=random_state,
         )
         valid = scale_metrics.loc[scale_metrics["valid_window"]]
-        scale_rows.append(
-            {
-                "window_side_length": float(side),
-                "n_valid_windows": int(valid.shape[0]),
-                "median_neff_recon": float(valid["neff_recon"].median()) if not valid.empty else np.nan,
-                "median_delta_neff": float(valid["delta_neff"].median()) if not valid.empty else np.nan,
-            }
-        )
+        scale_row: dict[str, float | int] = {
+            "window_side_length": float(side),
+            "n_valid_windows": int(valid.shape[0]),
+            "rarefaction_draws": int(rarefaction_draws),
+            "random_state": int(random_state),
+        }
+        for metric in ("k_obs", "entropy", "neff", "evenness"):
+            for column in (
+                f"{metric}_raw",
+                f"{metric}_recon",
+                f"delta_{metric}",
+                f"{metric}_level2",
+                f"delta_{metric}_vs_raw_leiden",
+                f"delta_{metric}_vs_raw_level2",
+            ):
+                if column not in valid:
+                    continue
+                values = pd.to_numeric(valid[column], errors="coerce")
+                scale_row[f"median_{column}"] = (
+                    float(values.median()) if values.notna().any() else np.nan
+                )
+        scale_rows.append(scale_row)
         del assignments, scale_metrics
         gc.collect()
     scale_sensitivity = pd.DataFrame(scale_rows)
@@ -706,6 +736,8 @@ def compute_spatial_impact(
         "main_window_area_um2": main_side**2,
         "min_parent_units": int(min_parent_units),
         "rarefaction_draws": int(rarefaction_draws),
+        "rarefaction_random_state": int(random_state),
+        "threshold_random_state": int(random_state),
         "origin_x_um": origin[0],
         "origin_y_um": origin[1],
     }

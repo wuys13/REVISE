@@ -179,6 +179,8 @@ def test_partition_analysis_keeps_level1_ari_complexity_diagnostic_separate_from
     assert result.sweep["target_cluster_count"].iloc[0] == 2
     assert result.resolution_source == "matched_cluster_count"
     assert result.sweep["n_clusters"].iloc[0] == 2
+    assert result.matched_k_sweep is result.sweep
+    assert {"resolution", "ARI"} <= set(result.raw_complexity_sweep.columns)
     assert list(result.complexity_comparisons) == ["raw_to_recon_same_resolution"]
     assert list(result.comparisons) == ["raw_to_recon_expression"]
 
@@ -467,6 +469,7 @@ def test_raw_level2_mapping_artifacts_preserve_source_audit(tmp_path: Path):
     ).read_text(encoding="utf-8")
 
 
+@pytest.mark.filterwarnings("error:Mean of empty slice:RuntimeWarning")
 def test_gain_region_threshold_only_uses_positive_matched_delta(monkeypatch):
     from revise.analysis import reconstruction_impact
 
@@ -495,3 +498,83 @@ def test_gain_region_threshold_only_uses_positive_matched_delta(monkeypatch):
 
     assert len(captured) == 2
     assert (captured[1] > 0).all()
+
+
+def test_spatial_impact_propagates_and_audits_configured_spatial_seed(monkeypatch):
+    from revise.analysis import reconstruction_impact
+    from revise.analysis.basic import spatial_region
+
+    captured = {"rarefaction": [], "threshold": []}
+    original_rarefaction = spatial_region.compute_rarefied_window_diversity
+
+    def record_rarefaction(*args, **kwargs):
+        captured["rarefaction"].append(kwargs["random_state"])
+        return original_rarefaction(*args, **kwargs)
+
+    def record_threshold(values, **kwargs):
+        captured["threshold"].append(kwargs["random_state"])
+        return (
+            {
+                "status": "no_stable_threshold",
+                "threshold": None,
+                "n_windows": len(values),
+                "n_valid_bootstrap": 0,
+            },
+            pd.DataFrame(),
+        )
+
+    monkeypatch.setattr(reconstruction_impact, "compute_rarefied_window_diversity", record_rarefaction)
+    monkeypatch.setattr(reconstruction_impact, "select_region_threshold", record_threshold)
+    ids = pd.Index([f"u{i}" for i in range(8)])
+    coordinates = pd.DataFrame({"x": np.arange(8), "y": np.zeros(8)}, index=ids)
+
+    impact = compute_spatial_impact(
+        full_coordinates=coordinates,
+        full_level1_labels=pd.Series(["Tumor"] * 8, index=ids),
+        paired_coordinates=coordinates,
+        raw_labels=pd.Series(["a"] * 8, index=ids),
+        raw_level2_labels=pd.Series(["l2"] * 8, index=ids),
+        reconstructed_labels=pd.Series(["a", "a", "b", "b", "a", "a", "b", "b"], index=ids),
+        unit_changed=pd.Series([False] * 8, index=ids),
+        microns_per_coordinate=1.0,
+        candidate_window_sides_um=[16.0],
+        min_parent_units=4,
+        rarefaction_draws=5,
+        threshold_bootstraps=5,
+        random_state=17,
+    )
+
+    assert captured["rarefaction"] == [17, 17]
+    assert captured["threshold"] == [17, 17]
+    assert impact.scale_audit["rarefaction_random_state"] == 17
+    assert impact.scale_audit["threshold_random_state"] == 17
+
+
+def test_scale_sensitivity_uses_rarefied_three_assignment_metrics():
+    ids = pd.Index([f"u{i}" for i in range(8)])
+    coordinates = pd.DataFrame({"x": np.arange(8), "y": np.zeros(8)}, index=ids)
+
+    impact = compute_spatial_impact(
+        full_coordinates=coordinates,
+        full_level1_labels=pd.Series(["Tumor"] * 8, index=ids),
+        paired_coordinates=coordinates,
+        raw_labels=pd.Series(["a"] * 8, index=ids),
+        raw_level2_labels=pd.Series(["l2"] * 8, index=ids),
+        reconstructed_labels=pd.Series(["a", "a", "b", "b", "a", "a", "b", "b"], index=ids),
+        unit_changed=pd.Series([False] * 8, index=ids),
+        microns_per_coordinate=1.0,
+        candidate_window_sides_um=[16.0],
+        min_parent_units=4,
+        rarefaction_draws=5,
+        threshold_bootstraps=5,
+        random_state=17,
+    )
+
+    sensitivity = impact.scale_sensitivity
+    assert sensitivity.loc[0, "rarefaction_draws"] == 5
+    assert sensitivity.loc[0, "random_state"] == 17
+    assert "median_delta_neff_vs_raw_leiden" in sensitivity
+    assert "median_delta_neff_vs_raw_level2" in sensitivity
+    main = impact.window_metrics.loc[impact.window_metrics["valid_window"]]
+    for column in ("neff_recon", "delta_neff_vs_raw_leiden", "delta_neff_vs_raw_level2"):
+        assert sensitivity.loc[0, f"median_{column}"] == pytest.approx(main[column].median())

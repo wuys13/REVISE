@@ -269,6 +269,13 @@ def test_sp_svc_qc_is_defined_on_raw_and_applied_to_both_carriers():
     assert audit["excluded_post_gene_filter_units"] == 1
     assert audit["n_units"] == 3
     assert audit["excluded_raw_qc_genes"] == 3
+    assert audit["raw_qc_gene_reasons"] == [
+        {"gene_id": "g0", "raw_qc_status": "retained"},
+        {"gene_id": "g1", "raw_qc_status": "retained"},
+        {"gene_id": "g2", "raw_qc_status": "below_min_cells"},
+        {"gene_id": "MT-g3", "raw_qc_status": "mitochondrial"},
+        {"gene_id": "MT-g4", "raw_qc_status": "mitochondrial"},
+    ]
 
 
 def test_raw_hvg_selection_uses_canonical_raw_preprocessing_and_preserves_gene_order(monkeypatch):

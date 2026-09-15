@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Hashable, Sequence
+from typing import Any, Hashable, Sequence
 import warnings
 
 import numpy as np
@@ -130,7 +130,7 @@ def summarize_change_by_level1(
 def align_observation_pairs(
     raw: AnnData,
     reconstructed: AnnData,
-) -> tuple[AnnData, AnnData, dict[str, int | bool]]:
+) -> tuple[AnnData, AnnData, dict[str, Any]]:
     """Copy, strictly pair and reorder Raw/Reconstructed observations and genes."""
     if not raw.obs_names.is_unique or not reconstructed.obs_names.is_unique:
         raise ValueError("Raw and reconstructed observation IDs must be unique")
@@ -178,10 +178,25 @@ def filter_paired_sp_svc_inputs(
     after_cell_qc_units = int(raw_work.n_obs)
     if raw_work.n_obs < 3:
         raise ValueError("Raw QC retained fewer than three paired observations")
-    retained_genes = (
-        (_nonzero_counts(raw_work.X, axis=0) >= min_cells)
-        & ~raw_work.var_names.str.startswith("MT-")
-    )
+    gene_ids = raw_work.var_names.astype(str)
+    detected_cells = _nonzero_counts(raw_work.X, axis=0)
+    mitochondrial = gene_ids.str.startswith("MT-")
+    retained_genes = (detected_cells >= min_cells) & ~mitochondrial
+    raw_qc_gene_reasons = [
+        {
+            "gene_id": gene_id,
+            "raw_qc_status": (
+                "retained"
+                if retained
+                else "mitochondrial"
+                if is_mitochondrial
+                else "below_min_cells"
+            ),
+        }
+        for gene_id, retained, is_mitochondrial in zip(
+            gene_ids, retained_genes, mitochondrial, strict=True
+        )
+    ]
     raw_work = raw_work[:, retained_genes].copy()
     recon_work = recon_work[:, retained_genes].copy()
     if raw_work.n_vars < 2:
@@ -200,6 +215,7 @@ def filter_paired_sp_svc_inputs(
             "input_shared_genes": input_genes,
             "excluded_raw_qc_genes": input_genes - int(raw_work.n_vars),
             "n_shared_genes": int(raw_work.n_vars),
+            "raw_qc_gene_reasons": raw_qc_gene_reasons,
         }
     )
     return raw_work, recon_work, audit

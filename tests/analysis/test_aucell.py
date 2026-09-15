@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from anndata import AnnData
+from scipy import sparse
 
 from revise.analysis.advanced.aucell import score_gene_set_aucell
 
@@ -51,8 +52,8 @@ def test_score_aucell_passes_overlap_and_returns_validated_copy(monkeypatch):
     assert calls == [(scored, "SIGNATURE", ["G3", "G1"])]
     assert score_key in scored.obs
     assert score_key not in adata.obs
-    np.testing.assert_array_equal(adata.X, original_x)
-    np.testing.assert_array_equal(scored.X, original_x)
+    assert np.array_equal(adata.X, original_x)
+    assert np.array_equal(scored.X.toarray(), original_x)
 
 
 def test_score_aucell_missing_dependency_names_pathway_extra(monkeypatch):
@@ -100,3 +101,65 @@ def test_score_aucell_distinguishes_failure_missing_result_and_zero_overlap(monk
 
     with pytest.raises(ValueError, match="overlap"):
         score_gene_set_aucell(_expression_fixture(), ["MISSING"], score_name="SIGNATURE")
+
+
+def test_score_aucell_forwards_explicit_provider_parameters(monkeypatch):
+    calls = []
+
+    def geneset_aucell(*, adata, geneset_name, geneset, AUC_threshold, seed):
+        calls.append({
+            "geneset_name": geneset_name,
+            "geneset": geneset,
+            "AUC_threshold": AUC_threshold,
+            "seed": seed,
+        })
+        adata.obs[f"{geneset_name}_aucell"] = np.ones(adata.n_obs)
+
+    fake = ModuleType("omicverse")
+    fake.single = SimpleNamespace(geneset_aucell=geneset_aucell)
+    monkeypatch.setitem(sys.modules, "omicverse", fake)
+
+    score_gene_set_aucell(
+        _expression_fixture(),
+        ["G1"],
+        score_name="SIGNATURE",
+        AUC_threshold=0.05,
+        seed=17,
+    )
+
+    assert calls == [{
+        "geneset_name": "SIGNATURE",
+        "geneset": ["G1"],
+        "AUC_threshold": 0.05,
+        "seed": 17,
+    }]
+
+
+def test_score_aucell_rejects_nonfinite_provider_scores(monkeypatch):
+    fake = ModuleType("omicverse")
+
+    def geneset_aucell(*, adata, geneset_name, geneset):
+        adata.obs[f"{geneset_name}_aucell"] = [0.1, np.nan, 0.3, 0.4, 0.5, 0.6]
+
+    fake.single = SimpleNamespace(geneset_aucell=geneset_aucell)
+    monkeypatch.setitem(sys.modules, "omicverse", fake)
+
+    with pytest.raises(RuntimeError, match="non-finite"):
+        score_gene_set_aucell(_expression_fixture(), ["G1"], score_name="SIGNATURE")
+
+
+def test_score_aucell_converts_dense_expression_to_the_provider_sparse_carrier(monkeypatch):
+    fake = ModuleType("omicverse")
+    received = []
+
+    def geneset_aucell(*, adata, geneset_name, geneset):
+        received.append(adata.X)
+        adata.obs[f"{geneset_name}_aucell"] = np.ones(adata.n_obs)
+
+    fake.single = SimpleNamespace(geneset_aucell=geneset_aucell)
+    monkeypatch.setitem(sys.modules, "omicverse", fake)
+
+    score_gene_set_aucell(_expression_fixture(), ["G1"], score_name="SIGNATURE")
+
+    assert len(received) == 1
+    assert sparse.isspmatrix_csr(received[0])
