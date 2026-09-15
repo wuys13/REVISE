@@ -1,0 +1,6 @@
+# Shared by all discovered CRC samples unless a sample overrides reference.
+inputs:
+  reference:
+    path: ../../SC/CRC/crc_reference.h5ad
+    # filter_column: Patient
+    # filter_value: P2CRC

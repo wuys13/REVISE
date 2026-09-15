@@ -1,0 +1,8 @@
+# Optional block to merge into your project/group/sample batch.yaml.
+# Copy analysis_example.py to an importable directory (for example project root).
+# This produces a carrier inventory, not a scientific comparison.
+analysis:
+  carrier_inventory:
+    entrypoint: analysis_example:run
+    version: "1"
+    parameters: {}

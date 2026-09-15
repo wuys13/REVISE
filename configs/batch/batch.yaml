@@ -1,0 +1,31 @@
+# Copy this example project tree, then supply real ST and SC H5AD files.
+schema_version: 2
+input_root: ST
+output_root: output
+modality: iST
+coordinates:
+  unit: pixel # Set from the source; use um for micrometre coordinates.
+  # microns_per_coordinate: 0.2125 # Only from verified source calibration.
+algorithm:
+  ot_method: tacco
+preprocessing:
+  # Example protocol values; choose thresholds appropriate to your data.
+  spatial:
+    min_transcript_counts: 60
+    min_cell_counts: 100
+  reference:
+    min_transcript_counts: null
+    min_cell_counts: 100
+global_anchoring:
+  broad_column: Level1
+local_refinement:
+  subtype_column: Level2
+  cell_types: [T, Macro, Fibroblast]
+  alpha: 0.2
+  resolutions: [0.6, 0.7, 0.8]
+output:
+  ist_mapping: paired # paired | mean | random
+execution:
+  seed: 42
+# Only explicitly configured aspects run. See analysis-example.yaml.
+analysis: {}
