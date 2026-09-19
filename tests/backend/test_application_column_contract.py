@@ -590,7 +590,6 @@ def test_sr_zero_strength_preserves_quota_row_and_expression_allocation(
         cell_type_col="major_type",
         unknown_key="Unknown",
         local_refinement_strength=0.0,
-        rec_match_spot_sum=True,
     )
     runner = module.ScSVCSuperResolution.__new__(module.ScSVCSuperResolution)
     runner.st_adata = st

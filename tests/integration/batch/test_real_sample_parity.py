@@ -79,7 +79,7 @@ def _sample(root, modality):
     if modality == 'iST':
         local = {'subtype_column': 'Level2', 'cell_types': ['T'], 'alpha': 0.2, 'resolutions': [0.5]}
     elif modality == 'sST':
-        local['match_spot_sum'] = True
+        local = {'strength': 0.2}
     document = {
         'modality': modality,
         'inputs': {'reference': {'path': 'reference.h5ad', 'format': 'h5ad'}},

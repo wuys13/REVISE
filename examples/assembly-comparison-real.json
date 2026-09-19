@@ -1,0 +1,42 @@
+{
+  "status": "template_pending_generated_methods_and_baseline_assembly_from_confirmed_existing_carriers",
+  "method_paths": {
+    "mean": "output/assembly/mean.h5ad",
+    "random": "output/assembly/random.h5ad",
+    "within_cluster": "output/assembly/within_cluster.h5ad",
+    "outside_cluster": "output/assembly/outside_cluster.h5ad"
+  },
+  "baseline_path": "output/assembly/original_spatial.h5ad",
+  "type_aliases": {
+    "T": [
+      "T",
+      "T cell",
+      "T cells",
+      "T-cell"
+    ],
+    "Macro": [
+      "Macro",
+      "Macrophage",
+      "Macrophages",
+      "Mono/Macro",
+      "Mono_Macro"
+    ],
+    "CAF": [
+      "CAF",
+      "CAFs",
+      "Fibroblast",
+      "Fibroblasts"
+    ]
+  },
+  "broad_column": "Level1",
+  "broad_fallback": "Level1",
+  "baseline_subtype_column": "SVC_cluster",
+  "spatial_key": "spatial",
+  "seed": 42,
+  "resolutions": [
+    0.6,
+    0.7,
+    0.8
+  ],
+  "plot_resolution": 0.7
+}

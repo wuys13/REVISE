@@ -92,6 +92,38 @@ def test_analysis_inputs_are_lazy_until_a_view_is_requested(tmp_path, monkeypatc
     assert calls == [record["inputs"]["sources"]["spatial"]["path"]]
 
 
+def test_new_delivery_reads_published_raw_and_legacy_delivery_reads_source(tmp_path):
+    from revise.batch.inputs import AnalysisInputs
+
+    record = _paired_record(tmp_path)
+    source_path = record["inputs"]["sources"]["spatial"]["path"]
+    assert AnalysisInputs.from_reconstruction(record).raw().source == source_path
+
+    published = _write_adata(
+        tmp_path / "published-raw.h5ad",
+        sparse.csr_matrix([[7, 8]], dtype=np.int32),
+        obs_names=["published-spot"],
+        var_names=["g1", "g2"],
+        spatial=[[4, 5]],
+    )
+    record["delivery_protocol_version"] = 2
+    record["outputs"]["raw"] = {"path": str(tmp_path / "published-raw.h5ad")}
+    view = AnalysisInputs.from_reconstruction(record).raw()
+    assert view.source == record["outputs"]["raw"]["path"]
+    assert list(view.observation_ids) == ["published-spot"]
+    np.testing.assert_array_equal(view.adata.X.toarray(), published.X.toarray())
+
+
+def test_new_delivery_never_falls_back_to_mutable_source_when_raw_is_missing(tmp_path):
+    from revise.batch.inputs import AnalysisInputs
+
+    record = _paired_record(tmp_path)
+    record["delivery_protocol_version"] = 2
+
+    with pytest.raises(ValueError, match="missing published Raw"):
+        AnalysisInputs.from_reconstruction(record)
+
+
 def test_raw_alignment_uses_ids_and_coordinates_and_records_uncovered_rows(tmp_path):
     from revise.batch.inputs import AnalysisInputs
 

@@ -1,0 +1,6 @@
+schema_version: 1
+mode: screen
+reconstruction_config: ./host/reconstruction.yaml
+candidates:
+  directory: ./candidates
+output_dir: ./runs/screen-directory

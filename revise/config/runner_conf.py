@@ -270,7 +270,6 @@ class ApplicationScConf(BaseConf):
     rec_pot_reg_type: str
     rec_ot_method: str
     rec_alpha: float
-    rec_match_spot_sum: bool
 
     @property
     def result_dir(self):
@@ -313,7 +312,6 @@ class ApplicationScSuperResolutionConf(BaseConf):
     rec_pot_reg_type: str
     rec_ot_method: str
     rec_alpha: float
-    rec_match_spot_sum: bool
     rec_graph_agg_enabled: bool
 
     # svc parameters

@@ -105,13 +105,28 @@ def test_route_specific_fields_fail_closed(tmp_path):
         compile_application_config(effective, source=source)
 
 
-def test_sc_svc_requires_one_concrete_cell_type(tmp_path):
+def test_sc_svc_without_cell_type_compiles_as_full_sample_random(tmp_path):
+    from revise.application.config import compile_application_config, load_application_yaml
+
+    document = _document("sc-SVC", "cluster")
+    document["local_refinement"].pop("select_cell_type")
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+    config = compile_application_config(effective, source=source)
+
+    assert config.select_cell_type is None
+    assert config.ist_mapping == "random"
+    assert config.output_dir == config.output_root
+
+
+def test_full_sample_sc_svc_rejects_paired_mapping_with_migration(tmp_path):
     from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
 
     document = _document("sc-SVC", "cluster")
-    document["local_refinement"]["select_cell_type"] = None
+    document["local_refinement"].pop("select_cell_type")
+    document["output"]["ist_mapping"] = "paired"
     source, effective = load_application_yaml(_write_config(tmp_path, document))
-    with pytest.raises(ApplicationConfigError, match="concrete broad cell type"):
+
+    with pytest.raises(ApplicationConfigError, match="full-sample.*random or mean"):
         compile_application_config(effective, source=source)
 
 
@@ -180,6 +195,71 @@ def test_cluster_override_rederives_output_dir_from_original_output_root(tmp_pat
     assert mono.output_dir != config.output_dir / "T"
 
 
+def test_cluster_override_restores_legacy_paired_default_for_implicit_mapping(tmp_path):
+    from revise.application.config import (
+        compile_application_config,
+        load_application_yaml,
+        override_select_cell_type,
+    )
+
+    document = _document("sc-SVC", "cluster")
+    document["local_refinement"].pop("select_cell_type")
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+
+    config = compile_application_config(effective, source=source)
+    selected = override_select_cell_type(config, "T")
+
+    assert config.ist_mapping == "random"
+    assert selected.ist_mapping == "paired"
+    assert selected.output_dir == selected.output_root / "T"
+
+
+def test_delivery_metadata_accepts_hierarchical_sample_and_normalizes_um(tmp_path):
+    from revise.application.config import compile_application_config, load_application_yaml
+
+    document = _document("sc-SVC", "cluster")
+    document["delivery"] = {
+        "sample_id": "CRC/S01",
+        "coordinates": {
+            "key": "spatial",
+            "unit": "um",
+            "microns_per_coordinate": 1.0,
+        },
+    }
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+
+    config = compile_application_config(effective, source=source)
+
+    assert config.delivery_sample_id == "CRC/S01"
+    assert config.delivery_coordinates == {
+        "key": "spatial",
+        "unit": "micron",
+        "microns_per_coordinate": 1.0,
+    }
+
+
+def test_delivery_pixel_coordinates_allow_unknown_physical_scale(tmp_path):
+    from revise.application.config import compile_application_config, load_application_yaml
+
+    document = _document("sc-SVC", "cluster")
+    document["delivery"] = {
+        "sample_id": "CRC/S01",
+        "coordinates": {
+            "key": "spatial",
+            "unit": "pixel",
+            "microns_per_coordinate": None,
+        },
+    }
+    source, effective = load_application_yaml(_write_config(tmp_path, document))
+
+    config = compile_application_config(effective, source=source)
+
+    assert config.delivery_coordinates == {
+        "key": "spatial",
+        "unit": "pixel",
+    }
+
+
 def test_reference_filter_fields_must_be_supplied_together(tmp_path):
     from revise.application.config import ApplicationConfigError, compile_application_config, load_application_yaml
 
@@ -216,8 +296,13 @@ def test_sc_preprocessing_and_local_refinement_parameters_are_compiled(tmp_path)
     assert config.local_refinement_resolutions == (0.6, 0.7, 0.8)
 
 
-def test_sc_sr_mode_local_refinement_graph_and_match_spot_sum_are_compiled(tmp_path):
-    from revise.application.config import compile_application_config, load_application_yaml
+@pytest.mark.parametrize("legacy_value", [True, False])
+def test_sc_sr_mode_rejects_removed_match_spot_sum(tmp_path, legacy_value):
+    from revise.application.config import (
+        ApplicationConfigError,
+        compile_application_config,
+        load_application_yaml,
+    )
 
     document = _document("sc-SVC", "sr")
     document["local_refinement"] = {
@@ -229,19 +314,22 @@ def test_sc_sr_mode_local_refinement_graph_and_match_spot_sum_are_compiled(tmp_p
             "exp_neighbors": 10,
             "spatial_neighbors": 10,
         },
-        "match_spot_sum": True,
+        "match_spot_sum": legacy_value,
     }
     source, effective = load_application_yaml(_write_config(tmp_path, document))
 
+    with pytest.raises(ApplicationConfigError, match=r"local_refinement\.match_spot_sum was removed; delete this key") as error:
+        compile_application_config(effective, source=source)
+    assert "parent-spot per-gene correction" in str(error.value)
+    assert "10,000" in str(error.value)
+    del effective["local_refinement"]["match_spot_sum"]
     config = compile_application_config(effective, source=source)
-
     assert config.mode == "sr"
     assert config.local_refinement_graph_method == "pca"
     assert config.local_refinement_graph_alpha == 0.2
     assert config.local_refinement_graph_n_neighbors == 10
     assert config.local_refinement_graph_exp_neighbors == 10
     assert config.local_refinement_graph_spatial_neighbors == 10
-    assert config.local_refinement_match_spot_sum is True
 
 
 def test_sp_preprocessing_count_and_gene_thresholds_are_compiled(tmp_path):

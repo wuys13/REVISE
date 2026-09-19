@@ -87,7 +87,6 @@ ENGINE_DEFAULTS: dict[str, Any] = {
         "select_ct": None,
         "resolutions": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
         "select_resolution": None,
-        "match_spot_sum": False,
         "svc_completeness": True,
         "sr_graph_agg_enabled": False,
         "sr_graph_agg_low_conf_only": False,

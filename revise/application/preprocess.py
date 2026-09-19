@@ -8,6 +8,15 @@ from anndata import AnnData
 
 from revise.utils.labels import normalize_cell_type_label
 
+
+def valid_label_mask(labels: pd.Series) -> pd.Series:
+    """Return rows whose labels are present and non-blank without stringifying NA."""
+    mask = labels.notna()
+    if mask.any():
+        text = labels.loc[mask].astype(str)
+        mask.loc[mask] = text.str.strip().ne("").to_numpy()
+    return mask.astype(bool)
+
 def filter_reference(
     adata: AnnData,
     filter_column: str | None = None,
@@ -70,7 +79,9 @@ def normalize_reference_labels(
     for column in columns:
         if column is None or column not in result.obs:
             continue
-        labels = result.obs[column].astype(str)
+        source = result.obs[column]
+        valid = valid_label_mask(source)
+        labels = source.loc[valid].astype(str)
         if trim:
             normalized = labels.map(normalize_cell_type_label)
         else:
@@ -85,7 +96,9 @@ def normalize_reference_labels(
                 f"Reference labels in {column!r} collide after slash normalization: "
                 f"{names[:5]}"
             )
-        result.obs[column] = normalized
+        values = pd.Series(pd.NA, index=result.obs.index, dtype="object")
+        values.loc[valid] = normalized.to_numpy(dtype=object)
+        result.obs[column] = values
     return result
 
 
@@ -109,6 +122,15 @@ def prepare_sc_svc_pair(
         required_columns,
         trim=True,
     )
+    # GA needs a real broad label, while missing subtypes remain missing so
+    # the per-type LR eligibility check can exclude only those rows.
+    result_reference = result_reference[
+        valid_label_mask(result_reference.obs[broad_column]), :
+    ].copy()
+    if result_reference.n_obs == 0:
+        raise ValueError(
+            f"Reference column {broad_column!r} contains no valid broad labels"
+        )
     overlap_genes = spatial.var_names.intersection(result_reference.var_names)
     if overlap_genes.empty:
         raise ValueError("No overlapping genes between spatial and sc reference data")
@@ -121,4 +143,5 @@ __all__ = [
     "prepare_sc_svc_pair",
     "preprocess_reference",
     "preprocess_spatial",
+    "valid_label_mask",
 ]

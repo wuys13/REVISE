@@ -1,0 +1,6 @@
+schema_version: 1
+candidates:
+  - id: reference-a
+    path: ./candidates/reference-a.h5ad
+  - id: reference-b
+    path: ./candidates/reference-b.h5ad

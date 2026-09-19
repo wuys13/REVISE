@@ -61,10 +61,10 @@ EXPECTED = {
         },
         "local_refinement": {
             "subtype_column": "Level2",
-            "select_cell_type": "T",
             "alpha": 0.2,
             "resolutions": [0.6, 0.7, 0.8],
         },
+        "ist_mapping": "random",
     },
     "Visium.yaml": {
         "svc_type": "sc-SVC",
@@ -96,7 +96,6 @@ EXPECTED = {
                 "exp_neighbors": 10,
                 "spatial_neighbors": 10,
             },
-            "match_spot_sum": True,
         },
     },
 }
@@ -144,15 +143,17 @@ def test_packaged_template_is_canonical_and_source_mirror_is_byte_exact(filename
     assert document["output"] == {
         "dir": expected.get("output_dir", "output"),
         **({} if expected["output_name"] is None else {"name": expected["output_name"]}),
+        **({} if "ist_mapping" not in expected else {"ist_mapping": expected["ist_mapping"]}),
     }
     assert document["execution"] == {"seed": 42}
     assert "base_config" not in package_bytes.decode("utf-8")
 
 
-def test_xenium_template_explains_that_the_selected_broad_type_must_exist():
+def test_xenium_template_defaults_to_full_sample_random_assembly():
     text = (PACKAGE_TEMPLATES / "Xenium.yaml").read_text(encoding="utf-8")
 
-    assert "broad label exists" in text
+    assert "select_cell_type" not in text
+    assert "ist_mapping: random" in text
 
 
 def test_visium_template_explains_that_zero_strength_runs_local_refinement():

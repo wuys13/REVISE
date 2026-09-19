@@ -85,7 +85,6 @@ SC_KEYS = {
     "select_ct",
     "resolutions",
     "select_resolution",
-    "match_spot_sum",
     "svc_completeness",
     "sr_graph_agg_enabled",
     "sr_graph_agg_low_conf_only",
@@ -211,6 +210,12 @@ def _validate_ot_section(ot_cfg: Dict[str, Any], ctx: str, *, resolved: bool = F
 
 
 def _validate_sc_section(sc_cfg: Dict[str, Any], ctx: str) -> None:
+    if "match_spot_sum" in sc_cfg:
+        raise ConfigError(
+            f"{ctx}.match_spot_sum was removed; delete this key; "
+            "sST now always applies parent-spot per-gene correction "
+            "and no longer supports final per-generated-cell scaling to 10,000"
+        )
     _reject_unknown_keys(sc_cfg, SC_KEYS, ctx)
     tacco_annotate = sc_cfg.get("tacco_annotate")
     if tacco_annotate is not None:

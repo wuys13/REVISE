@@ -109,7 +109,6 @@ config = ApplicationScConf(
     rec_pot_reg_m=0.0,
     rec_pot_reg_type="entropy",
     rec_alpha=0.5,
-    rec_match_spot_sum=False,
 )
 annotated = GlobalAnchoringKernel(config, logging.getLogger("tacco-smoke")).run(
     target, reference

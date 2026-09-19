@@ -48,11 +48,27 @@ def _read(path: Path, *, project: bool) -> tuple[dict, dict]:
     if 'enabled' in document and type(document['enabled']) is not bool:
         raise ValueError('enabled must be true or false')
     inputs = document.get('inputs', {})
-    if set(inputs) - {'reference', 'pm_on_cell'}:
-        raise ValueError('inputs accepts only reference and pm_on_cell; ST is discovered as spatial.h5ad')
+    if set(inputs) - {'st', 'reference', 'pm_on_cell'}:
+        raise ValueError('inputs accepts st expression, reference and pm_on_cell; ST is discovered as spatial.h5ad')
     for role, spec in inputs.items():
         if not isinstance(spec, dict):
             raise ValueError(f'inputs.{role} must be a mapping')
+        if role == 'st':
+            if set(spec) != {'expression'}:
+                raise ValueError('inputs.st accepts expression only; ST is discovered as spatial.h5ad')
+            from revise.application.expression import parse_expression_declaration
+            parse_expression_declaration(spec['expression'], 'inputs.st.expression')
+            continue
+        if role == 'reference' and 'config' in spec:
+            if set(spec) != {'config'}:
+                raise ValueError(
+                    'inputs.reference.config is exclusive with path, format, and filters'
+                )
+            value = spec['config']
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError('inputs.reference.config must be explicit')
+            spec['config'] = str((path.parent / value).resolve())
+            continue
         value = spec.get('path')
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f'inputs.{role}.path must be explicit')

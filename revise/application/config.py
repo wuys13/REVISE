@@ -66,7 +66,6 @@ class ApplicationConfig:
     local_refinement_graph_n_neighbors: int | None
     local_refinement_graph_exp_neighbors: int | None
     local_refinement_graph_spatial_neighbors: int | None
-    local_refinement_match_spot_sum: bool | None
     ot_method: str | None
     pm_on_cell_path: Path | None
     output_root: Path
@@ -74,6 +73,13 @@ class ApplicationConfig:
     output_name: str | None
     seed: int | None
     ist_mapping: str = "paired"
+    ist_mapping_explicit: bool = False
+    delivery_sample_id: str | None = None
+    delivery_coordinates: dict[str, Any] | None = None
+    reference_preparation: dict[str, Any] | None = None
+    ist_ot: dict[str, Any] | None = None
+    st_expression: dict[str, str] | None = None
+    reference_expression: dict[str, str] | None = None
 
     @property
     def source_path(self) -> str:
@@ -135,8 +141,6 @@ def _compile_engine_config(
             "exp_neighbors": config.local_refinement_graph_exp_neighbors,
             "spatial_neighbors": config.local_refinement_graph_spatial_neighbors,
         }
-    if config.local_refinement_match_spot_sum is not None:
-        algorithm.setdefault("sc", {})["match_spot_sum"] = config.local_refinement_match_spot_sum
     if config.ot_method is not None:
         algorithm["ot"] = {
             "ga": {"solver": config.ot_method},
@@ -163,12 +167,18 @@ _TOP_LEVEL_KEYS = {
     "local_refinement",
     "output",
     "execution",
+    "delivery",
 }
+_OPTIONAL_TOP_LEVEL_KEYS = {"delivery"}
 _SVC_TYPES = {"sp-SVC", "sc-SVC"}
 _SC_SVC_MODES = {"cluster", "sr"}
 _ST_FORMATS = {"h5ad", "spatialdata", "auto"}
 _ALL_CELL_TYPES = {"", "all", "*", "__all__", "all_cell_types"}
 _MIGRATION_MESSAGES = {
+    "local_refinement.match_spot_sum": (
+        "delete this key; sST now always applies parent-spot per-gene correction "
+        "and no longer supports final per-generated-cell scaling to 10,000"
+    ),
     "application.sample_name": "use output.name",
     "inputs.mode": "Application now accepts exact inputs.*.path fields",
     "inputs.data_root": "use inputs.st.path and inputs.reference.path",
@@ -254,6 +264,73 @@ def _count(value: Any, field: str, *, optional: bool = False) -> int | None:
     return value
 
 
+def _delivery(document: Mapping[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    if "delivery" not in document:
+        return None, None
+    delivery = _mapping(document["delivery"], "delivery")
+    _reject_unknown(delivery, {"sample_id", "coordinates"}, "delivery")
+    sample_id = _optional_string(delivery.get("sample_id"), "delivery.sample_id")
+    if sample_id is not None:
+        path = Path(sample_id)
+        if (
+            path.is_absolute()
+            or "\\" in sample_id
+            or any(part in {"", ".", ".."} for part in path.parts)
+            or path.as_posix() != sample_id
+        ):
+            raise ApplicationConfigError(
+                "delivery.sample_id must be a normalized relative hierarchical ID"
+            )
+
+    raw_coordinates = delivery.get("coordinates")
+    if raw_coordinates is None:
+        return sample_id, None
+    coordinates = _mapping(raw_coordinates, "delivery.coordinates")
+    _reject_unknown(
+        coordinates,
+        {"key", "unit", "microns_per_coordinate"},
+        "delivery.coordinates",
+    )
+    result: dict[str, Any] = {}
+    if "key" in coordinates:
+        result["key"] = _string(
+            coordinates["key"], "delivery.coordinates.key"
+        )
+    if "unit" in coordinates:
+        unit = _string(coordinates["unit"], "delivery.coordinates.unit")
+        if unit not in {"um", "micron", "pixel", "unknown"}:
+            raise ApplicationConfigError(
+                "delivery.coordinates.unit must be um, micron, pixel, or unknown"
+            )
+        result["unit"] = "micron" if unit == "um" else unit
+    if coordinates.get("microns_per_coordinate") is not None:
+        scale = _number(
+            coordinates["microns_per_coordinate"],
+            "delivery.coordinates.microns_per_coordinate",
+        )
+        if scale <= 0:
+            raise ApplicationConfigError(
+                "delivery.coordinates.microns_per_coordinate must be positive"
+            )
+        unit = result.get("unit")
+        if unit is None:
+            raise ApplicationConfigError(
+                "delivery.coordinates.unit is required with microns_per_coordinate"
+            )
+        if unit == "micron" and scale != 1.0:
+            raise ApplicationConfigError(
+                "micron coordinates require microns_per_coordinate=1"
+            )
+        if unit == "unknown":
+            raise ApplicationConfigError(
+                "unknown coordinate units cannot declare microns_per_coordinate"
+            )
+        result["microns_per_coordinate"] = scale
+    elif result.get("unit") == "micron":
+        result["microns_per_coordinate"] = 1.0
+    return sample_id, result
+
+
 def _root_dir(value: Any, *, cwd: Path) -> tuple[str, Path]:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ApplicationConfigError(
@@ -282,7 +359,7 @@ def _relative_child(root: Path, value: Any, field: str) -> Path:
 
 def _parse_st(inputs: Mapping[str, Any], *, root: Path):
     st = _mapping(_required(inputs, "st", "inputs"), "inputs.st")
-    _reject_unknown(st, {"path", "format", "spatialdata"}, "inputs.st")
+    _reject_unknown(st, {"path", "format", "spatialdata", "expression"}, "inputs.st")
     path = _relative_child(root, _required(st, "path", "inputs.st"), "inputs.st.path")
     st_format = _string(_required(st, "format", "inputs.st"), "inputs.st.format").lower()
     if st_format not in _ST_FORMATS:
@@ -308,7 +385,7 @@ def _parse_reference(
     reference = _mapping(_required(inputs, "reference", "inputs"), "inputs.reference")
     _reject_unknown(
         reference,
-        {"path", "format", "filter_column", "filter_value"},
+        {"path", "format", "filter_column", "filter_value", "expression"},
         "inputs.reference",
     )
     path = _relative_child(root, _required(reference, "path", "inputs.reference"), "inputs.reference.path")
@@ -398,18 +475,21 @@ def compile_application_config(
     *,
     source: ApplicationConfigSource,
     cwd: Path | None = None,
+    reference_override: Path | None = None,
 ) -> ApplicationConfig:
     """Validate one Application YAML document."""
     cwd = (cwd or Path.cwd()).resolve()
     document = _mapping(document, "application config")
     _reject_unknown(document, _TOP_LEVEL_KEYS, "application config")
-    missing = sorted(_TOP_LEVEL_KEYS - set(document))
+    missing = sorted((_TOP_LEVEL_KEYS - _OPTIONAL_TOP_LEVEL_KEYS) - set(document))
     if missing:
         raise ApplicationConfigError(
             f"application config is missing required field(s): {', '.join(missing)}"
         )
     if document["schema_version"] != 1:
         raise ApplicationConfigError("schema_version must be 1")
+
+    delivery_sample_id, delivery_coordinates = _delivery(document)
 
     application = _mapping(document["application"], "application")
     _reject_unknown(application, {"svc_type", "mode"}, "application")
@@ -448,10 +528,26 @@ def compile_application_config(
     inputs = _mapping(document["inputs"], "inputs")
     _reject_unknown(inputs, {"st", "reference", "pm_on_cell"}, "inputs")
     st_path, st_format, table, element = _parse_st(inputs, root=resolved_root)
-    reference_path, reference_filter_column, reference_filter_value = _parse_reference(
-        inputs,
-        root=resolved_root,
+    from .expression import parse_expression_declaration
+    st_expression = parse_expression_declaration(
+        inputs["st"].get("expression"), "inputs.st.expression"
     )
+    reference_expression = None
+    if reference_override is None:
+        reference_path, reference_filter_column, reference_filter_value = _parse_reference(
+            inputs,
+            root=resolved_root,
+        )
+        reference_expression = parse_expression_declaration(
+            inputs["reference"].get("expression"), "inputs.reference.expression"
+        )
+    else:
+        reference_path = Path(reference_override).resolve()
+        if reference_path.suffix.lower() != ".h5ad" or not reference_path.is_file():
+            raise ApplicationConfigError(
+                "reference override must be an existing H5AD file"
+            )
+        reference_filter_column = reference_filter_value = None
     pm_path = None
     if "pm_on_cell" in inputs:
         if mode != "sr":
@@ -528,7 +624,7 @@ def compile_application_config(
     refinement = _mapping(document["local_refinement"], "local_refinement")
     subtype = select = strength = alpha = resolutions = None
     graph_method = graph_alpha = graph_n_neighbors = None
-    graph_exp_neighbors = graph_spatial_neighbors = match_spot_sum = None
+    graph_exp_neighbors = graph_spatial_neighbors = None
     if mode == "cluster":
         _reject_unknown(
             refinement,
@@ -536,10 +632,11 @@ def compile_application_config(
             "local_refinement",
         )
         subtype = _string(_required(refinement, "subtype_column", "local_refinement"), "local_refinement.subtype_column")
-        select = _concrete_cell_type(
-            _required(refinement, "select_cell_type", "local_refinement"),
-            "local_refinement.select_cell_type",
-        )
+        if refinement.get("select_cell_type") is not None:
+            select = _concrete_cell_type(
+                refinement["select_cell_type"],
+                "local_refinement.select_cell_type",
+            )
         alpha = _number(
             _required(refinement, "alpha", "local_refinement"),
             "local_refinement.alpha",
@@ -554,7 +651,7 @@ def compile_application_config(
     elif mode == "sr":
         _reject_unknown(
             refinement,
-            {"strength", "graph", "match_spot_sum"},
+            {"strength", "graph"},
             "local_refinement",
         )
         if "strength" in refinement:
@@ -586,26 +683,51 @@ def compile_application_config(
                 _required(graph, "spatial_neighbors", "local_refinement.graph"),
                 "local_refinement.graph.spatial_neighbors",
             )
-        if "match_spot_sum" in refinement:
-            match_spot_sum = refinement["match_spot_sum"]
-            if not isinstance(match_spot_sum, bool):
-                raise ApplicationConfigError(
-                    "local_refinement.match_spot_sum must be a boolean"
-                )
     else:
         _reject_unknown(refinement, {"strength"}, "local_refinement")
         if "strength" in refinement:
             strength = _number(refinement["strength"], "local_refinement.strength")
 
     output = _mapping(document["output"], "output")
-    _reject_unknown(output, {"dir", "name", "ist_mapping"}, "output")
+    _reject_unknown(output, {"dir", "name", "ist_mapping", "ist_ot"}, "output")
     if "ist_mapping" in output and (svc_type != "sc-SVC" or mode != "cluster"):
         raise ApplicationConfigError("output.ist_mapping is only valid for sc-SVC cluster")
-    ist_mapping = _string(output.get("ist_mapping", "paired"), "output.ist_mapping")
-    if ist_mapping not in {"paired", "mean", "random"}:
-        raise ApplicationConfigError("output.ist_mapping must be paired, mean, or random")
+    ist_mapping_explicit = "ist_mapping" in output
+    default_ist_mapping = (
+        "random" if mode == "cluster" and select is None else "paired"
+    )
+    ist_mapping = _string(
+        output.get("ist_mapping", default_ist_mapping), "output.ist_mapping"
+    )
+    if ist_mapping not in {"paired", "mean", "random", "within_cluster", "outside_cluster"}:
+        raise ApplicationConfigError("output.ist_mapping must be paired, mean, random, within_cluster, or outside_cluster")
+    ist_ot = None
+    if "ist_ot" in output or ist_mapping in {"within_cluster", "outside_cluster"}:
+        if mode != "cluster" or ist_mapping not in {"within_cluster", "outside_cluster"}:
+            raise ApplicationConfigError("output.ist_ot requires within_cluster or outside_cluster")
+        options = _mapping(output.get("ist_ot", {}), "output.ist_ot")
+        _reject_unknown(options, {"spatial_weight", "max_cost_entries", "gene_block_size"}, "output.ist_ot")
+        weight = _number(options.get("spatial_weight", 0.2), "output.ist_ot.spatial_weight")
+        if weight > 1:
+            raise ApplicationConfigError("output.ist_ot.spatial_weight must be between 0 and 1")
+        ist_ot = {"spatial_weight": weight}
+        for name, default in (("max_cost_entries", 2_000_000), ("gene_block_size", 256)):
+            value = _count(options.get(name, default), f"output.ist_ot.{name}")
+            if value < 1:
+                raise ApplicationConfigError(f"output.ist_ot.{name} must be positive")
+            ist_ot[name] = value
+    if mode == "cluster" and select is None and ist_mapping == "paired":
+        raise ApplicationConfigError(
+            "output.ist_mapping=paired is unavailable for full-sample sc-SVC; "
+            "use random or mean, or set local_refinement.select_cell_type for "
+            "the legacy paired-carrier result"
+        )
     output_root = _relative_child(resolved_root, _required(output, "dir", "output"), "output.dir")
-    output_dir = output_root / select if mode == "cluster" else output_root
+    output_dir = (
+        output_root / select
+        if mode == "cluster" and select is not None
+        else output_root
+    )
     output_name = _optional_string(output.get("name"), "output.name")
     if output_name is not None:
         if output_name in {".", ".."} or "/" in output_name or "\\" in output_name:
@@ -658,7 +780,6 @@ def compile_application_config(
         local_refinement_graph_n_neighbors=graph_n_neighbors,
         local_refinement_graph_exp_neighbors=graph_exp_neighbors,
         local_refinement_graph_spatial_neighbors=graph_spatial_neighbors,
-        local_refinement_match_spot_sum=match_spot_sum,
         ot_method=ot_method,
         pm_on_cell_path=pm_path,
         output_root=output_root,
@@ -666,6 +787,12 @@ def compile_application_config(
         output_name=output_name,
         seed=seed,
         ist_mapping=ist_mapping,
+        ist_mapping_explicit=ist_mapping_explicit,
+        delivery_sample_id=delivery_sample_id,
+        delivery_coordinates=delivery_coordinates,
+        ist_ot=ist_ot,
+        st_expression=st_expression,
+        reference_expression=reference_expression,
     )
 
 
@@ -681,11 +808,17 @@ def override_select_cell_type(
             "--select-ct is only valid for sc-SVC cluster mode"
         )
     selected = _concrete_cell_type(select_ct, "--select-ct")
-    return replace(
-        config,
-        select_cell_type=selected,
-        output_dir=config.output_root / selected,
-    )
+    changes: dict[str, Any] = {
+        "select_cell_type": selected,
+        "output_dir": config.output_root / selected,
+    }
+    if hasattr(config, "ist_mapping"):
+        changes["ist_mapping"] = (
+            config.ist_mapping
+            if getattr(config, "ist_mapping_explicit", False)
+            else "paired"
+        )
+    return replace(config, **changes)
 
 
 __all__ = [

@@ -9,9 +9,10 @@ from importlib.metadata import PackageNotFoundError, version
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 import traceback
 
 import yaml
@@ -20,10 +21,10 @@ from .config import ResolvedSample, discover_samples, load_batch_config, resolve
 from .sample import file_identity, read_sample
 
 
-DEFAULT_CELL_TYPES = ['T', 'Macro', 'Fibroblast']
 ROUTES = {'hST': {'svc_type': 'sp-SVC'},
           'iST': {'svc_type': 'sc-SVC', 'mode': 'cluster'},
           'sST': {'svc_type': 'sc-SVC', 'mode': 'sr'}}
+_RESERVED_CELL_TYPES = {'inputs', 'analysis', '.', '..', '.revise'}
 
 
 def _json(path: Path, value: dict) -> None:
@@ -95,18 +96,23 @@ def _reconstruction_inputs(sample, document: dict) -> dict[str, dict[str, str]]:
     prior = document.get('inputs', {}).get('pm_on_cell')
     if prior is not None:
         identities['pm_on_cell'] = file_identity(Path('/') / prior['path'])
+    if sample.reference_config_path is not None:
+        identities['reference_config'] = file_identity(sample.reference_config_path)
     return identities
 
 
 def _reconstruction_fingerprint(sample, document: dict, identities: dict, code: dict,
                                 *, cell_type: str | None = None) -> str:
+    delivery_version = 1 if sample.modality == 'iST' and cell_type is not None else 2
     return _digest({
-        'fingerprint_version': 2,
+        'fingerprint_version': 3,
+        'delivery_protocol_version': delivery_version,
         'sample': sample.sample_id,
         'inputs': identities,
         'config': _reconstruction_document(document),
         'project_config': str(Path(sample.metadata['configuration']['project_config']).resolve()),
         'cell_type': cell_type,
+        'reference_preparation': sample.metadata.get('reference_preparation'),
         'code': code,
     })
 
@@ -117,18 +123,24 @@ def _cell_types(document: dict) -> list[str | None]:
         raise ValueError('modality must be hST, iST, or sST')
     if modality != 'iST':
         return [None]
-    labels = document.get('local_refinement', {}).get('cell_types', DEFAULT_CELL_TYPES)
+    local = document.get('local_refinement', {})
+    if 'cell_types' not in local:
+        return [None]
+    labels = local['cell_types']
     if not isinstance(labels, list) or not labels:
         raise ValueError('local_refinement.cell_types must be a non-empty list')
-    reserved = {'inputs', 'analysis', '.', '..', '.revise'}
     for label in labels:
-        if (not isinstance(label, str) or not label.strip() or label != label.strip()
-                or '/' in label or '\\' in label or any(ord(c) < 32 for c in label)
-                or label.casefold() in reserved or label.startswith('.')):
-            raise ValueError(f'Unsafe cell type directory: {label!r}; use an explicit label mapping')
+        _validate_cell_type_label(label)
     if len({label.casefold() for label in labels}) != len(labels):
         raise ValueError('cell_types contain duplicate or colliding directory names')
     return labels
+
+
+def _validate_cell_type_label(label: str) -> None:
+    if (not isinstance(label, str) or not label.strip() or label != label.strip()
+            or '/' in label or '\\' in label or any(ord(c) < 32 for c in label)
+            or label.casefold() in _RESERVED_CELL_TYPES or label.startswith('.')):
+        raise ValueError(f'Unsafe cell type directory: {label!r}; use an explicit label mapping')
 
 
 def application_document(sample, cell_type: str | None, output_root: Path) -> dict:
@@ -138,10 +150,24 @@ def application_document(sample, cell_type: str | None, output_root: Path) -> di
         doc.pop(field, None)
     doc['schema_version'] = 1
     doc['application'] = dict(ROUTES[sample.modality])
+    coordinates = sample.metadata['coordinates']
+    doc['delivery'] = {
+        'sample_id': sample.sample_id,
+        'coordinates': {
+            'key': coordinates['source_key'],
+            'unit': coordinates['unit'],
+            'microns_per_coordinate': coordinates['microns_per_coordinate'],
+        },
+    }
     doc['paths'] = {'root_dir': '/'}
+    st_declaration = doc['inputs'].get('st', {}).get('expression')
     doc['inputs']['st'] = {'path': str(sample.st_path).lstrip('/'), 'format': 'h5ad'}
-    doc['inputs']['reference']['path'] = str(sample.reference_path).lstrip('/')
-    doc['inputs']['reference']['format'] = 'h5ad'
+    if st_declaration is not None:
+        doc['inputs']['st']['expression'] = st_declaration
+    reference = doc['inputs']['reference']
+    reference.pop('config', None)
+    reference['path'] = str(sample.reference_path).lstrip('/')
+    reference['format'] = 'h5ad'
     prior = doc['inputs'].get('pm_on_cell')
     if prior is not None:
         source = Path(prior['path'])
@@ -151,24 +177,36 @@ def application_document(sample, cell_type: str | None, output_root: Path) -> di
     local = doc['local_refinement']
     local.pop('cell_types', None)
     output = doc.setdefault('output', {})
-    if set(output) - {'ist_mapping'}:
-        raise ValueError('sample output only accepts ist_mapping; output locations are batch-owned')
+    if set(output) - {'ist_mapping', 'ist_ot'}:
+        raise ValueError('sample output only accepts ist_mapping and ist_ot; output locations are batch-owned')
     output['dir'] = str(output_root).lstrip('/')
     if sample.modality == 'iST':
-        local['select_cell_type'] = cell_type
-        output.setdefault('ist_mapping', 'paired')
+        if cell_type is None:
+            local.pop('select_cell_type', None)
+            output.setdefault('ist_mapping', 'random')
+        else:
+            local['select_cell_type'] = cell_type
+            output.setdefault('ist_mapping', 'paired')
     else:
         output['name'] = 'SVC'
     return doc
 
 
-def _execute(config_path: Path, log_path: Path) -> int:
+def _execute(
+    config_path: Path,
+    log_path: Path,
+    *,
+    reference_config: Path | None = None,
+) -> int:
     environment = os.environ.copy()
     package_root = str(Path(__file__).resolve().parents[2])
     environment['PYTHONPATH'] = os.pathsep.join(filter(None, (package_root, environment.get('PYTHONPATH'))))
+    command = [sys.executable, '-m', 'reconstruct', '--config', str(config_path)]
+    if reference_config is not None:
+        command.extend(('--reference-config', str(reference_config)))
     with log_path.open('w') as log:
         process = subprocess.run(
-            [sys.executable, '-m', 'reconstruct', '--config', str(config_path)],
+            command,
             stdout=log, stderr=subprocess.STDOUT, env=environment,
         )
     return process.returncode
@@ -186,6 +224,42 @@ def _reusable(state: dict, fingerprint: str) -> bool:
         return False
 
 
+class _FileSnapshot:
+    """Restore owned publication files if a complete sample delivery fails."""
+
+    def __init__(self, directory: Path) -> None:
+        directory.mkdir(parents=True, exist_ok=True)
+        self._temporary = TemporaryDirectory(prefix='.delivery-backup-', dir=directory)
+        self._root = Path(self._temporary.name)
+        self._entries: dict[Path, Path | None] = {}
+
+    def add(self, paths) -> None:
+        for path in paths:
+            path = Path(path)
+            if path in self._entries:
+                continue
+            if path.exists():
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError(f'Publication target must be an ordinary file: {path}')
+                backup = self._root / str(len(self._entries))
+                shutil.copy2(path, backup)
+                self._entries[path] = backup
+            else:
+                self._entries[path] = None
+
+    def restore(self) -> None:
+        for path, backup in self._entries.items():
+            if backup is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(backup, path)
+        self.close()
+
+    def close(self) -> None:
+        self._temporary.cleanup()
+
+
 def _handoff(sample, config, paths: dict, fingerprint: str) -> dict:
     import anndata as ad
     import numpy as np
@@ -200,18 +274,28 @@ def _handoff(sample, config, paths: dict, fingerprint: str) -> dict:
     pairing = {'status': 'unavailable', 'reason': 'generated_spatial_units' if sample.modality == 'sST' else 'unverified',
                'raw_observations': len(raw_ids), 'id_key': 'obs_names'}
     for role, path in paths.items():
+        if Path(path).suffix.lower() != '.h5ad':
+            record = file_identity(path)
+            record['artifact_type'] = 'yaml' if Path(path).suffix.lower() in {'.yaml', '.yml'} else 'file'
+            outputs[role] = record
+            continue
         data = ad.read_h5ad(path, backed='r')
         try:
             record = file_identity(path)
             record.update(shape=list(data.shape), observation_role=(
+                'raw_spatial_units' if role == 'raw' else
                 'reference_expression' if role == 'expression' else
                 'generated_spatial_units' if sample.modality == 'sST' else 'spatial_units'))
             outputs[role] = record
             metadata = data.uns.get('revise_reconstruction', {})
+            if role == 'raw':
+                delivery = data.uns.get('revise_delivery', {})
+                if isinstance(delivery, dict) and isinstance(delivery.get('publication'), dict):
+                    metadata = delivery['publication']
             manifest = metadata.get('run_manifest')
             if manifest:
                 provenance[role] = file_identity(Path(manifest))
-            if path == spatial_path and sample.modality != 'sST':
+            if path == spatial_path and role != 'raw' and sample.modality != 'sST':
                 ids = data.obs_names
                 indexer = raw_ids.get_indexer(ids)
                 coordinates = data.obsm.get('spatial')
@@ -227,14 +311,15 @@ def _handoff(sample, config, paths: dict, fingerprint: str) -> dict:
             data.file.close()
     mapping = config.ist_mapping if sample.modality == 'iST' else None
     return {
-        'schema_version': 1, 'status': 'succeeded', 'sample_id': sample.sample_id,
+        'schema_version': 1, 'delivery_protocol_version': 2 if 'raw' in paths else 1,
+        'status': 'succeeded', 'sample_id': sample.sample_id,
         'directory': str(config.output_dir),
         'modality': sample.modality, 'cell_type': config.select_cell_type,
         'ist_mapping': mapping, 'fingerprint': fingerprint,
         'inputs': sample.metadata, 'outputs': outputs, 'provenance': provenance,
         'coordinates': sample.metadata['coordinates'], 'pairing': pairing,
         'expression_semantics': ('reference_expression_by_cluster_' + mapping
-                                 if mapping in {'mean', 'random'} else 'native_reconstruction_carriers'),
+                                 if mapping in {'mean', 'random', 'within_cluster', 'outside_cluster'} else 'native_reconstruction_carriers'),
         'analysis': {'status': 'not_run', 'state_path': 'analysis/analysis.json',
                      'storage': 'paired observations/windows share tables; independent axes use separate files',
                      'current_ist_spatial_carrier_contract': mapping == 'paired' if sample.modality == 'iST' else None},
@@ -252,6 +337,17 @@ def _configuration_audit(sample) -> dict:
             != _digest(_reconstruction_document(resolved.document))):
         raise ValueError('Sample configuration changed; rerun reconstruction first')
     return audit
+
+
+def _verify_reference_preparation(sample) -> None:
+    if sample.reference_config_path is None:
+        return
+    from revise.reference_preparation.evidence import assert_reference_unchanged
+
+    evidence = sample.metadata.get('reference_preparation')
+    assert_reference_unchanged(evidence)
+    if Path(evidence['reference_path']).resolve() != sample.reference_path.resolve():
+        raise ValueError('Reference preparation evidence resolved another reference path')
 
 
 def _task_result(result: dict, status: str, *, state: dict | None = None,
@@ -284,6 +380,8 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
     result = {'sample_id': sample.sample_id, 'cell_type': cell_type, 'directory': str(root)}
     state = dict(result, status='running')
     writable = False
+    snapshot = None
+    preserve_previous = False
     try:
         for directory in (root, control, root / 'analysis'):
             if directory.is_symlink() or not directory.resolve().is_relative_to(output_root):
@@ -300,7 +398,10 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
         prior = document['inputs'].get('pm_on_cell')
         if prior is not None:
             source_paths.append(Path('/') / prior['path'])
-        targets = [root / name for name in ('SVC.h5ad', 'spatial.h5ad', 'expr.h5ad', 'reconstruction.json')]
+        targets = [root / name for name in (
+            'raw.h5ad', 'SVC.h5ad', 'spatial.h5ad', 'expr.h5ad', 'sample.yaml',
+            'reconstruction.json',
+        )]
         for original in source_paths:
             if original.is_relative_to(control):
                 raise ValueError(f'Original input is inside task control directory: {original}')
@@ -309,12 +410,7 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
                         or (original.is_dir() and target.resolve().is_relative_to(original.resolve()))
                         or (target.exists() and original.exists() and os.path.samefile(target, original))):
                     raise ValueError(f'Publication destination aliases original input: {original}')
-        control.mkdir(parents=True, exist_ok=True)
-        writable = True
-        config_path = control / 'application.yaml'
-        config_path.write_text(yaml.safe_dump(document, sort_keys=False))
-        source, loaded = load_application_yaml(config_path)
-        config = compile_application_config(loaded, source=source)
+        _verify_reference_preparation(sample)
         identities = _reconstruction_inputs(sample, document)
         fingerprint = _reconstruction_fingerprint(
             sample, sample.document, identities, code, cell_type=cell_type)
@@ -324,15 +420,35 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
             _json(state_path, previous)
             handoff = _read_json(handoff_path)
             return _task_result(result, 'reused', state=previous, handoff=handoff)
+        control.mkdir(parents=True, exist_ok=True)
+        writable = True
+        config_path = control / 'application.yaml'
+        log_path = control / 'reconstruction.log'
+        preserve_previous = (
+            previous.get('status') == 'succeeded'
+            and _read_json(handoff_path).get('status') == 'succeeded'
+        )
+        snapshot = _FileSnapshot(control)
+        snapshot.add((*targets, config_path, state_path, handoff_path,
+                      log_path, root / 'analysis' / 'analysis.json',
+                      root / 'engine' / 'provenance.json'))
+        config_path.write_text(yaml.safe_dump(document, sort_keys=False))
+        source, loaded = load_application_yaml(config_path)
+        config = compile_application_config(loaded, source=source)
+        paths = output_paths(config)
+        snapshot.add(paths.values())
         state.update(fingerprint=fingerprint, code=code, inputs=identities,
                      configuration_audit=audit)
         _json(state_path, state)
         _json(root / 'analysis' / 'analysis.json', {'status': 'not_run', 'reconstruction_fingerprint': fingerprint})
         _json(handoff_path, dict(result, schema_version=1, status='running'))
-        returncode = _execute(config_path, control / 'reconstruction.log')
+        execute_kwargs = (
+            {'reference_config': sample.reference_config_path}
+            if sample.reference_config_path is not None else {}
+        )
+        returncode = _execute(config_path, log_path, **execute_kwargs)
         if returncode:
-            raise RuntimeError(f'Reconstruction exited {returncode}; see {control / "reconstruction.log"}')
-        paths = output_paths(config)
+            raise RuntimeError(f'Reconstruction exited {returncode}; see {log_path}')
         handoff = _handoff(sample, config, paths, fingerprint)
         _json(handoff_path, handoff)
         artifacts = [file_identity(path) for path in paths.values()]
@@ -343,11 +459,26 @@ def _run_task(sample, cell_type: str | None, code: dict, output_root: Path) -> d
         verify_configuration(sample.metadata['configuration'])
         if any(file_identity(Path(item['path'])) != item for item in identities.values()):
             raise ValueError('Input changed during reconstruction; retry with stable inputs')
+        _verify_reference_preparation(sample)
         _json(state_path, dict(state, status='succeeded', artifacts=artifacts))
+        snapshot.close()
+        snapshot = None
         return _task_result(result, 'succeeded', state=dict(state, status='succeeded', artifacts=artifacts),
                             handoff=handoff)
     except Exception as exc:
         error = f'{type(exc).__name__}: {exc}'
+        if snapshot is not None:
+            failed_log = None
+            log_path = control / 'reconstruction.log'
+            if log_path.is_file() and not log_path.is_symlink():
+                failed_log = log_path.read_text(errors='replace')
+            snapshot.restore()
+            snapshot = None
+            if preserve_previous:
+                return _task_result(result, 'failed', state=state, error=error)
+            if failed_log:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text(failed_log)
         if writable:
             with (control / 'reconstruction.log').open('a') as log:
                 traceback.print_exc(file=log)
@@ -421,7 +552,11 @@ def _output_directory(output: Path, relative: Path) -> Path:
 def _validate_task_selection(resolved: ResolvedSample, cell_type: str | None) -> None:
     labels = _cell_types(resolved.document)
     if resolved.document.get('modality') == 'iST':
-        if cell_type is None or cell_type not in labels:
+        has_explicit_list = 'cell_types' in resolved.document.get('local_refinement', {})
+        if not has_explicit_list and cell_type is not None:
+            _validate_cell_type_label(cell_type)
+            return
+        if cell_type not in labels:
             raise ValueError(f'cell_type must be one of the configured iST types: {labels}')
     elif cell_type is not None:
         raise ValueError('cell_type is only valid for iST samples')

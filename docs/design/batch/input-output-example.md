@@ -41,9 +41,15 @@ SC 通常按癌种分目录，也可以继续细分研究或保存多个 referen
 
 不需要特殊 reference 时不放置 S02 覆盖文件。QC、标签列、单位等模板值需要与真实数据核对；模板不是任意数据均可直接运行的科学参数预设。分析方面只在配置显式启用；字段和结果记录见[分析配置](protocol.md#analysis-configuration)与[分析结果](protocol.md#analysis-results)。
 
+示例中的 `cell_types` 与 `paired` 保留用于显式旧单类型兼容路径；whole-sample
+交付应省略 `local_refinement.cell_types`，并使用 `random`（或明确选择
+`mean`）。
+
 ## IST output tree
 
-下图为 iST `paired` 重建及分析调用后的布局示例。状态文件由对应调用产生，不要求用户预建。
+下图为显式配置 `local_refinement.cell_types` 或单类型兼容调用时的 iST
+`paired` 布局示例。状态文件由对应调用产生，不要求用户预建；它不是
+whole-sample 交付的目录。
 
 ```text
 output/
@@ -72,6 +78,31 @@ output/
 返回的状态、产物和计算依据见[分析结果协议](protocol.md#analysis-results)。
 
 `mean`／`random` 使用同一目录，将双载体替换为 `SVC.h5ad`；其余记录与分析位置不变。模式切换的受控清理和回滚规则见[输出协议](protocol.md#output-roles-and-current-result-semantics)。
+
+省略 `local_refinement.cell_types` 时使用 sample-level whole-sample 路径：GA
+只运行一次，实际 broad types 中符合 Level2 资格的类型合并到同一个 SVC，
+默认使用 `random`。其目录还包含完整 Raw、sample 配置和同次运行记录：
+
+```text
+output/
+└── CRC/S01/
+    ├── SVC.h5ad                 # whole-sample random/mean assembly
+    ├── raw.h5ad                 # 原始 X/轴/坐标/注释，含 QC 排除单位
+    ├── sample.yaml              # 相对路径、标签、坐标和表达语义
+    ├── reconstruction.json      # 同次运行 handoff、fingerprint 和 provenance
+    ├── .revise/
+    │   ├── sample.json
+    │   ├── application.yaml
+    │   ├── reconstruction.log
+    │   └── task.json
+    └── analysis/
+        ├── analysis.json
+        └── <aspect>/
+```
+
+Raw/SVC 的原始 annotation 保留；本次真实推断写入 `revise_Level1`、
+`revise_Level2`，没有推断的位置保持缺失。`sample.yaml` 不把未知表达尺度
+写成 raw counts 或 `log1p`。
 
 ## HST and SST output tree
 

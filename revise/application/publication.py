@@ -11,9 +11,14 @@ from typing import Any, Mapping
 from revise.utils.provenance import completed_artifact, hash_jsonable
 
 from .config import ApplicationConfig
+from .delivery import is_sample_delivery, prepare_raw, sample_document
 
 
 def output_paths(config: ApplicationConfig) -> dict[str, Path]:
+    if is_sample_delivery(config):
+        filename = f"{config.output_name}.h5ad" if config.output_name else "SVC.h5ad"
+        return {"svc": config.output_dir / filename, "raw": config.output_dir / "raw.h5ad",
+                "sample_config": config.output_dir / "sample.yaml"}
     if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired":
         filename = f"{config.output_name}.h5ad" if config.output_name else "SVC.h5ad"
         return {"svc": config.output_dir / filename}
@@ -53,7 +58,6 @@ def application_metadata(
                 if config.local_refinement_graph_method is not None
                 else None
             ),
-            "match_spot_sum": config.local_refinement_match_spot_sum,
         }
     else:
         local_refinement = {"strength": config.local_refinement_strength}
@@ -94,6 +98,14 @@ def application_metadata(
     }
     if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired":
         effective_request["output"]["ist_mapping"] = config.ist_mapping
+    if config.ist_ot is not None:
+        effective_request["output"]["ist_ot"] = dict(config.ist_ot, method="tacco")
+    for name, declaration in (("st_expression", config.st_expression),
+                              ("reference_expression", config.reference_expression)):
+        if declaration is not None:
+            effective_request["inputs"][name] = declaration
+    if config.reference_preparation is not None:
+        effective_request["inputs"]["reference_preparation"] = config.reference_preparation
     return {
         "source_path": config.source_path,
         "source_sha256": config.config_sha256,
@@ -133,6 +145,7 @@ def _published_artifacts(config: ApplicationConfig, svc) -> list[tuple[str, Any]
         assembled = assemble_ist(
             outputs["sc_svc_spatial"], outputs["sc_svc_expr"],
             mapping=config.ist_mapping, seed=config.seed,
+            broad_column=config.broad_column, ot_options=config.ist_ot,
         )
         return [("svc", assembled)]
     return [(role, outputs[key]) for role, key in required]
@@ -179,9 +192,38 @@ def _owned_alternatives(config, paths):
     return owned
 
 
-def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
+def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx, *, raw=None, raw_source=None,
+                    raw_is_owned=False):
     """Publish pipeline carriers or assembled iST output transactionally."""
     artifacts = _published_artifacts(config, ctx.svc)
+    result_artifacts = list(artifacts)
+    handoff = None
+    if is_sample_delivery(config):
+        if raw is None:
+            raise ValueError("Complete sample publication requires original Raw")
+        svc = artifacts[0][1]
+        raw = prepare_raw(config, raw, svc, ctx, owned=raw_is_owned)
+        artifacts.append(("raw", raw))
+        handoff = sample_document(config, paths, raw, svc, source=raw_source,
+                                  sample_id=config.delivery_sample_id,
+                                  coordinates=config.delivery_coordinates)
+    if len(set(paths.values())) != len(paths):
+        raise ValueError("Sample artifact output paths must be distinct")
+    reference_evidence = getattr(config, "reference_preparation", None)
+    if reference_evidence is not None:
+        for name in ("config_path", "report_path", "reference_path"):
+            original = Path(reference_evidence[name])
+            for target in paths.values():
+                if (target.resolve() == original.resolve()
+                        or (target.exists() and original.exists() and os.path.samefile(target, original))):
+                    raise ValueError(f"Publication destination aliases reference preparation input: {target}")
+    if is_sample_delivery(config):
+        for target in paths.values():
+            for original in (config.st_path, config.reference_path):
+                if (target.resolve() == original.resolve()
+                        or (original.is_dir() and target.resolve().is_relative_to(original.resolve()))
+                        or (target.exists() and original.exists() and os.path.samefile(target, original))):
+                    raise ValueError(f"Publication destination aliases original input: {target}")
     config.output_dir.mkdir(parents=True, exist_ok=True)
     metadata = dict(ctx.application_config_metadata)
     metadata.update({
@@ -195,15 +237,33 @@ def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
         "selected_cell_type": config.select_cell_type,
         "ot": ctx.merged_config.get("ot"),
     })
+    if is_sample_delivery(config):
+        metadata["delivery_protocol_version"] = 2
+        metadata["label_columns"] = {key: value for key, value in handoff["columns"].items()
+                                     if key in {"broad", "subtype"}}
+        for key in ("processed_cell_types", "skipped_cell_types"):
+            if key in getattr(ctx, "artifacts", {}):
+                value = ctx.artifacts[key]
+                # AnnData cannot serialize a list of dictionaries into uns.
+                metadata[key] = ({str(i): item for i, item in enumerate(value)}
+                                 if key == "skipped_cell_types" else value)
+    if "confidence_sources" in getattr(ctx, "artifacts", {}):
+        metadata["confidence_sources"] = ctx.artifacts["confidence_sources"]
     temporary: list[tuple[Path, Path]] = []
     try:
         for role, adata in artifacts:
             assembly = (
                 adata.uns.get("revise_reconstruction", {})
-                if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired"
+                if role == "svc" and config.mode == "cluster" and getattr(config, "ist_mapping", "paired") != "paired"
                 else {}
             )
-            adata.uns["revise_reconstruction"] = dict(metadata, **assembly, output_role=role)
+            publication = dict(metadata, **assembly, output_role=role)
+            if role == "raw" and "revise_reconstruction" in adata.uns:
+                # Preserve source provenance; the new Raw publication owns a
+                # separate namespace rather than overwriting input metadata.
+                adata.uns["revise_delivery"]["publication"] = publication
+            else:
+                adata.uns["revise_reconstruction"] = publication
             target = paths[role]
             with NamedTemporaryFile(
                 dir=config.output_dir,
@@ -214,6 +274,15 @@ def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
                 temporary_path = Path(handle.name)
             temporary.append((temporary_path, target))
             adata.write_h5ad(temporary_path)
+        if handoff is not None:
+            import yaml
+
+            target = paths["sample_config"]
+            with NamedTemporaryFile(dir=config.output_dir, prefix=".sample.",
+                                    suffix=".tmp.yaml", mode="w", encoding="utf-8", delete=False) as handle:
+                temporary_path = Path(handle.name)
+                temporary.append((temporary_path, target))
+                yaml.safe_dump(handoff, handle, allow_unicode=True, sort_keys=False)
         backups: dict[Path, Path] = {}
         published: set[Path] = set()
         publication_records: list[dict[str, Any]] = []
@@ -273,7 +342,7 @@ def publish_outputs(config: ApplicationConfig, paths: Mapping[str, Path], ctx):
         for temporary_path, _ in temporary:
             temporary_path.unlink(missing_ok=True)
 
-    values = tuple(adata for _, adata in artifacts)
+    values = tuple(adata for _, adata in result_artifacts)
     return values if config.mode == "cluster" and getattr(config, "ist_mapping", "paired") == "paired" else values[0]
 
 

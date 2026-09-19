@@ -47,6 +47,33 @@ def test_shared_inputs_are_read_only_without_new_files(tmp_path):
     assert before == {str(p): p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
 
 
+def test_partially_missing_reference_subtypes_are_left_for_per_type_eligibility(tmp_path):
+    path, _, st, ref = fixture_sample(tmp_path)
+    data = ad.read_h5ad(ref)
+    data.obs['Level2'] = data.obs['Level2'].astype(object)
+    data.obs.loc['c2', 'Level2'] = None
+    data.write_h5ad(ref)
+
+    sample = read(path, st)
+
+    assert sample.reference_path == ref
+
+
+@pytest.mark.parametrize('modality', ['hST', 'sST'])
+def test_non_ist_routes_still_reject_missing_reference_broad_labels(tmp_path, modality):
+    path, doc, st, ref = fixture_sample(tmp_path)
+    doc['modality'] = modality
+    doc['local_refinement'] = {'strength': 0.2}
+    path.write_text(yaml.safe_dump(doc))
+    data = ad.read_h5ad(ref)
+    data.obs['Level1'] = data.obs['Level1'].astype(object)
+    data.obs.loc['c2', 'Level1'] = None
+    data.write_h5ad(ref)
+
+    with pytest.raises(ValueError, match='non-null'):
+        read(path, st)
+
+
 @pytest.mark.parametrize('problem', ['duplicate_obs', 'duplicate_var', 'nan_matrix', 'negative_matrix',
                                       'nan_coordinates', 'missing_coordinates', 'missing_label', 'no_shared_genes'])
 def test_invalid_inputs(tmp_path, problem):

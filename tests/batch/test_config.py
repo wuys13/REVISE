@@ -35,6 +35,38 @@ def test_inheritance_paths_lists_and_reference_replacement(tmp_path, monkeypatch
     assert result.config_chain[1] == {'path': str(tmp_path / 'ST/batch.yaml'), 'sha256': None}
 
 
+def test_reference_preparation_config_resolves_from_declaring_yaml(tmp_path):
+    from revise.batch.config import resolve_sample
+
+    path = project(tmp_path)
+    write(tmp_path / 'ST/CRC/batch.yaml', {
+        'inputs': {'reference': {'config': 'reference/preparation.yaml'}},
+    })
+
+    result = resolve_sample(path, tmp_path / 'ST/CRC/S01')
+
+    assert result.document['inputs']['reference'] == {
+        'config': str(tmp_path / 'ST/CRC/reference/preparation.yaml'),
+    }
+
+
+@pytest.mark.parametrize('extra', [
+    {'path': 'reference.h5ad'},
+    {'format': 'h5ad'},
+    {'filter_column': 'donor', 'filter_value': 'A'},
+])
+def test_reference_preparation_config_is_exclusive_with_direct_reference_fields(
+        tmp_path, extra):
+    from revise.batch.config import resolve_sample
+
+    path = project(tmp_path)
+    spec = {'config': 'reference/preparation.yaml', **extra}
+    write(tmp_path / 'ST/CRC/batch.yaml', {'inputs': {'reference': spec}})
+
+    with pytest.raises(ValueError, match='exclusive'):
+        resolve_sample(path, tmp_path / 'ST/CRC/S01')
+
+
 def test_chain_detects_added_removed_and_changed_configuration(tmp_path):
     from revise.batch.config import resolve_sample
     path = project(tmp_path)

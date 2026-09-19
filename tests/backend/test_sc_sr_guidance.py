@@ -264,6 +264,42 @@ def test_mandatory_reference_allocation_remains_closed_form_and_mass_preserving(
     np.testing.assert_allclose(first.sum(axis=2), expression)
 
 
+def test_sr_output_matches_normalized_spot_genes_without_per_cell_10000(
+    load_sr_runner,
+):
+    module = load_sr_runner("sc_svc_super_resolution_application")
+    runner = _build_runner(
+        module,
+        benchmark=False,
+        strength=0.0,
+        graph_enabled=False,
+        cells_per_spot=2,
+    )
+
+    assert runner.local_refinement() is False
+
+    output = runner.svc["sc_svc_dec"]
+    np.testing.assert_array_equal(
+        output.obsm["spatial"], output.obs[["x", "y"]].to_numpy(dtype=float)
+    )
+    output_x = np.asarray(output.X)
+    spot_names = output.obs["spot_name"].to_numpy()
+    expected_by_spot = {
+        "spot-1": np.array([2000.0, 8000.0]),
+        "spot-2": np.array([8000.0, 2000.0]),
+    }
+    for spot_name, expected in expected_by_spot.items():
+        mask = spot_names == spot_name
+        np.testing.assert_allclose(output_x[mask].sum(axis=0), expected)
+
+    # The source spot normalization remains part of the algorithm, while the
+    # generated cells share each spot's normalized mass.
+    source_x = np.asarray(runner.st_adata.X)
+    np.testing.assert_allclose(source_x.sum(axis=1), [1e4, 1e4])
+    assert output_x.shape[0] > 2
+    assert not np.allclose(output_x.sum(axis=1), 1e4)
+
+
 def _sr_runner_inputs(*, cells_per_spot=50):
     spatial = AnnData(
         X=np.array([[2.0, 8.0], [8.0, 2.0]], dtype=np.float64),
@@ -327,7 +363,6 @@ def _runner_config(*, graph_enabled=True, strength=0.0, seed=17):
         rec_pot_reg_m=1.0,
         rec_pot_reg_type="kl",
         rec_alpha=1.0,
-        rec_match_spot_sum=True,
     )
 
 
@@ -373,8 +408,8 @@ def load_sr_runner(monkeypatch):
     return load
 
 
-def _build_runner(module, *, benchmark, strength, graph_enabled=True, seed=17):
-    spatial, reference, svc_obs = _sr_runner_inputs()
+def _build_runner(module, *, benchmark, strength, graph_enabled=True, seed=17, cells_per_spot=50):
+    spatial, reference, svc_obs = _sr_runner_inputs(cells_per_spot=cells_per_spot)
     config = _runner_config(
         graph_enabled=graph_enabled,
         strength=strength,
@@ -445,6 +480,14 @@ def test_application_always_conditions_executed_local_ot_and_preserves_allocatio
 
         monkeypatch.setattr(module, "OTKernel", SimpleNamespace(couple=solve))
         applied = runner.local_refinement()
+        output = runner.svc["sc_svc_dec"]
+        for spot_name in runner.st_adata.obs_names:
+            mask = output.obs["spot_name"].to_numpy() == spot_name
+            np.testing.assert_allclose(
+                np.asarray(output.X)[mask].sum(axis=0),
+                np.asarray(runner.st_adata[spot_name].X).ravel(),
+            )
+        assert not np.allclose(np.asarray(output.X).sum(axis=1), 1e4)
         snapshots.append(
             {
                 "applied": applied,
@@ -547,6 +590,7 @@ def test_benchmark_disabled_graph_control_reports_no_local_ot(
         benchmark=True,
         strength=4.0,
         graph_enabled=False,
+        cells_per_spot=2,
     )
 
     assert runner.local_refinement() is False

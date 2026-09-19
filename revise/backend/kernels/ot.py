@@ -11,6 +11,8 @@ from anndata import AnnData
 from revise.backend.ops.assignment import GlobalAssignment, validate_global_assignment
 from revise.backend.ops.distance import bhattacharyya_distance
 from revise.backend.ops.tacco_runtime import require_tacco
+from revise.utils.confidence import CONFIDENCE_METADATA_KEY
+from revise.utils.confidence import max_confidence
 
 
 _TACCO_MARGINAL_CONTINUATION_MAX_CYCLES = 1000
@@ -425,17 +427,50 @@ def _validated_annotation_coupling(result, expected_shape) -> np.ndarray:
     return coupling
 
 
+def _confidence_stage_metadata(
+    *,
+    annotation_key: str,
+    confidence_key: str,
+    candidate_categories,
+    method: str | None,
+    reference_origin,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "stage": f"annotation:{annotation_key}",
+        "annotation_key": str(annotation_key),
+        "confidence_key": str(confidence_key),
+        "candidate_categories": [str(value) for value in candidate_categories],
+        "candidate_categories_meaning": (
+            "posterior columns are candidate annotation categories"
+        ),
+    }
+    if method is not None:
+        metadata["method"] = str(method)
+    if isinstance(reference_origin, str) and reference_origin:
+        metadata["reference_origin"] = reference_origin
+    return metadata
+
+
 def _publish_annotation(
     target: AnnData,
     assignment: GlobalAssignment,
     *,
     annotation_key: str,
     confidence_key: str,
+    method: str | None = None,
+    reference_origin=None,
 ) -> AnnData:
     result = target.copy()
     result.obsm[annotation_key] = assignment.posterior
     result.obs[annotation_key] = assignment.labels.to_numpy(copy=True)
-    result.obs[confidence_key] = assignment.posterior.max(axis=1).to_numpy(copy=True)
+    result.obs[confidence_key] = max_confidence(assignment.posterior).to_numpy(copy=True)
+    result.uns[CONFIDENCE_METADATA_KEY] = _confidence_stage_metadata(
+        annotation_key=annotation_key,
+        confidence_key=confidence_key,
+        candidate_categories=assignment.posterior.columns,
+        method=method,
+        reference_origin=reference_origin,
+    )
     return result
 
 
@@ -454,9 +489,16 @@ def _annotate(
     multi_center: int | None = None,
     lamb: float | None = None,
     unknown_key: Any = "Unknown",
+    scoring_genes_callback=None,
 ) -> AnnData:
     """Annotate a complete target from a complete reference through POT or TACCO."""
     normalized_method = str(method).strip().lower()
+    reference_origin = None
+    for origin_key in ("reference_origin", "source_origin"):
+        candidate_origin = getattr(reference, "uns", {}).get(origin_key)
+        if isinstance(candidate_origin, str) and candidate_origin:
+            reference_origin = candidate_origin
+            break
     if normalized_method == "pot":
         if pot_reg is None or pot_reg_m is None or pot_reg_type is None:
             raise ValueError(
@@ -464,6 +506,8 @@ def _annotate(
             )
 
         overlap_genes = list(target.var_names.intersection(reference.var_names))
+        if scoring_genes_callback is not None:
+            scoring_genes_callback([str(value) for value in overlap_genes])
         reference_overlap = reference[:, overlap_genes].copy()
         target_overlap = target[:, overlap_genes].copy()
         expected_categories = _reference_categories(
@@ -550,6 +594,8 @@ def _annotate(
             assignment,
             annotation_key=annotation_key,
             confidence_key=confidence_key,
+            method=normalized_method,
+            reference_origin=reference_origin,
         )
 
     if normalized_method == "tacco":
@@ -598,7 +644,11 @@ def _annotate(
                 "TACCO return_reference=True must return "
                 "(annotated_target, processed_reference)"
             )
-        annotated_target, _processed_reference = tacco_output
+        annotated_target, processed_reference = tacco_output
+        if scoring_genes_callback is not None:
+            scoring_genes_callback(
+                [str(value) for value in processed_reference.var_names.tolist()]
+            )
         if result_key not in annotated_target.obsm:
             raise KeyError(
                 f"TACCO did not write the fresh requested obsm[{result_key!r}]"
@@ -626,6 +676,8 @@ def _annotate(
             assignment,
             annotation_key=annotation_key,
             confidence_key=confidence_key,
+            method=normalized_method,
+            reference_origin=reference_origin,
         )
 
     raise NotImplementedError(f"Unsupported annotation method={method}")

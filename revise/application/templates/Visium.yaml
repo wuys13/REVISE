@@ -43,7 +43,6 @@ local_refinement:
     n_neighbors: 10
     exp_neighbors: 10
     spatial_neighbors: 10
-  match_spot_sum: true
 
 output:
   dir: results/visium_mouse_brain_revise # EDIT: relative to paths.root_dir.

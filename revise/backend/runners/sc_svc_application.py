@@ -1,5 +1,7 @@
 import scanpy as sc
 
+from revise.application.preprocess import valid_label_mask
+
 from revise.backend.runners.application_svc import ApplicationSVC
 from revise.backend.kernels import GraphClusterKernel as GraphCluster
 from revise.backend.kernels import LocalAnchoringKernel as LocalAnchoring
@@ -36,11 +38,28 @@ class ScSVC(ApplicationSVC):
     def local_refinement(self, select_ct, sub_cell_type_col, resolutions, select_res=None):
 
         cell_type_col = self.config.cell_type_col
-        ct_adata_sp = self.st_adata[self.st_adata.obs[cell_type_col] == select_ct]
-        ct_adata_sc = self.sc_ref_adata[self.sc_ref_adata.obs[cell_type_col] == select_ct]
+        ct_adata_sp = self.st_adata[
+            self.st_adata.obs[cell_type_col] == select_ct
+        ].copy()
+        ct_adata_sc = self.sc_ref_adata[
+            self.sc_ref_adata.obs[cell_type_col] == select_ct
+        ].copy()
         if ct_adata_sc.n_obs == 0:
             raise ValueError(
                 f"Selected cell type {select_ct!r} has no reference cells"
+            )
+        if sub_cell_type_col not in ct_adata_sc.obs:
+            raise KeyError(
+                f"Missing required subtype column {sub_cell_type_col!r} in reference"
+            )
+        ct_adata_sc = ct_adata_sc[
+            valid_label_mask(ct_adata_sc.obs[sub_cell_type_col]), :
+        ].copy()
+        subtype_count = int(ct_adata_sc.obs[sub_cell_type_col].nunique())
+        if subtype_count == 0:
+            raise ValueError(
+                f"Selected cell type {select_ct!r} has no valid "
+                f"{sub_cell_type_col!r} labels for local refinement"
             )
         if ct_adata_sp.n_obs < 2:
             raise ValueError(

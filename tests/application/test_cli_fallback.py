@@ -41,7 +41,8 @@ def test_official_path_falls_back_to_packaged_template(tmp_path, monkeypatch):
 
     assert source.path is None
     assert source.label == "package:revise.application.templates/Xenium.yaml"
-    assert b"select_cell_type: T" in source.payload
+    assert b"select_cell_type:" not in source.payload
+    assert b"ist_mapping: random" in source.payload
 
 
 @pytest.mark.parametrize("legacy_name", ["Xenium_T.yaml", "Xenium_Fib.yaml", "Xenium_Mono.yaml"])

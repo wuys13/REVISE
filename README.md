@@ -200,6 +200,8 @@ The README is the first-run guide. Each detailed rule has one canonical owner:
 | Which notebooks are preserved? | [Gallery](https://revise-svc.readthedocs.io/en/latest/source/gallery.html) |
 | How do I reproduce the paper workflows? | [`reproduce/README.md`](reproduce/README.md) |
 | How is the repository verified? | [`tests/README.md`](tests/README.md) |
+| How do I prepare a reference and use it in reconstruction or batch? | [Reference preparation](docs/development/reconstruction-analysis/plans/reference-preparation.md) |
+| What reconstruction/analysis protocol work is discussed, planned, or implemented? | [Development roadmap](docs/development/reconstruction-analysis/README.md) |
 
 ## Repository layout
 
@@ -217,3 +219,7 @@ tests/                   executable contracts
 This checkout does not currently contain citation metadata; consult the
 [REVISE documentation](https://revise-svc.readthedocs.io/en/latest/) for the
 current project citation. REVISE is released under the [MIT License](LICENSE).
+
+OT assembly 与比较入口：[两种模式及配置](docs/development/reconstruction-analysis/plans/ot-assembly.md) · [比较 Notebook](reproduce/case/assembly_comparison.ipynb)。
+
+双库审阅入口：[协议对照、浅验收与 GPT 审阅说明](docs/development/reconstruction-analysis/cross-repo-review.md)。

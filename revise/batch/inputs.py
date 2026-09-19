@@ -76,6 +76,11 @@ def _path_from_entry(entry: Any, label: str) -> Path:
 
 
 def _source_path(record: Mapping[str, Any]) -> Path:
+    outputs = record.get("outputs", {})
+    if isinstance(outputs, Mapping) and "raw" in outputs:
+        return _path_from_entry(outputs["raw"], "outputs.raw")
+    if record.get("delivery_protocol_version") == 2:
+        raise ValueError("delivery protocol 2 reconstruction is missing published Raw output")
     inputs = record.get("inputs", {})
     sources = inputs.get("sources", {}) if isinstance(inputs, Mapping) else {}
     if isinstance(sources, Mapping) and "spatial" in sources:
@@ -222,8 +227,8 @@ class AnalysisInputs:
         if self.modality not in {"hST", "iST", "sST"}:
             raise ValueError("reconstruction modality must be hST, iST, or sST")
         self.ist_mapping = reconstruction.get("ist_mapping", "paired") if self.modality == "iST" else None
-        if self.modality == "iST" and self.ist_mapping not in {"paired", "mean", "random"}:
-            raise ValueError("iST reconstruction mapping must be paired, mean, or random")
+        if self.modality == "iST" and self.ist_mapping not in {"paired", "mean", "random", "within_cluster", "outside_cluster"}:
+            raise ValueError("iST reconstruction mapping must be paired, mean, random, within_cluster, or outside_cluster")
         self.coordinate_metadata = dict(reconstruction.get("coordinates", {}))
         self._raw_path = _source_path(reconstruction)
         self._cache: dict[str, InputView] = {}

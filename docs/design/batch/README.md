@@ -12,6 +12,7 @@
 |---|---|---|
 | ST、分层 YAML、reference 共享与输出布局 | 已实现 | 保留；不新增输入目录层级 |
 | `paired / mean / random` 重建输出 | 已实现 | 保留文件语义；分析通过按需视图读取 |
+| iST whole-sample `Raw + SVC + sample.yaml` delivery | 已实现工程交接 | GA/LR 全类型规则、Raw 保真和 sample-level 发布已接入；P2CRC 真实样本及科学/联合验收另行记录 |
 | raw／paired／sST 分析输入 | `AnalysisInputs` 延迟加载 raw、重建、paired 和 sST 基线 | 辅助视图不做归一化或科学计算 |
 | 单项与批量调用 | 两个批量命令和两个 Python 单任务接口已实现 | 单项调用只处理明确选择的样本、类型或方面 |
 | 分析方面与返回记录 | 显式方面、资源、结构化产物和计算依据已实现 | 科学算法仍由方面适配器负责 |

@@ -65,7 +65,7 @@ class ScSVCSuperResolution(ApplicationSVC):
         1. Assigns cell types to each virtual cell using SpotSr
         2. Constructs cell type reference profiles
         3. Calculates gene expression for each cell based on spot contributions
-        4. Normalizes expressions to 10,000 counts per cell
+        4. Corrects per-gene totals to each internally normalized parent spot
 
         The reconstructed data is stored in self.svc["sc_svc_dec"].
         """
@@ -292,14 +292,11 @@ class ScSVCSuperResolution(ApplicationSVC):
         else:
             self.logger.info("Skipping OT enhancement due to small cell count")
 
-        if self.config.rec_match_spot_sum:
-            self.logger.info("Rescaling single-cell expressions to match spot totals")
-            current_sum = np.zeros_like(X, dtype=np.float64)
-            np.add.at(current_sum, spot_indices, SVC_X)
-            ratio = X / (current_sum + 1e-10)
-            SVC_X = SVC_X * ratio[spot_indices]
-        else:
-            SVC_X = SVC_X / (np.sum(SVC_X, axis=1, keepdims=True) + 1e-10) * 1e4
+        self.logger.info("Rescaling single-cell expressions to match spot totals")
+        current_sum = np.zeros_like(X, dtype=np.float64)
+        np.add.at(current_sum, spot_indices, SVC_X)
+        ratio = X / (current_sum + 1e-10)
+        SVC_X = SVC_X * ratio[spot_indices]
 
         self.logger.info(f"Number of cells processed: {len(self.svc_obs)}")
         self.logger.info(f"Number of unique spots: {len(spots)}")
@@ -310,5 +307,6 @@ class ScSVCSuperResolution(ApplicationSVC):
         svc_obs.set_index("cell_id", inplace=True)
         svc_adata = sc.AnnData(SVC_X, obs=svc_obs)
         svc_adata.var_names = st_adata_common.var_names
+        svc_adata.obsm["spatial"] = svc_obs[["x", "y"]].to_numpy(dtype=float, copy=True)
         self.svc["sc_svc_dec"] = svc_adata
         return refinement_applied

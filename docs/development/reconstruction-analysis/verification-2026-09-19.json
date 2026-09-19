@@ -1,0 +1,46 @@
+{
+  "date": "2026-09-19",
+  "producer": {
+    "head": "a26d36fe3b11d652f2cd9eeafb92e990518eb3ad",
+    "worktree_dirty": true,
+    "runtime_sources_sha256": "599671ff7971d2fbef3612253975b3aeb83700e15ac12abd79215292df203ddf"
+  },
+  "consumer": {
+    "head": "66b7fb491ee6a1da2068d5ecfb6c114cb5d7a2e3",
+    "worktree_dirty": true,
+    "python_sources_sha256": "05a54d7f413a305657d80e42507b0e5230b003be622bf73c02e252e3ebb91937"
+  },
+  "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
+  "tests": [
+    "tests/application",
+    "tests/config",
+    "tests/backend",
+    "tests/batch",
+    "tests/integration/test_analysis_delivery.py",
+    "tests/integration/batch/test_whole_sample_delivery.py"
+  ],
+  "result": {
+    "passed": 759,
+    "warnings": 43,
+    "failed": 0,
+    "skipped": 0
+  },
+  "execution": "Tests run outside sandbox for CLI OpenMP shared memory; optional readline import disabled; plugin autoload and numeric multithreading disabled.",
+  "consumer_result": {
+    "status": "partial",
+    "verified": [
+      "load_sample independent axes and relative paths",
+      "run_analysis reconstruction_impact spatial diversity completed",
+      "report and result artifacts",
+      "input file hashes unchanged"
+    ],
+    "not_verified": [
+      "real sample reconstruction or consumption",
+      "expression identity/scale",
+      "sst normalized nonlog expression analysis",
+      "biological improvement"
+    ]
+  },
+  "real_large_sample_run": false,
+  "consumer_worktree_edited": false
+}

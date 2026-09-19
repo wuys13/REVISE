@@ -130,6 +130,39 @@ def test_prepare_sc_svc_pair_normalizes_labels_and_limits_only_spatial_genes():
     assert prepared_reference.obs["Level2"].tolist() == ["M_1", "T_1"]
 
 
+def test_prepare_sc_svc_pair_drops_invalid_broad_rows_but_preserves_missing_subtypes():
+    from revise.application.preprocess import prepare_sc_svc_pair
+
+    spatial = AnnData(
+        X=np.ones((2, 2)),
+        obs=pd.DataFrame(index=["spot-1", "spot-2"]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    reference = AnnData(
+        X=np.ones((4, 2)),
+        obs=pd.DataFrame(
+            {
+                "Level1": ["T", "T", None, "  "],
+                "Level2": ["T/1", None, "bad", "bad"],
+            },
+            index=["cell-1", "cell-2", "cell-3", "cell-4"],
+        ),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+
+    _, prepared = prepare_sc_svc_pair(
+        spatial,
+        reference,
+        broad_column="Level1",
+        subtype_column="Level2",
+    )
+
+    assert prepared.obs_names.tolist() == ["cell-1", "cell-2"]
+    assert prepared.obs["Level1"].tolist() == ["T", "T"]
+    assert prepared.obs["Level2"].iloc[0] == "T_1"
+    assert pd.isna(prepared.obs["Level2"].iloc[1])
+
+
 def test_sp_sr_reference_label_normalization_preserves_surrounding_whitespace_by_default():
     from revise.application.preprocess import normalize_reference_labels
 

@@ -33,12 +33,12 @@ global_anchoring:
 
 local_refinement:
   subtype_column: Level2 # EDIT to a refined column in reference.obs.
-  select_cell_type: T # KEEP only when this broad label exists in reference.obs.
   alpha: 0.2
   resolutions: [0.6, 0.7, 0.8]
 
 output:
-  dir: results/sc_SVC_case/P2CRC_Xenium # EDIT: published-results root; selected cell type is appended automatically.
+  dir: results/sc_SVC_case/P2CRC_Xenium # EDIT: whole-sample published-results directory.
+  ist_mapping: random # KEEP for reproducible whole-sample donor assembly; mean is also supported.
 
 execution:
   seed: 42 # KEEP for reproducible runs.

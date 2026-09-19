@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List
@@ -7,8 +8,10 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 import scanpy as sc
+from anndata import concat as concat_anndata
 from scipy import sparse
 
+from revise.application.preprocess import valid_label_mask
 from revise.backend.contracts import LocalRefinementStrategy
 from revise.config.runner_conf import (
     ApplicationScConf,
@@ -192,6 +195,56 @@ def _require_concrete_cell_type(value: Any) -> str:
             "route.select_cell_type must name one concrete broad cell type"
         )
     return select_ct
+
+
+def _optional_concrete_cell_type(value: Any) -> str | None:
+    if value is None:
+        return None
+    return _require_concrete_cell_type(value)
+
+
+def _namespace_clusters(adata, cell_type: str):
+    result = adata.copy()
+    if "SVC_cluster" not in result.obs:
+        raise ValueError("Local refinement output is missing SVC_cluster")
+    labels = result.obs["SVC_cluster"]
+    if labels.isna().any():
+        raise ValueError("Local refinement output contains null SVC_cluster labels")
+    result.obs["SVC_cluster"] = pd.Categorical(
+        [
+            json.dumps(
+                [cell_type, str(value)],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            for value in labels.astype(object)
+        ]
+    )
+    return result
+
+
+def _concat_strict(adatas: list, *, role: str):
+    if not adatas:
+        raise ValueError(f"No successful {role} carriers were produced")
+    expected = adatas[0].var_names
+    if not expected.is_unique:
+        raise ValueError(f"{role} carrier var_names must be unique")
+    for index, adata in enumerate(adatas[1:], start=1):
+        if not adata.var_names.is_unique or not adata.var_names.equals(expected):
+            raise ValueError(
+                f"{role} carrier {index} gene axis does not exactly match the first carrier"
+            )
+    combined = concat_anndata(
+        adatas,
+        axis=0,
+        join="inner",
+        merge="same",
+        uns_merge="same",
+        index_unique=None,
+    )
+    if not combined.obs_names.is_unique:
+        raise ValueError(f"Merged {role} carrier observation IDs must be unique")
+    return combined
 
 
 def _build_svc(
@@ -445,7 +498,6 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             rec_graph_alpha=float(cfg["graph"]["alpha"]),
             rec_random_state=int(cfg["graph"]["random_state"]),
             rec_alpha=float(cfg["reconstruct"]["alpha"]),
-            rec_match_spot_sum=bool(cfg["sc"]["match_spot_sum"]),
             tacco_annotate_multi_center=tacco_annotate_cfg["multi_center"],
             tacco_annotate_lamb=tacco_annotate_cfg["lamb"],
             **_ot_runner_kwargs(cfg),
@@ -461,26 +513,124 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         ctx.sc_ref_adata = adata_sc
         ctx.runner = ScAppRunner(adata_sp, adata_sc, conf, ctx.logger)
 
+    def global_anchoring(self, ctx) -> None:
+        super().global_anchoring(ctx)
+        # Keep the one GA result directly reachable for complete-Raw label
+        # backfill. LR operates on subsets but must never re-run GA.
+        ctx.st_adata = ctx.runner.st_adata
+        ctx.artifacts["ga_spatial"] = ctx.runner.st_adata
+
     def solve_ot(self, ctx) -> None:
         sc_cfg = ctx.merged_config["sc"]
+        cell_type_col = ctx.columns["cell_type_col"]
         sub_cell_type_col = ctx.columns["sub_cell_type_col"]
-
-        select_ct = _require_concrete_cell_type(sc_cfg.get("select_ct"))
-
         resolutions = list(sc_cfg["resolutions"])
         select_res = sc_cfg.get("select_resolution")
-        sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
-            select_ct,
-            sub_cell_type_col,
-            resolutions,
-            select_res=select_res,
+
+        selected = _optional_concrete_cell_type(sc_cfg.get("select_ct"))
+        if selected is None:
+            broad = ctx.runner.st_adata.obs[cell_type_col]
+            actual_types = sorted(
+                {str(value) for value in broad.loc[valid_label_mask(broad)]}
+            )
+        else:
+            actual_types = [selected]
+
+        spatial_outputs = []
+        expression_outputs = []
+        processed: list[str] = []
+        skipped: list[dict[str, Any]] = []
+        confidence_sources = {
+            "global_anchoring": dict(ctx.runner.st_adata.uns.get("revise_confidence", {})),
+            "local_refinement": {},
+        }
+        ctx.artifacts["confidence_sources"] = confidence_sources
+        # Publish progress immediately so a failed eligible type or an
+        # all-skipped sample still leaves inspectable reasons in the context.
+        ctx.artifacts["processed_cell_types"] = processed
+        ctx.artifacts["skipped_cell_types"] = skipped
+        for cell_type in actual_types:
+            reference_mask = (
+                ctx.runner.sc_ref_adata.obs[cell_type_col] == cell_type
+            )
+            subtype_values = ctx.runner.sc_ref_adata.obs.loc[
+                reference_mask, sub_cell_type_col
+            ]
+            valid_subtypes = subtype_values.loc[valid_label_mask(subtype_values)]
+            subtype_count = int(valid_subtypes.nunique())
+            if selected is None and subtype_count <= 1:
+                detail = {
+                    "cell_type": cell_type,
+                    "reason": "insufficient_valid_reference_subtypes",
+                    "valid_subtype_count": subtype_count,
+                }
+                skipped.append(detail)
+                ctx.logger.warning(
+                    "[sc-SVC] skip broad type %r: Local Refinement requires "
+                    "more than one valid %r label; got %s",
+                    cell_type,
+                    sub_cell_type_col,
+                    subtype_count,
+                )
+                continue
+
+            sc_svc_spatial, sc_svc_expr = ctx.runner.local_refinement(
+                cell_type,
+                sub_cell_type_col,
+                resolutions,
+                select_res=select_res,
+            )
+            confidence_sources["local_refinement"][str(len(processed))] = {
+                "cell_type": cell_type,
+                "spatial": dict(sc_svc_spatial.uns.get("revise_confidence", {})),
+                "reference": dict(sc_svc_expr.uns.get("revise_confidence", {})),
+            }
+            if selected is None:
+                sc_svc_spatial = _namespace_clusters(
+                    sc_svc_spatial, cell_type
+                )
+                sc_svc_expr = _namespace_clusters(sc_svc_expr, cell_type)
+            spatial_outputs.append(sc_svc_spatial)
+            expression_outputs.append(sc_svc_expr)
+            processed.append(cell_type)
+
+        if skipped:
+            ctx.logger.warning(
+                "[sc-SVC] incomplete reconstruction: %s. Complete reference Level2 "
+                "subgroups on the SC side, then rerun reconstruction.",
+                "; ".join(f"{item['cell_type']} ({item['valid_subtype_count']} valid subtypes)"
+                          for item in skipped),
+            )
+        if not processed:
+            raise ValueError(
+                "sc-SVC produced no eligible broad cell types for Local Refinement"
+            )
+        if selected is None:
+            sc_svc_spatial = _concat_strict(
+                spatial_outputs, role="spatial"
+            )
+            sc_svc_expr = _concat_strict(
+                expression_outputs, role="expression"
+            )
+        else:
+            sc_svc_spatial = spatial_outputs[0]
+            sc_svc_expr = expression_outputs[0]
+
+        label_assignments = ctx.runner.st_adata.obs[[cell_type_col]].copy()
+        label_assignments[sub_cell_type_col] = pd.Series(
+            pd.NA, index=label_assignments.index, dtype="object"
         )
+        label_assignments.loc[
+            sc_svc_spatial.obs_names, sub_cell_type_col
+        ] = sc_svc_spatial.obs[sub_cell_type_col].astype(object).to_numpy()
+
         ctx.record_local_refinement(True)
         ctx.artifacts["outputs"] = {
             "sc_svc_spatial": sc_svc_spatial,
             "sc_svc_expr": sc_svc_expr,
         }
-        ctx.artifacts["selected_cell_type"] = select_ct
+        ctx.artifacts["selected_cell_type"] = selected
+        ctx.artifacts["label_assignments"] = label_assignments
 
     def finalize_svc(self, ctx) -> SVC:
         outputs = dict(ctx.artifacts.get("outputs", {}))
@@ -492,6 +642,12 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
             spatial=outputs.get("sc_svc_spatial"),
             extra_provenance={
                 "selected_cell_type": ctx.artifacts.get("selected_cell_type"),
+                "processed_cell_types": list(
+                    ctx.artifacts.get("processed_cell_types", ())
+                ),
+                "skipped_cell_types": list(
+                    ctx.artifacts.get("skipped_cell_types", ())
+                ),
             },
         )
 
@@ -523,7 +679,6 @@ class ScSvcSuperResolutionApplicationStrategy(RunnerBackedStrategy):
             rec_graph_exp_neighbor_num=int(cfg["graph"]["exp_neighbors"]),
             rec_graph_spatial_neighbor_num=int(cfg["graph"]["spatial_neighbors"]),
             rec_alpha=float(cfg["reconstruct"]["alpha"]),
-            rec_match_spot_sum=bool(cfg["sc"]["match_spot_sum"]),
             rec_graph_agg_enabled=bool(cfg["sc"]["sr_graph_agg_enabled"]),
             svc_completeness=cfg["sc"]["svc_completeness"],
             sr_assignment_seed=_resolve_runtime_seed(ctx),

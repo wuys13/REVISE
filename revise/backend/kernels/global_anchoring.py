@@ -39,21 +39,23 @@ class GlobalAnchoringKernel(BaseKernel):
         tacco_kwargs = (
             self._tacco_annotate_kwargs() if normalized_mode == "tacco" else {}
         )
-        return OTKernel.annotate(
-            st_adata,
-            sc_ref_adata,
-            method=normalized_mode,
-            annotation_key=cell_type_col,
-            confidence_key=self.confidence_col,
-            pot_reg=kwargs.get("annotate_pot_reg"),
-            pot_reg_m=kwargs.get("annotate_pot_reg_m"),
-            pot_reg_type=kwargs.get("annotate_pot_reg_type"),
-            pot_verbose=True,
-            pot_num_iter_max=5000,
-            multi_center=tacco_kwargs.get("multi_center"),
-            lamb=tacco_kwargs.get("lamb"),
-            unknown_key=kwargs.get(
+        annotate_kwargs = {
+            "method": normalized_mode,
+            "annotation_key": cell_type_col,
+            "confidence_key": self.confidence_col,
+            "pot_reg": kwargs.get("annotate_pot_reg"),
+            "pot_reg_m": kwargs.get("annotate_pot_reg_m"),
+            "pot_reg_type": kwargs.get("annotate_pot_reg_type"),
+            "pot_verbose": True,
+            "pot_num_iter_max": 5000,
+            "multi_center": tacco_kwargs.get("multi_center"),
+            "lamb": tacco_kwargs.get("lamb"),
+            "unknown_key": kwargs.get(
                 "unknown_key",
                 getattr(self.config, "unknown_key", "Unknown"),
             ),
-        )
+        }
+        scoring_genes_callback = kwargs.get("scoring_genes_callback")
+        if scoring_genes_callback is not None:
+            annotate_kwargs["scoring_genes_callback"] = scoring_genes_callback
+        return OTKernel.annotate(st_adata, sc_ref_adata, **annotate_kwargs)

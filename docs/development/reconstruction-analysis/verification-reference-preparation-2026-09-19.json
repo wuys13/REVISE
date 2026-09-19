@@ -1,0 +1,35 @@
+{
+  "date": "2026-09-19",
+  "scope": "reference preparation integration",
+  "status": "engineering_verified",
+  "runtime_sources_sha256": "87ea05c6cc26fae9cd99a352583158430d6a37370af2baa0754b708087ef04e6",
+  "main_regression": {
+    "passed": 917,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 44,
+    "subtests_passed": 24,
+    "exit_code": 0,
+    "log": "/tmp/revise-reference-final.log"
+  },
+  "real_screen_command": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "exit_code": 0,
+    "log": "/tmp/revise-reference-command.log"
+  },
+  "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
+  "real_numerical_ga": [
+    "POT small fixture",
+    "TACCO small fixture",
+    "two-candidate POT screen CLI function"
+  ],
+  "delivery_integration": "paired preparation to direct/batch publication; deterministic reconstruction kernel substitutes",
+  "real_large_sample_run": false,
+  "biological_quality_verified": false,
+  "atlas_worktree_edited": false,
+  "analysis_worktree_edited": false,
+  "environment": "readline disabled; plugin autoload disabled; single-thread numerical libraries; final main suite outside sandbox for CLI/OpenMP",
+  "source_provenance": "../../../revise/reference_preparation/SOURCE_PROVENANCE.md"
+}

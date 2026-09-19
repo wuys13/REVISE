@@ -29,7 +29,7 @@ leave inherited settings unchanged. Directory names have no algorithmic meaning.
 Mappings merge recursively; scalars and lists replace inherited values. An empty
 mapping does not clear inherited fields. `inputs.reference` is the exception:
 a lower-level reference replaces the entire block, including any filtering.
-A replacement must supply its own path and any desired filter pair. This prevents
+A replacement must supply its own path and any desired filter pair, or only `config` pointing to a prepared `reference.yaml`. This prevents
 filters for one reference from leaking into another.
 
 Every configured filesystem path resolves relative to the YAML declaring it,
@@ -42,11 +42,11 @@ The [group and sample YAML examples](input-output-example.md#configuration-files
 | `modality` | Required hST, iST or sST; maps to the existing single-run route. |
 | `coordinates` | Required `unit: um \| pixel`; optional positive `microns_per_coordinate`. |
 | `enabled` | Boolean, defaults to true; lower levels may override it. |
-| `inputs.reference` | H5AD path and optional `filter_column` / `filter_value` pair. |
+| `inputs.reference` | H5AD path and optional filter pair, or exclusive `config` pointing to a prepared reference YAML. |
 | `inputs.pm_on_cell` | Optional existing single-run mapping input, with a path relative to its YAML. |
 | `algorithm`, `preprocessing` | Existing single-run solver and QC settings. |
-| `global_anchoring`, `local_refinement` | Existing GA/LR settings; batch adds iST `cell_types`. |
-| `output` | iST `ist_mapping` only; locations and filenames are batch-owned. |
+| `global_anchoring`, `local_refinement` | Existing GA/LR settings; iST `cell_types` is optional. Omitting it selects the whole-sample path; an explicit list remains the legacy per-type compatibility path. |
+| `output` | iST `ist_mapping` only; whole-sample defaults to `random`, explicit per-type compatibility defaults to `paired`; locations and filenames are batch-owned. |
 | `execution` | Existing execution settings, including seed. |
 | `analysis` | Per-aspect adapter specifications; see [Connect an analysis module](framework.md#connect-an-analysis-module). |
 
@@ -57,6 +57,15 @@ thresholds. Missing reference, modality or units
 is an error; none is inferred from platform names, directory names or labels.
 The full example configuration is under [configs/batch/](../../../configs/batch/). Refer to the existing
 application reference for scientific parameter meanings.
+
+### Prepared reference input
+
+`inputs.reference: {config: ./prepared/reference.yaml}` resolves relative to the
+batch YAML declaring it, before inheritance. It cannot be combined with path,
+format or filters. Preparation is a separate explicit step; batch never runs
+candidate screening. The selected whole-file reference replaces legacy filters
+before input validation and fingerprinting. Config/report identities and selected
+file content participate in reuse checks. See the [two-step guide](../../development/reconstruction-analysis/plans/reference-preparation.md).
 
 ## Standard ST and reference files
 
@@ -93,25 +102,44 @@ harmonized before batch execution.
 
 Output directories mirror sample paths relative to `input_root`. hST uses
 `sp-SVC`; iST uses `sc-SVC` cluster mode; sST uses `sc-SVC` sr mode.
-For iST, each effective `local_refinement.cell_types` entry becomes an
-independent task in a type subdirectory. If the setting is omitted, the current
-runner default applies; this document does not prescribe a fixed biological
-type list. Labels must be safe, unique path components. Missing types fail
-explicitly; there is no name-based exclusion.
+For iST, an explicit `local_refinement.cell_types` list keeps the legacy
+per-type task layout, with each entry in a type subdirectory. If the setting is
+omitted, one sample-level task runs Global Anchoring once, considers actual
+broad labels, skips types with at most one valid non-empty Level2 label, and
+combines the eligible results into one sample SVC. An explicit `cell_type`
+single-task call retains the legacy rule, where one valid subtype is allowed
+and zero valid subtypes fails. Labels must be safe, unique path components;
+whole-sample cluster names are namespaced before concatenation. An eligible
+type failure fails the sample and protects the previous complete result.
 
 完整目录样式统一见[paired 输出示例](input-output-example.md#ist-output-tree)和[hST/sST 示例](input-output-example.md#hst-and-sst-output-tree)，此处只定义角色和状态语义。
 
 hST/sST place `SVC.h5ad`, their handoff, controls and analysis at sample level.
-Engine provenance remains available through references in the handoff.
+Whole-sample iST also places `SVC.h5ad`, `raw.h5ad`, `sample.yaml`, its handoff,
+controls and analysis at sample level. The Raw role is the original spatial
+input snapshot, including units excluded by QC and original annotations; it is
+not the normalized reconstruction work object. Engine provenance remains
+available through references in the handoff.
 iST `output.ist_mapping` selects assembly only:
 
-* `paired` (default): spatial and expression H5AD carriers.
+* `paired` (legacy explicit single-type default): spatial and expression H5AD carriers.
 * `mean`: sparse cluster-mean expression on spatial observations in `SVC.h5ad`.
 * `random`: seeded within-cluster donor assignment in `SVC.h5ad`, retaining
   donor identities and assembly provenance.
 
-GA/LR are unchanged. Successful mode switches remove identified framework-owned
-obsolete alternatives; failed publication restores prior files.
+Whole-sample iST defaults to `random`; `paired` is rejected for the
+sample-level path. GA/LR are unchanged by final assembly. Successful mode
+switches remove identified framework-owned obsolete alternatives; failed
+publication restores prior files.
+
+Sample-level delivery adds `revise_Level1` and `revise_Level2` to the published
+Raw/SVC objects when those inferences exist, while preserving original
+annotation columns. Missing inference remains missing. A generated
+`sample.yaml` uses relative `raw.h5ad`/`SVC.h5ad` paths, records a reversible
+sample identity mapping, and declares each side's actual expression and
+coordinate semantics. Unknown expression identity or unsupported normalized
+non-log sST expression is recorded as unknown/unavailable; it is not silently
+declared raw counts or `log1p`.
 
 `reconstruction.json` records task identity, mode, actual carrier roles and
 hashes, standard input sources, configuration provenance, coordinate meanings,
@@ -180,7 +208,7 @@ raw_baseline[c, g] = raw.X[parent(c), g] / n[parent(c)]
 - 生成 cell 缺少父映射、指向不存在的 raw spot、重复 cell ID，均拒绝构造基线并给出原因。
 - 没有生成 cell 的 raw spot 记录为未覆盖；不除以零、不补造 cell。守恒声明仅覆盖已表示的父 spot。
 - 明确标注这是 `parent_spot_equal_split` 构造基线，不是实测单细胞表达，也不是原生 cell 配对证据。
-- 不修改重建算法、输出表达或 `rec_match_spot_sum`；基线守恒不要求重建总量与 raw 相等。
+- 此分析基线不修改重建算法或输出表达。sST 已固定采用内部 normalized spot 的逐基因校正，旧 `rec_match_spot_sum` 开关已删除；基线守恒不要求重建总量与 raw 相等。
 
 `inputs.sst_baseline()` 提供构造基线，`_handoff` 对 sST 的原生配对不可用判断保持不变。分析上下文提供这项构造基线能力，让支持这种比较的模块执行；需要真实 cell 配对的模块仍然不可用。
 
@@ -243,3 +271,9 @@ analysis:
 当前解释器内导入执行；检测到源码变化时会拒绝继续，需重启解释器后再试。
 
 科学筛选、匹配规则、统计前提、指标含义由模块声明。框架检查结构、来源与发布一致性，不判断科学结论有效性；“模块被调用”也不等于分析方法已验证。
+
+## OT assembly 与表达来源声明
+
+`output.ist_mapping` 新增 `within_cluster` / `outside_cluster`；`output.ist_ot` 与 Application 共用配置与默认值，输出位置仍由 batch 管理。详情见[本批协议](../../development/reconstruction-analysis/plans/ot-assembly.md)。模式与参数进入 fingerprint，不能复用其他模式结果。
+
+自动发现的 ST 可以声明 `inputs.st.expression: {identity: measured_expression, scale: untransformed_nonnegative}`，该 `st` 块不能设置路径。直接 reference 的 `expression` 字段同理。`inputs.reference.config` 保持与直接字段互斥；实际选中文件可用显式 `uns.revise_expression` 声明其来源。未提供来源仍为 unknown，不从非负数值猜测处理历史。

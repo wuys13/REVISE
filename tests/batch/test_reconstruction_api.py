@@ -33,6 +33,23 @@ def test_single_task_runs_only_the_selected_sample_and_type(tmp_path, fake_solve
     assert not (tmp_path / 'results' / 'batch_status.json').exists()
 
 
+def test_explicit_single_type_remains_available_without_legacy_cell_types_list(
+        tmp_path, fake_solver):
+    from revise.batch.runner import run_reconstruction_task
+
+    root = tmp_path / 'data' / 'one'
+    document = make_sample(root, cell_types=None)
+    document['output'] = {}
+    (root / 'batch.yaml').write_text(yaml.safe_dump(document))
+
+    result = run_reconstruction_task(batch_config(tmp_path), 'one', cell_type='T')
+
+    assert result['status'] == 'succeeded'
+    assert result['cell_type'] == 'T'
+    assert result['outputs']['spatial']['path'].endswith('/T/spatial.h5ad')
+    assert fake_solver == ['T']
+
+
 def test_single_task_reuses_without_batch_inventory(tmp_path, fake_solver):
     from revise.batch.runner import run_reconstruction_task
 

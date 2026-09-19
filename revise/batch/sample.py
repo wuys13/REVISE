@@ -22,6 +22,7 @@ class BatchSample:
     st_path: Path
     reference_path: Path
     metadata: dict[str, Any]
+    reference_config_path: Path | None = None
 
 
 def file_identity(path: Path) -> dict[str, str]:
@@ -77,12 +78,25 @@ def read_sample(resolved: ResolvedSample) -> BatchSample:
     if unit == 'um' and scale != 1.0:
         raise ValueError('um coordinates require microns_per_coordinate=1')
     ref_spec = document.get('inputs', {}).get('reference', {})
-    if not ref_spec.get('path'):
-        raise ValueError('inputs.reference.path must be explicit')
-    if set(ref_spec) - {'path', 'format', 'filter_column', 'filter_value'} or ref_spec.get('format', 'h5ad') != 'h5ad':
-        raise ValueError('reference must be standard H5AD with optional filter_column/filter_value')
+    reference_config_path = None
+    reference_preparation = None
+    if 'config' in ref_spec:
+        if set(ref_spec) != {'config'}:
+            raise ValueError('inputs.reference.config is exclusive with direct reference fields')
+        reference_config_path = Path(ref_spec['config'])
+        from revise.reference_preparation.evidence import resolve_reference_input
+        ref_path, reference_preparation = resolve_reference_input(reference_config_path)
+        ref_path = Path(ref_path).resolve()
+        if not isinstance(reference_preparation, dict):
+            raise ValueError('Reference preparation evidence must be a mapping')
+    else:
+        if not ref_spec.get('path'):
+            raise ValueError('inputs.reference.path or inputs.reference.config must be explicit')
+        if (set(ref_spec) - {'path', 'format', 'filter_column', 'filter_value', 'expression'}
+                or ref_spec.get('format', 'h5ad') != 'h5ad'):
+            raise ValueError('reference must be standard H5AD with optional filter_column/filter_value')
+        ref_path = Path(ref_spec['path'])
     st_path = resolved.root / 'spatial.h5ad'
-    ref_path = Path(ref_spec['path'])
     broad = document.get('global_anchoring', {}).get('broad_column')
     subtype = document.get('local_refinement', {}).get('subtype_column')
     if not isinstance(broad, str) or not broad.strip():
@@ -90,6 +104,8 @@ def read_sample(resolved: ResolvedSample) -> BatchSample:
     if modality == 'iST' and (not isinstance(subtype, str) or not subtype.strip()):
         raise ValueError('local_refinement.subtype_column must be explicit for iST')
     sources = {'spatial': file_identity(st_path), 'reference': file_identity(ref_path)}
+    if reference_config_path is not None:
+        sources['reference_config'] = file_identity(reference_config_path)
     st = ad.read_h5ad(st_path, backed='r')
     try:
         ref = ad.read_h5ad(ref_path, backed='r')
@@ -100,8 +116,14 @@ def read_sample(resolved: ResolvedSample) -> BatchSample:
             if xy.ndim != 2 or xy.shape[0] != st.n_obs or xy.shape[1] < 2 or not np.isfinite(xy).all():
                 raise ValueError('spatial coordinates must be finite with shape (n_obs, >=2)')
             for column in dict.fromkeys([broad] + ([subtype] if subtype else [])):
-                if column not in ref.obs or ref.obs[column].isna().any() or ref.obs[column].astype(str).str.strip().eq('').any():
-                    raise ValueError(f'reference label column {column!r} must exist and be non-null')
+                if column not in ref.obs:
+                    raise ValueError(f'reference label column {column!r} must exist')
+                if (modality != 'iST'
+                        and (ref.obs[column].isna().any()
+                             or ref.obs[column].astype(str).str.strip().eq('').any())):
+                    raise ValueError(
+                        f'reference label column {column!r} must be non-null for {modality}'
+                    )
             column, value = ref_spec.get('filter_column'), ref_spec.get('filter_value')
             if (column is None) != (value is None):
                 raise ValueError('reference filter_column and filter_value must be supplied together')
@@ -113,8 +135,14 @@ def read_sample(resolved: ResolvedSample) -> BatchSample:
             ref.file.close()
     finally:
         st.file.close()
-    if sources != {'spatial': file_identity(st_path), 'reference': file_identity(ref_path)}:
+    current_sources = {'spatial': file_identity(st_path), 'reference': file_identity(ref_path)}
+    if reference_config_path is not None:
+        current_sources['reference_config'] = file_identity(reference_config_path)
+    if sources != current_sources:
         raise ValueError('Input source changed during validation; retry with stable inputs')
+    if reference_config_path is not None:
+        from revise.reference_preparation.evidence import assert_reference_unchanged
+        assert_reference_unchanged(reference_preparation)
     metadata = {
         'sources': sources, 'outputs': sources,
         'coordinates': {'source_key': 'spatial', 'unit': unit, 'microns_per_coordinate': scale,
@@ -122,4 +150,9 @@ def read_sample(resolved: ResolvedSample) -> BatchSample:
         'configuration': {'project_config': str(resolved.project_config), 'sample_dir': str(resolved.root),
                           'chain': resolved.config_chain, 'effective': document},
     }
-    return BatchSample(resolved.sample_id, modality, resolved.root, document, st_path, ref_path, metadata)
+    if reference_preparation is not None:
+        metadata['reference_preparation'] = reference_preparation
+    return BatchSample(
+        resolved.sample_id, modality, resolved.root, document, st_path, ref_path,
+        metadata, reference_config_path=reference_config_path,
+    )

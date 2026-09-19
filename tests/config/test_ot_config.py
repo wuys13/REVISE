@@ -243,6 +243,7 @@ def test_pipeline_accepts_preloaded_application_data():
     assert list(inspect.signature(run_application).parameters) == [
         "config_path",
         "select_ct",
+        "reference_config",
     ]
 
 
@@ -295,7 +296,7 @@ def test_explicit_ot_method_overrides_conflicting_profile_solvers():
         local_refinement_alpha=None, local_refinement_resolutions=None,
         local_refinement_graph_method=None, local_refinement_graph_alpha=None,
         local_refinement_graph_n_neighbors=None, local_refinement_graph_exp_neighbors=None,
-        local_refinement_graph_spatial_neighbors=None, local_refinement_match_spot_sum=None,
+        local_refinement_graph_spatial_neighbors=None,
         seed=None, st_path=Path("st"), reference_path=Path("ref"),
         pm_on_cell_path=None, output_dir=Path("out"), output_name="sample",
         st_format="h5ad", spatialdata_table=None, spatialdata_element=None,
@@ -568,7 +569,7 @@ def test_explicit_application_ot_method_overrides_both_phases(method):
         local_refinement_alpha=None, local_refinement_resolutions=None,
         local_refinement_graph_method=None, local_refinement_graph_alpha=None,
         local_refinement_graph_n_neighbors=None, local_refinement_graph_exp_neighbors=None,
-        local_refinement_graph_spatial_neighbors=None, local_refinement_match_spot_sum=None,
+        local_refinement_graph_spatial_neighbors=None,
         seed=None, st_path=Path("st"), reference_path=Path("ref"),
         pm_on_cell_path=None, output_dir=Path("out"), output_name="sample",
         st_format="h5ad", spatialdata_table=None, spatialdata_element=None,
@@ -668,7 +669,6 @@ def test_application_sc_super_resolution_config_fields_accept_production_mapping
         rec_graph_exp_neighbor_num=int(merged["graph"]["exp_neighbors"]),
         rec_graph_spatial_neighbor_num=int(merged["graph"]["spatial_neighbors"]),
         rec_alpha=float(merged["reconstruct"]["alpha"]),
-        rec_match_spot_sum=bool(merged["sc"]["match_spot_sum"]),
         rec_graph_agg_enabled=bool(merged["sc"]["sr_graph_agg_enabled"]),
         svc_completeness=bool(merged["sc"]["svc_completeness"]),
         sr_assignment_seed=int(merged["runtime"]["seed"]),
@@ -927,3 +927,14 @@ def test_active_docs_do_not_advertise_ot_solver_plugins_or_route_markers():
     assert "OT solver route marker" not in text
     assert "CF/solver" not in text
     assert "confounding strategy, and OT solver" not in text
+
+
+@pytest.mark.parametrize("legacy_value", [True, False])
+def test_engine_rejects_removed_spot_scaling_with_migration(legacy_value):
+    raw = _raw_config()
+    profile = "application_sc_super_resolution"
+    with pytest.raises(ConfigError, match=r"sc\.match_spot_sum was removed; delete this key") as error:
+        _merge(raw, profile, {"sc": {"match_spot_sum": legacy_value}})
+    assert "parent-spot per-gene correction" in str(error.value)
+    assert "10,000" in str(error.value)
+    assert "match_spot_sum" not in _merge(raw, profile)["sc"]

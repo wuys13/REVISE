@@ -1,0 +1,55 @@
+{
+  "date": "2026-09-19",
+  "scope": "R5 OT assembly, D1 confidence, R6 Notebook, C1 linear expression handoff",
+  "status": "engineering_verified",
+  "runtime_sources_sha256": "d48b2f6a0319338ca153ffdfe3477642c4d6825d374c05735921d085739acf23",
+  "source_digest_method": "SHA256 of sorted relative paths followed by bytes for revise/**/*.py and reconstruct.py",
+  "regression": {
+    "passed": 964,
+    "subtests_passed": 24,
+    "failed": 0,
+    "skipped": 0,
+    "warnings": 49,
+    "exit_code": 0,
+    "elapsed_seconds": 44.05,
+    "log": "/tmp/revise-ot-final.log"
+  },
+  "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
+  "tests": [
+    "tests/application",
+    "tests/config",
+    "tests/backend",
+    "tests/batch",
+    "tests/recon",
+    "tests/reference_preparation",
+    "tests/analysis/test_assembly_comparison.py",
+    "tests/integration/test_analysis_delivery.py",
+    "tests/integration/batch/test_whole_sample_delivery.py"
+  ],
+  "environment": {
+    "readline": "disabled only in test launcher",
+    "pytest_plugin_autoload": "disabled",
+    "numerical_threads": 1,
+    "numba_jit": "disabled",
+    "sandbox": "outside for OpenMP shared memory and Notebook kernel"
+  },
+  "real_numerical_evidence": [
+    "small TACCO assembly fixture",
+    "direct/batch fixture uses deterministic upstream reconstruction substitutes and new assembly path",
+    "consumer run_analysis spatial_autocorrelation computes Raw and SVC Moran tables",
+    "copied comparison Notebook executes real Scanpy Leiden"
+  ],
+  "consumer_io_sha256": "6eff7abedb22af3a029e5f2bc6e5af381f9781650847d0ce0a3aaf1270f7e713",
+  "notebook_sha256": "c16dbbdf00188f7f0e126c73ceda06415569a1909c6e0c0ba8bbd26d5718a819",
+  "review": "two metadata defects fixed: absent subtype declaration and missing coordinate key validation",
+  "real_large_sample_run": false,
+  "biological_quality_verified": false,
+  "default_mapping": "random",
+  "analysis_worktree_edited": false,
+  "atlas_worktree_edited": false,
+  "limitations": [
+    "cost entry cap does not bound final dense output bytes",
+    "outside cluster target mass follows existing benchmark donor transcript totals, not calibrated tissue proportions",
+    "real T/Macro/CAF comparison deferred"
+  ]
+}

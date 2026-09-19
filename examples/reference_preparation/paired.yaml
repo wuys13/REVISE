@@ -1,0 +1,6 @@
+schema_version: 1
+mode: paired
+source: ./inputs/reference-pool.h5ad
+pair_column: pair_id
+pair_key: "PAIR_001"
+output_dir: ./runs/paired-case

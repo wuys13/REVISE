@@ -110,7 +110,6 @@ def test_application_sc_pot_does_not_require_tacco_annotation_parameters(
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="entropy",
         rec_alpha=0.5,
-        rec_match_spot_sum=False,
     )
     calls = []
     monkeypatch.setattr(

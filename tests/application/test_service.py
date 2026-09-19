@@ -20,6 +20,8 @@ class _Artifact:
 def test_run_application_exposes_load_preprocess_and_reconstruct_flow(monkeypatch, tmp_path):
     import reconstruct
 
+    monkeypatch.setattr(reconstruct, "bind_expression_sources", lambda config, *_: config)
+
     config = SimpleNamespace()
     spatial = object()
     reference = object()
@@ -97,6 +99,7 @@ def test_main_does_not_print_finished_when_reconstruction_fails(monkeypatch):
 
 def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(monkeypatch):
     import reconstruct
+    import revise.application.inputs as inputs
 
     spatial = object()
     reference = object()
@@ -116,12 +119,12 @@ def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(mo
         subtype_column=None,
     )
     monkeypatch.setattr(
-        reconstruct,
+        inputs,
         "ensure_all_cells_in_spot",
         lambda value: calls.append(("ensure", value)),
     )
     monkeypatch.setattr(
-        reconstruct,
+        inputs,
         "filter_reference",
         lambda value, column, selected: calls.append(
             ("filter", value, column, selected)
@@ -129,17 +132,17 @@ def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(mo
         or value,
     )
     monkeypatch.setattr(
-        reconstruct,
+        inputs,
         "preprocess_spatial",
         lambda value, *args, **kwargs: calls.append(("spatial", value)) or value,
     )
     monkeypatch.setattr(
-        reconstruct,
+        inputs,
         "preprocess_reference",
         lambda value, *args, **kwargs: calls.append(("reference", value)) or value,
     )
     monkeypatch.setattr(
-        reconstruct,
+        inputs,
         "normalize_reference_labels",
         lambda value, columns: calls.append(("labels", value, tuple(columns))) or value,
     )
@@ -171,6 +174,8 @@ def test_run_application_overrides_cluster_cell_type_without_changing_output_pat
     tmp_path,
 ):
     import reconstruct
+
+    monkeypatch.setattr(reconstruct, "bind_expression_sources", lambda config, *_: config)
 
     config = _ApplicationConfig(
         svc_type="sc-SVC",

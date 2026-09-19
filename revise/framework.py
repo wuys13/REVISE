@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import copy
 import signal
+import tempfile
 import threading
 import warnings
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -59,6 +61,19 @@ _BENCHMARK_CONFIG_PROVENANCE_KEYS = (
     "effective_request",
     "effective_request_hash",
 )
+
+
+@dataclass(frozen=True)
+class GlobalAnchoringExecution:
+    """Owned result of the engine's validation and global-anchoring stages."""
+
+    annotated_spatial: AnnData
+    expected_st_unit_ids: tuple[str, ...]
+    scoring_genes: tuple[str, ...]
+    merged_config: Dict[str, Any]
+    route_key: str
+    algorithm_config_hash: str
+    effective_config_hash: str
 
 
 class _SigtermInterrupt(KeyboardInterrupt):
@@ -120,30 +135,22 @@ class REVISEPipeline:
         self.authority = _authority_document()
         self.registry = None
 
-    def run(
+    def _resolve_engine_config(
         self,
         *,
-        svc_type: Optional[str] = None,
-        application_mode: Optional[str] = None,
-        cf: Optional[str] = None,
-        runtime_overrides: Optional[Dict[str, Any]] = None,
-        io_overrides: Optional[Dict[str, Any]] = None,
-        algorithm_overrides: Optional[Dict[str, Any]] = None,
-        dry_run: bool = False,
-        st_adata: AnnData | None = None,
-        sc_ref_adata: AnnData | None = None,
-        finalize_callback=None,
-        application_config_metadata: Optional[Dict[str, Any]] = None,
-        benchmark_config_metadata: Optional[Dict[str, Any]] = None,
-    ):
-        # 1) Resolve final runtime config from single YAML entry:
-        # defaults -> profile -> runtime/io overrides -> algorithm overrides.
+        svc_type: Optional[str],
+        application_mode: Optional[str],
+        cf: Optional[str],
+        runtime_overrides: Optional[Dict[str, Any]],
+        io_overrides: Optional[Dict[str, Any]],
+        algorithm_overrides: Optional[Dict[str, Any]],
+        application_config_metadata: Optional[Dict[str, Any]],
+        benchmark_config_metadata: Optional[Dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Resolve the one engine configuration shared by full and GA-only runs."""
         runtime_overrides = dict(runtime_overrides or {})
         io_overrides = dict(io_overrides or {})
         algorithm_overrides = dict(algorithm_overrides or {})
-        if (st_adata is None) != (sc_ref_adata is None):
-            raise ValueError("st_adata and sc_ref_adata must be supplied together")
-
         route_identity_keys = {
             "application_route",
             "application_mode",
@@ -169,9 +176,8 @@ class REVISEPipeline:
         route_warning = resolved_route.pop("warning")
         profile = resolved_route.pop("profile")
         if route_warning:
-            warnings.warn(route_warning, UserWarning, stacklevel=2)
+            warnings.warn(route_warning, UserWarning, stacklevel=3)
         resolved_runtime = {**resolved_route, **runtime_overrides}
-
         merged_config = merge_unified_config(
             raw_config=self.authority,
             profile=profile,
@@ -179,7 +185,6 @@ class REVISEPipeline:
             io_overrides=io_overrides,
             algorithm_overrides=algorithm_overrides,
         )
-
         runtime = merged_config["runtime"]
         algorithm_config_hash = hash_jsonable(
             canonical_config_projection(merged_config)
@@ -202,7 +207,53 @@ class REVISEPipeline:
         )
         if runtime["mode"] == "application" and runtime.get("application_mode"):
             selector = f"{selector}:{runtime['application_mode']}"
-        route_key = f"{runtime['mode']}:{selector}"
+        return {
+            "merged_config": merged_config,
+            "runtime": runtime,
+            "route_key": f"{runtime['mode']}:{selector}",
+            "profile": profile,
+            "route_warning": route_warning,
+            "algorithm_config_hash": algorithm_config_hash,
+            "effective_config_hash": effective_config_hash,
+        }
+
+    def run(
+        self,
+        *,
+        svc_type: Optional[str] = None,
+        application_mode: Optional[str] = None,
+        cf: Optional[str] = None,
+        runtime_overrides: Optional[Dict[str, Any]] = None,
+        io_overrides: Optional[Dict[str, Any]] = None,
+        algorithm_overrides: Optional[Dict[str, Any]] = None,
+        dry_run: bool = False,
+        st_adata: AnnData | None = None,
+        sc_ref_adata: AnnData | None = None,
+        finalize_callback=None,
+        application_config_metadata: Optional[Dict[str, Any]] = None,
+        benchmark_config_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        # 1) Resolve final runtime config from single YAML entry:
+        # defaults -> profile -> runtime/io overrides -> algorithm overrides.
+        if (st_adata is None) != (sc_ref_adata is None):
+            raise ValueError("st_adata and sc_ref_adata must be supplied together")
+        resolved = self._resolve_engine_config(
+            svc_type=svc_type,
+            application_mode=application_mode,
+            cf=cf,
+            runtime_overrides=runtime_overrides,
+            io_overrides=io_overrides,
+            algorithm_overrides=algorithm_overrides,
+            application_config_metadata=application_config_metadata,
+            benchmark_config_metadata=benchmark_config_metadata,
+        )
+        merged_config = resolved["merged_config"]
+        runtime = resolved["runtime"]
+        route_key = resolved["route_key"]
+        profile = resolved["profile"]
+        route_warning = resolved["route_warning"]
+        algorithm_config_hash = resolved["algorithm_config_hash"]
+        effective_config_hash = resolved["effective_config_hash"]
         output_root = merged_config["io"]["output_root"]
         sample_name = merged_config["io"]["sample_name"]
         run_dir = build_run_dir(
@@ -258,6 +309,181 @@ class REVISEPipeline:
                         "manifest_path": str(manifest_path),
                         "manifest_identity": manifest_after,
                     }
+                raise
+
+    def run_global_anchoring(
+        self,
+        *,
+        svc_type: str,
+        application_mode: str | None,
+        runtime_overrides: Optional[Dict[str, Any]] = None,
+        io_overrides: Optional[Dict[str, Any]] = None,
+        algorithm_overrides: Optional[Dict[str, Any]] = None,
+        st_adata: AnnData,
+        sc_ref_adata: AnnData,
+        application_config_metadata: Optional[Dict[str, Any]] = None,
+    ) -> GlobalAnchoringExecution:
+        """Resolve one Application route and execute validation plus GA only.
+
+        The temporary run envelope preserves normal validation and failure
+        provenance while ensuring reference screening cannot publish an SVC or
+        enter any local-refinement stage.
+        """
+        if not isinstance(st_adata, AnnData) or not isinstance(sc_ref_adata, AnnData):
+            raise TypeError("st_adata and sc_ref_adata must be AnnData instances")
+
+        with tempfile.TemporaryDirectory(prefix="revise-ga-") as temporary:
+            effective_io = dict(io_overrides or {})
+            effective_io["output_root"] = temporary
+            resolved = self._resolve_engine_config(
+                svc_type=svc_type,
+                application_mode=application_mode,
+                cf=None,
+                runtime_overrides=runtime_overrides,
+                io_overrides=effective_io,
+                algorithm_overrides=algorithm_overrides,
+                application_config_metadata=application_config_metadata,
+                benchmark_config_metadata=None,
+            )
+            merged_config = resolved["merged_config"]
+            runtime = resolved["runtime"]
+            route_key = resolved["route_key"]
+            sample_name = merged_config["io"]["sample_name"]
+            run_dir = build_run_dir(
+                output_root=temporary,
+                sample_name=sample_name,
+                route_key=route_key,
+                io_cfg=merged_config["io"],
+                mode=runtime["mode"],
+                cf=None,
+            )
+            with exclusive_run_directory(run_dir):
+                execution = self._run_global_anchoring_in_directory(
+                    merged_config=merged_config,
+                    runtime=runtime,
+                    route_key=route_key,
+                    run_dir=run_dir,
+                    sample_name=sample_name,
+                    profile=resolved["profile"],
+                    algorithm_config_hash=resolved["algorithm_config_hash"],
+                    effective_config_hash=resolved["effective_config_hash"],
+                    st_adata=st_adata,
+                    sc_ref_adata=sc_ref_adata,
+                    application_config_metadata=application_config_metadata,
+                    route_warning=resolved["route_warning"],
+                )
+            return execution
+
+    def _run_global_anchoring_in_directory(
+        self,
+        *,
+        merged_config: Dict[str, Any],
+        runtime: Dict[str, Any],
+        route_key: str,
+        run_dir: Path,
+        sample_name: str,
+        profile: Optional[str],
+        algorithm_config_hash: str,
+        effective_config_hash: str,
+        st_adata: AnnData,
+        sc_ref_adata: AnnData,
+        application_config_metadata: Optional[Dict[str, Any]],
+        route_warning: Optional[str],
+    ) -> GlobalAnchoringExecution:
+        logger = build_run_logger(
+            run_name=f"REVISEGlobalAnchoring::{sample_name}::{route_key}",
+            run_dir=run_dir,
+        )
+        if route_warning:
+            logger.warning("[framework] %s", route_warning)
+        logger.info(
+            "[framework] start GA-only run route=%s strategy=%s",
+            route_key,
+            runtime["strategy"],
+        )
+        set_global_seed(
+            seed=runtime.get("seed"),
+            deterministic=bool(runtime.get("deterministic", True)),
+        )
+        ctx = PipelineContext(
+            merged_config=merged_config,
+            profile=profile,
+            runtime=runtime,
+            route_key=route_key,
+            run_dir=run_dir,
+            logger=logger,
+            engine_defaults_hash=ENGINE_DEFAULTS_HASH,
+            authority_hash=AUTHORITY_HASH,
+            algorithm_config_hash=algorithm_config_hash,
+            effective_config_hash=effective_config_hash,
+            st_adata=st_adata,
+            sc_ref_adata=sc_ref_adata,
+            application_config_metadata=copy.deepcopy(
+                application_config_metadata or {}
+            ),
+            software_versions=collect_software_versions(merged_config),
+        )
+        ctx.set_provenance_callback(self._write_final_metadata, notify=False)
+
+        with _temporary_sigterm_handler():
+            try:
+                self._write_final_metadata(ctx)
+                self._write_initial_metadata(ctx)
+                if self.registry is None:
+                    self.registry = build_default_registry()
+                strategy = self.registry.get(runtime["strategy"])
+                pipeline = UnifiedReconstructionPipeline(
+                    strategy=strategy,
+                    validation_policy=ModeValidationPolicy(),
+                    evaluation_policy=ModeEvaluationPolicy(),
+                )
+                pipeline._run_stage(ctx, "validate_inputs", pipeline.validate_inputs)
+                prepared_spatial = getattr(ctx.runner, "st_adata", None)
+                if not isinstance(prepared_spatial, AnnData):
+                    raise RuntimeError(
+                        "Application route preparation did not expose an AnnData spatial input"
+                    )
+                expected_st_unit_ids = tuple(
+                    str(value) for value in prepared_spatial.obs_names.tolist()
+                )
+                scoring_genes: list[str] = []
+
+                def record_scoring_genes(values) -> None:
+                    scoring_genes[:] = [str(value) for value in values]
+
+                ctx.runner_config.scoring_genes_callback = record_scoring_genes
+                pipeline._run_stage(ctx, "global_anchoring", pipeline.global_anchoring)
+                annotated = getattr(ctx.runner, "st_adata", None)
+                if not isinstance(annotated, AnnData):
+                    raise RuntimeError(
+                        "Global anchoring completed without an AnnData spatial result"
+                    )
+                if not scoring_genes:
+                    raise RuntimeError(
+                        "Global Anchoring completed without its effective scoring-gene axis"
+                    )
+                ctx.skip_pending_stages("global_anchoring_only")
+                ctx.mark_run_succeeded()
+                logger.info("[framework] finished GA-only run route=%s", route_key)
+                return GlobalAnchoringExecution(
+                    annotated_spatial=annotated.copy(),
+                    expected_st_unit_ids=expected_st_unit_ids,
+                    scoring_genes=tuple(scoring_genes),
+                    merged_config=copy.deepcopy(merged_config),
+                    route_key=route_key,
+                    algorithm_config_hash=algorithm_config_hash,
+                    effective_config_hash=effective_config_hash,
+                )
+            except KeyboardInterrupt as exc:
+                ctx.terminate_run(exc)
+                logger.warning("[framework] GA-only run interrupted")
+                raise
+            except Exception as exc:
+                ctx.terminate_run(exc)
+                log_exception_to_run_file(
+                    logger,
+                    f"[framework] GA-only run failed: {type(exc).__name__}: {exc}",
+                )
                 raise
 
     def _run_in_directory(

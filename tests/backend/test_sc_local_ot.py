@@ -13,8 +13,13 @@ from anndata import AnnData
 
 
 _ISOLATED_PREFIXES = (
+    "ot",
     "scanpy",
+    "revise.analysis",
+    "revise.application.preprocess",
     "revise.backend.adapters",
+    "revise.backend.kernels",
+    "revise.backend.ops",
     "revise.backend.runners.sc_svc_application",
 )
 _MISSING = object()
@@ -35,6 +40,14 @@ def _isolated_module_names():
 def _restore_sc_test_modules():
     names = _isolated_module_names()
     modules = {name: sys.modules.get(name, _MISSING) for name in names}
+    kernels_package = sys.modules.get("revise.backend.kernels")
+    kernel_exports = {}
+    if kernels_package is not None:
+        declared_exports = vars(kernels_package).get("_KERNEL_EXPORTS", {})
+        kernel_exports = {
+            name: vars(kernels_package).get(name, _MISSING)
+            for name in declared_exports
+        }
     parent_attributes = {}
     for name in names:
         parent_name, separator, attribute = name.rpartition(".")
@@ -65,6 +78,12 @@ def _restore_sc_test_modules():
                 delattr(parent, attribute)
         else:
             setattr(parent, attribute, value)
+    if kernels_package is not None:
+        for name, value in kernel_exports.items():
+            if value is _MISSING:
+                vars(kernels_package).pop(name, None)
+            else:
+                vars(kernels_package)[name] = value
 
 
 def _import_sc_svc(monkeypatch):
@@ -129,9 +148,11 @@ def test_ist_local_refinement_uses_configured_columns_and_local_ot(
         confidence_col="Confidence",
         unknown_key="Unknown",
     )
+    reference = _adata(["sc1", "sc2"], ["A", "A"], cell_type_col)
+    reference.obs["Level2"] = ["A1", "A2"]
     runner = ScSVC(
         _adata(["sp1", "sp2"], ["A", "A"], cell_type_col),
-        _adata(["sc1", "sc2"], ["A", "A"], cell_type_col),
+        reference,
         config,
         logger=None,
     )
@@ -185,7 +206,6 @@ def test_application_sc_config_carries_local_ot_method():
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="entropy",
         rec_alpha=0.5,
-        rec_match_spot_sum=False,
     )
 
     assert config.annotate_mode == "pot"
@@ -224,7 +244,6 @@ def test_application_sc_passes_configured_tacco_parameters_to_all_three_calls(
         rec_pot_reg_m=0.0,
         rec_pot_reg_type="entropy",
         rec_alpha=0.5,
-        rec_match_spot_sum=False,
     )
     calls = []
 
@@ -327,7 +346,6 @@ def test_application_sc_pot_local_annotation_uses_annotation_contract(monkeypatc
         rec_pot_reg_m=0.3,
         rec_pot_reg_type="kl",
         rec_alpha=0.5,
-        rec_match_spot_sum=False,
     )
     captured = {}
 
@@ -437,7 +455,6 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
                 },
             "reconstruct": {"alpha": 0.5},
             "sc": {
-                "match_spot_sum": False,
                 "tacco_annotate": {
                     "multi_center": 1,
                     "lamb": 0.001,
@@ -485,7 +502,7 @@ def test_ist_adapter_propagates_configured_columns_and_local_ot(
 
 @pytest.mark.parametrize(
     "select_ct",
-    [None, "", " ", "all", "*", "__all__", "all_cell_types"],
+    ["", " ", "all", "*", "__all__", "all_cell_types"],
 )
 def test_ist_adapter_requires_one_concrete_cell_type(
     monkeypatch,
@@ -526,7 +543,12 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
     from revise.backend import adapters
 
     spatial = _adata(["sp1", "sp2"], ["T", "T"])
+    spatial.obs["Level2"] = ["T1", "T2"]
+    spatial.obs["SVC_cluster"] = pd.Categorical(["0", "1"])
     expression = _adata(["sc1", "sc2"], ["T", "T"])
+    expression.obs["SVC_cluster"] = pd.Categorical(["0", "1"])
+    reference = _adata(["ref1", "ref2"], ["T", "T"])
+    reference.obs["Level2"] = ["T1", "T2"]
     calls = []
 
     def local_refinement(select_ct, sub_cell_type_col, resolutions, select_res=None):
@@ -543,7 +565,11 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
             }
         },
         columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
-        runner=SimpleNamespace(local_refinement=local_refinement),
+        runner=SimpleNamespace(
+            st_adata=_adata(["sp1", "sp2"], ["T", "T"]),
+            sc_ref_adata=reference,
+            local_refinement=local_refinement,
+        ),
         logger=logging.getLogger("test-single-sc-selection"),
         artifacts={},
         record_local_refinement=applied.append,
@@ -558,6 +584,288 @@ def test_ist_adapter_refines_only_the_selected_cell_type(
         "sc_svc_expr": expression,
     }
     assert ctx.artifacts["selected_cell_type"] == "T"
+    assert ctx.artifacts["processed_cell_types"] == ["T"]
+    assert ctx.artifacts["skipped_cell_types"] == []
+    assert ctx.artifacts["label_assignments"]["Level2"].tolist() == ["T1", "T2"]
+
+
+def test_explicit_single_type_keeps_legacy_one_subtype_refinement(monkeypatch):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+
+    st = _adata(["sp1", "sp2"], ["T", "T"])
+    reference = _adata(["ref1", "ref2"], ["T", "T"])
+    reference.obs["Level2"] = ["T1", "T1"]
+    spatial = st.copy()
+    spatial.obs["Level2"] = ["T1", "T1"]
+    spatial.obs["SVC_cluster"] = pd.Categorical(["0", "0"])
+    expression = reference.copy()
+    expression.obs["SVC_cluster"] = pd.Categorical(["0", "0"])
+    calls = []
+    ctx = SimpleNamespace(
+        merged_config={"sc": {"select_ct": "T", "resolutions": [0.5]}},
+        columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
+        runner=SimpleNamespace(
+            st_adata=st,
+            sc_ref_adata=reference,
+            local_refinement=lambda *_args, **_kwargs: (
+                calls.append("T") or (spatial, expression)
+            ),
+        ),
+        logger=logging.getLogger("test-legacy-one-subtype"),
+        artifacts={},
+        record_local_refinement=lambda _value: None,
+    )
+
+    adapters.ScSvcApplicationStrategy().solve_ot(ctx)
+
+    assert calls == ["T"]
+    assert ctx.artifacts["processed_cell_types"] == ["T"]
+
+
+def test_ist_adapter_runs_all_eligible_actual_types_once_and_namespaces_clusters(
+    monkeypatch,
+):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+
+    st = _adata(["b1", "a1", "c1", "a2", "b2"], ["B", "A", "C", "A", "B"])
+    reference = _adata(
+        ["ar1", "ar2", "br1", "br2", "cr1", "missing"],
+        ["A", "A", "B", "B", "C", "A"],
+    )
+    reference.obs["Level2"] = ["A1", "A2", "B1", "B2", "C1", None]
+    from revise.application.preprocess import prepare_sc_svc_pair
+
+    st, reference = prepare_sc_svc_pair(
+        st,
+        reference,
+        broad_column="Level1",
+        subtype_column="Level2",
+    )
+    assert pd.isna(reference.obs.loc["missing", "Level2"])
+    calls = []
+
+    def local_refinement(cell_type, *_args, **_kwargs):
+        calls.append(cell_type)
+        spatial_ids = st.obs_names[st.obs["Level1"] == cell_type]
+        spatial = st[spatial_ids, :].copy()
+        spatial.obs["Level2"] = [f"{cell_type}1", f"{cell_type}2"]
+        spatial.obs["SVC_cluster"] = pd.Categorical(["0", "1"])
+        expression = reference[reference.obs["Level1"] == cell_type, :].copy()
+        expression = expression[expression.obs["Level2"].notna(), :].copy()
+        expression.obs["SVC_cluster"] = pd.Categorical(
+            ["0", "1"]
+        )
+        return spatial, expression
+
+    applied = []
+    ctx = SimpleNamespace(
+        merged_config={
+            "sc": {
+                "select_ct": None,
+                "resolutions": [0.5],
+                "select_resolution": None,
+            }
+        },
+        columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
+        runner=SimpleNamespace(
+            st_adata=st,
+            sc_ref_adata=reference,
+            local_refinement=local_refinement,
+        ),
+        logger=logging.getLogger("test-all-sc-types"),
+        artifacts={},
+        record_local_refinement=applied.append,
+    )
+
+    adapters.ScSvcApplicationStrategy().solve_ot(ctx)
+
+    assert calls == ["A", "B"]
+    assert applied == [True]
+    assert ctx.artifacts["processed_cell_types"] == ["A", "B"]
+    assert ctx.artifacts["skipped_cell_types"] == [
+        {
+            "cell_type": "C",
+            "reason": "insufficient_valid_reference_subtypes",
+            "valid_subtype_count": 1,
+        }
+    ]
+    spatial = ctx.artifacts["outputs"]["sc_svc_spatial"]
+    expression = ctx.artifacts["outputs"]["sc_svc_expr"]
+    assert spatial.obs_names.tolist() == ["a1", "a2", "b1", "b2"]
+    assert expression.obs_names.tolist() == ["ar1", "ar2", "br1", "br2"]
+    assert spatial.obs["SVC_cluster"].tolist() == [
+        '["A","0"]', '["A","1"]', '["B","0"]', '["B","1"]'
+    ]
+    assert expression.obs["SVC_cluster"].tolist() == [
+        '["A","0"]', '["A","1"]', '["B","0"]', '["B","1"]'
+    ]
+    assignments = ctx.artifacts["label_assignments"]
+    assert assignments.loc[["a1", "a2", "b1", "b2"], "Level2"].tolist() == [
+        "A1", "A2", "B1", "B2"
+    ]
+    assert pd.isna(assignments.loc["c1", "Level2"])
+
+
+def test_cluster_namespace_is_injective_when_labels_contain_separator(monkeypatch):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+
+    left = _adata(["left"], ["A::B"])
+    left.obs["SVC_cluster"] = pd.Categorical(["C"])
+    right = _adata(["right"], ["A"])
+    right.obs["SVC_cluster"] = pd.Categorical(["B::C"])
+
+    left_key = adapters._namespace_clusters(left, "A::B").obs["SVC_cluster"].iloc[0]
+    right_key = adapters._namespace_clusters(right, "A").obs["SVC_cluster"].iloc[0]
+
+    assert left_key == '["A::B","C"]'
+    assert right_key == '["A","B::C"]'
+    assert left_key != right_key
+
+
+def test_ist_adapter_propagates_eligible_type_failure(monkeypatch):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+
+    st = _adata(["a1", "a2"], ["A", "A"])
+    reference = _adata(["r1", "r2"], ["A", "A"])
+    reference.obs["Level2"] = ["A1", "A2"]
+    ctx = SimpleNamespace(
+        merged_config={"sc": {"select_ct": None, "resolutions": [0.5]}},
+        columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
+        runner=SimpleNamespace(
+            st_adata=st,
+            sc_ref_adata=reference,
+            local_refinement=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("LR exploded")
+            ),
+        ),
+        logger=logging.getLogger("test-failing-sc-type"),
+        artifacts={},
+        record_local_refinement=lambda _value: None,
+    )
+
+    with pytest.raises(RuntimeError, match="LR exploded"):
+        adapters.ScSvcApplicationStrategy().solve_ot(ctx)
+
+
+def test_full_sample_fails_when_every_actual_type_is_ineligible(monkeypatch):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+
+    st = _adata(["a1", "a2", "b1", "b2"], ["A", "A", "B", "B"])
+    reference = _adata(["ar1", "ar2", "br1", "br2"], ["A", "A", "B", "B"])
+    reference.obs["Level2"] = [None, "  ", "B1", "B1"]
+    ctx = SimpleNamespace(
+        merged_config={"sc": {"select_ct": None, "resolutions": [0.5]}},
+        columns={"cell_type_col": "Level1", "sub_cell_type_col": "Level2"},
+        runner=SimpleNamespace(
+            st_adata=st,
+            sc_ref_adata=reference,
+            local_refinement=lambda *_args, **_kwargs: pytest.fail(
+                "ineligible type reached LR"
+            ),
+        ),
+        logger=logging.getLogger("test-all-ineligible-types"),
+        artifacts={},
+        record_local_refinement=lambda _value: None,
+    )
+
+    with pytest.raises(ValueError, match="no eligible broad cell types"):
+        adapters.ScSvcApplicationStrategy().solve_ot(ctx)
+
+    assert ctx.artifacts["processed_cell_types"] == []
+    assert ctx.artifacts["skipped_cell_types"] == [
+        {
+            "cell_type": "A",
+            "reason": "insufficient_valid_reference_subtypes",
+            "valid_subtype_count": 0,
+        },
+        {
+            "cell_type": "B",
+            "reason": "insufficient_valid_reference_subtypes",
+            "valid_subtype_count": 1,
+        },
+    ]
+
+
+def test_full_sample_pipeline_runs_ga_once_before_all_local_types(monkeypatch, tmp_path):
+    _import_sc_svc(monkeypatch)
+    from revise.backend import adapters
+    from revise.recon.context import PipelineContext
+    from revise.recon.pipeline import UnifiedReconstructionPipeline
+
+    st = _adata(["a1", "a2", "b1", "b2"], ["A", "A", "B", "B"])
+    reference = _adata(["ar1", "ar2", "br1", "br2"], ["A", "A", "B", "B"])
+    reference.obs["Level2"] = ["A1", "A2", "B1", "B2"]
+    local_calls = []
+
+    def local_refinement(cell_type, *_args, **_kwargs):
+        local_calls.append(cell_type)
+        spatial = st[st.obs["Level1"] == cell_type, :].copy()
+        spatial.obs["Level2"] = [f"{cell_type}1", f"{cell_type}2"]
+        spatial.obs["SVC_cluster"] = pd.Categorical(["0", "1"])
+        expression = reference[reference.obs["Level1"] == cell_type, :].copy()
+        expression.obs["SVC_cluster"] = pd.Categorical(["0", "1"])
+        return spatial, expression
+
+    runner = SimpleNamespace(
+        st_adata=st,
+        sc_ref_adata=reference,
+        local_refinement=local_refinement,
+    )
+
+    class PipelineStrategy(adapters.ScSvcApplicationStrategy):
+        def __init__(self):
+            self.ga_calls = 0
+
+        def prepare_context(self, ctx):
+            ctx.runner = runner
+
+        def global_anchoring(self, ctx):
+            self.ga_calls += 1
+            ctx.st_adata = runner.st_adata
+            ctx.artifacts["ga_spatial"] = runner.st_adata
+
+    strategy = PipelineStrategy()
+    ctx = PipelineContext(
+        merged_config={
+            "io": {"save_outputs": False},
+            "columns": {
+                "cell_type_col": "Level1",
+                "sub_cell_type_col": "Level2",
+                "confidence_col": "Confidence",
+            },
+            "sc": {
+                "select_ct": None,
+                "resolutions": [0.5],
+                "select_resolution": None,
+            },
+        },
+        profile="test",
+        runtime={
+            "mode": "application",
+            "task": "sc_svc",
+            "svc_kind": "sc",
+            "strategy": strategy.strategy_id,
+            "application_route": "sc-SVC",
+            "application_mode": "cluster",
+            "compatibility_mode": False,
+        },
+        route_key="application:sc-SVC:cluster",
+        run_dir=tmp_path,
+        logger=logging.getLogger("test-full-sample-pipeline"),
+    )
+    validation = SimpleNamespace(validate=lambda _ctx: None)
+    evaluation = SimpleNamespace(should_evaluate=lambda _ctx: False)
+
+    UnifiedReconstructionPipeline(strategy, validation, evaluation).run(ctx)
+
+    assert strategy.ga_calls == 1
+    assert local_calls == ["A", "B"]
+    assert ctx.svc.provenance["processed_cell_types"] == ["A", "B"]
 
 
 @pytest.mark.parametrize("method", ["pot", "tacco"])
@@ -588,7 +896,6 @@ def test_application_ot_method_switches_global_and_local_together(method):
             local_refinement_graph_n_neighbors=None,
             local_refinement_graph_exp_neighbors=None,
             local_refinement_graph_spatial_neighbors=None,
-            local_refinement_match_spot_sum=None,
             seed=None,
             st_path=Path("st"),
             reference_path=Path("ref"),
