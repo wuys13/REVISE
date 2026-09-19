@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from anndata import AnnData
+from scipy import sparse
 
 
 def _adata(*, with_transcript_counts: bool = True) -> AnnData:
@@ -175,3 +176,68 @@ def test_sp_sr_reference_label_normalization_preserves_surrounding_whitespace_by
     normalized = normalize_reference_labels(reference, ["Level1"])
 
     assert normalized.obs["Level1"].tolist() == [" Mono_Macro "]
+
+
+@pytest.mark.parametrize("matrix_format", ["dense", "sparse"])
+def test_cyto_linear_v1_expression_score_matches_formula_without_sparse_densification(
+    monkeypatch,
+    matrix_format,
+):
+    from revise.utils.spot_sr_input import _cyto_linear_v1_expression_score
+
+    values = np.array([[1.0, 3.0, 0.0], [0.0, 0.0, 0.0]])
+    expected = np.log2(1.0 + 1e6 * np.array([0.25, 0.75, 0.0])).sum()
+    matrix = values
+    if matrix_format == "sparse":
+        matrix = sparse.csr_matrix(values)
+        monkeypatch.setattr(
+            sparse.csr_matrix,
+            "toarray",
+            lambda *_args, **_kwargs: pytest.fail("sparse path densified X"),
+        )
+    adata = AnnData(X=matrix)
+
+    score = _cyto_linear_v1_expression_score(adata)
+
+    np.testing.assert_allclose(score, [expected, 0.0])
+
+
+def test_cyto_linear_v1_mapping_has_minimum_one_cell_and_no_twelve_cell_cap():
+    from revise.utils.spot_sr_input import ensure_all_cells_in_spot
+
+    adata = AnnData(
+        X=sparse.csr_matrix(
+            np.vstack(
+                [
+                    np.zeros(6000, dtype=np.float64),
+                    np.ones(6000, dtype=np.float64),
+                ]
+            )
+        ),
+        obs=pd.DataFrame(index=["empty", "large"]),
+    )
+
+    ensure_all_cells_in_spot(adata, cell_count_method="cyto_linear_v1")
+
+    mapping = adata.uns["all_cells_in_spot"]
+    assert len(mapping["empty"]) == 1
+    assert len(mapping["large"]) > 12
+    assert adata.obs["estimated_cell_count"].to_dict() == {
+        spot: len(cells) for spot, cells in mapping.items()
+    }
+
+
+def test_cyto_linear_v1_preserves_supplied_spot_cell_mapping():
+    from revise.utils.spot_sr_input import ensure_all_cells_in_spot
+
+    adata = AnnData(
+        X=np.ones((1, 2)),
+        obs=pd.DataFrame(index=["spot-1"]),
+    )
+    supplied = {"spot-1": ["cell-a", "cell-b"]}
+    adata.uns["all_cells_in_spot"] = supplied
+
+    ensure_all_cells_in_spot(adata, cell_count_method="cyto_linear_v1")
+
+    assert adata.uns["all_cells_in_spot"] == supplied
+    assert adata.obs["estimated_cell_count"].tolist() == [2]

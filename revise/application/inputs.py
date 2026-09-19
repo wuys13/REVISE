@@ -13,7 +13,11 @@ from revise.application.preprocess import (
     preprocess_spatial,
 )
 from revise.io import REVISEInputService
-from revise.utils.spot_sr_input import ensure_all_cells_in_spot
+from revise.utils.spot_sr_input import (
+    ALL_CELLS_IN_SPOT_KEY,
+    SR_CELL_COUNT_PROVENANCE_KEY,
+    ensure_all_cells_in_spot,
+)
 
 
 def load_data(config: ApplicationConfig) -> tuple[AnnData, AnnData]:
@@ -33,7 +37,29 @@ def preprocess_data(
 ) -> tuple[AnnData, AnnData]:
     """Apply the public Application preprocessing contract."""
     if config.mode == "sr":
-        ensure_all_cells_in_spot(spatial_adata)
+        provided_mapping = (
+            ALL_CELLS_IN_SPOT_KEY in spatial_adata.uns
+            and spatial_adata.uns[ALL_CELLS_IN_SPOT_KEY] is not None
+        )
+        ensure_all_cells_in_spot(
+            spatial_adata,
+            cell_count_method=config.sr_cell_count_method,
+        )
+        if provided_mapping:
+            cell_count = {
+                "method": "provided_mapping",
+                "source": "input.uns['all_cells_in_spot']",
+            }
+        else:
+            cell_count = {
+                "method": config.sr_cell_count_method,
+                "source": (
+                    "raw_full_gene_X"
+                    if config.sr_cell_count_method == "cyto_linear_v1"
+                    else "spot_transcript_counts"
+                ),
+            }
+        spatial_adata.uns[SR_CELL_COUNT_PROVENANCE_KEY] = cell_count
     reference_adata = filter_reference(
         reference_adata,
         config.reference_filter_column,

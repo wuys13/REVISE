@@ -332,6 +332,55 @@ def test_sc_sr_mode_rejects_removed_match_spot_sum(tmp_path, legacy_value):
     assert config.local_refinement_graph_spatial_neighbors == 10
 
 
+def test_sc_sr_cell_count_method_defaults_validation_and_effective_request(tmp_path):
+    from revise.application.config import (
+        ApplicationConfigError,
+        compile_application_config,
+        load_application_yaml,
+    )
+    from revise.application.publication import application_metadata, output_paths
+
+    default_document = _document("sc-SVC", "sr")
+    default_document["algorithm"] = {}
+    source, effective = load_application_yaml(_write_config(tmp_path, default_document))
+    default_config = compile_application_config(effective, source=source)
+    assert default_config.ot_method == "tacco"
+    assert default_config.sr_cell_count_method == "cyto_linear_v1"
+    assert application_metadata(
+        default_config,
+        paths=output_paths(default_config),
+    )["effective_request"]["algorithm"] == {
+        "ot_method": "tacco",
+        "sr_cell_count_method": "cyto_linear_v1",
+    }
+
+    legacy_document = _document("sc-SVC", "sr")
+    legacy_document["algorithm"]["sr_cell_count_method"] = "transcript_heuristic"
+    source, effective = load_application_yaml(
+        _write_config(tmp_path, legacy_document, "legacy.yaml")
+    )
+    assert (
+        compile_application_config(effective, source=source).sr_cell_count_method
+        == "transcript_heuristic"
+    )
+
+    invalid_document = _document("sc-SVC", "sr")
+    invalid_document["algorithm"]["sr_cell_count_method"] = "unknown"
+    source, effective = load_application_yaml(
+        _write_config(tmp_path, invalid_document, "invalid.yaml")
+    )
+    with pytest.raises(ApplicationConfigError, match="must be one of"):
+        compile_application_config(effective, source=source)
+
+    wrong_route = _document("sp-SVC")
+    wrong_route["algorithm"]["sr_cell_count_method"] = "cyto_linear_v1"
+    source, effective = load_application_yaml(
+        _write_config(tmp_path, wrong_route, "wrong-route.yaml")
+    )
+    with pytest.raises(ApplicationConfigError, match="only valid for sc-SVC sr mode"):
+        compile_application_config(effective, source=source)
+
+
 def test_sp_preprocessing_count_and_gene_thresholds_are_compiled(tmp_path):
     from revise.application.config import compile_application_config, load_application_yaml
 

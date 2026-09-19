@@ -347,6 +347,39 @@ def adapters(monkeypatch):
     return importlib.import_module("revise.backend.adapters")
 
 
+def test_application_sr_allocation_records_cell_count_provenance(adapters, monkeypatch):
+    records = []
+    ctx = SimpleNamespace(
+        application_config_metadata={
+            "cell_count": {
+                "method": "cyto_linear_v1",
+                "source": "raw_full_gene_X",
+            }
+        },
+        runner_config=SimpleNamespace(),
+        record_sr_allocation=records.append,
+    )
+    monkeypatch.setattr(
+        adapters.RunnerBackedStrategy,
+        "solve_ot",
+        lambda _self, value: value.runner_config.sr_allocation_callback(
+            {"operator": "closed_form_reference_allocation"}
+        ),
+    )
+
+    adapters.ScSvcSuperResolutionApplicationStrategy().solve_ot(ctx)
+
+    assert records == [
+        {
+            "operator": "closed_form_reference_allocation",
+            "cell_count": {
+                "method": "cyto_linear_v1",
+                "source": "raw_full_gene_X",
+            },
+        }
+    ]
+
+
 def test_true_cell_type_keeps_randomly_allocated_cells_as_unknown(adapters):
     meta = importlib.import_module("revise.backend.ops.meta")
     svc_obs = pd.DataFrame(

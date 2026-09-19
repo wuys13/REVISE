@@ -24,6 +24,7 @@ from revise.application.delivery import is_sample_delivery, source_identity, val
 from revise.application.expression import bind_expression_sources
 from revise.framework import REVISEPipeline
 from revise.io import REVISEInputService
+from revise.utils.spot_sr_input import SR_CELL_COUNT_PROVENANCE_KEY
 
 def reconstruct(
     spatial_adata: AnnData,
@@ -54,6 +55,9 @@ def reconstruct(
     runtime, io, algorithm = _compile_engine_config(config)
     paths = output_paths(config)
     metadata = application_metadata(config, paths=paths)
+    cell_count = spatial_adata.uns.get(SR_CELL_COUNT_PROVENANCE_KEY)
+    if cell_count is not None:
+        metadata["cell_count"] = dict(cell_count)
     result: AnnData | tuple[AnnData, AnnData] | None = None
 
     def finalize(ctx) -> None:

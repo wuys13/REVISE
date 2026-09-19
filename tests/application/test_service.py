@@ -101,7 +101,7 @@ def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(mo
     import reconstruct
     import revise.application.inputs as inputs
 
-    spatial = object()
+    spatial = SimpleNamespace(uns={})
     reference = object()
     calls = []
     config = SimpleNamespace(
@@ -117,11 +117,14 @@ def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(mo
         reference_min_genes=None,
         broad_column="Level1",
         subtype_column=None,
+        sr_cell_count_method="cyto_linear_v1",
     )
     monkeypatch.setattr(
         inputs,
         "ensure_all_cells_in_spot",
-        lambda value: calls.append(("ensure", value)),
+        lambda value, *, cell_count_method: calls.append(
+            ("ensure", value, cell_count_method)
+        ),
     )
     monkeypatch.setattr(
         inputs,
@@ -158,6 +161,11 @@ def test_sc_svc_sr_mode_preprocessing_ensures_spot_cells_before_generic_steps(mo
         "reference",
         "labels",
     ]
+    assert calls[0][2] == "cyto_linear_v1"
+    assert spatial.uns["revise_sr_cell_count"] == {
+        "method": "cyto_linear_v1",
+        "source": "raw_full_gene_X",
+    }
 
 
 @dataclass(frozen=True)

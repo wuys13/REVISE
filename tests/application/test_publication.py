@@ -189,6 +189,10 @@ def test_h5ad_reuses_pipeline_application_metadata_and_adds_publication_fields(t
         "source_path": "application.yaml",
         "output_root": str(config.output_root),
         "output_dir": str(config.output_dir),
+        "cell_count": {
+            "method": "cyto_linear_v1",
+            "source": "raw_full_gene_X",
+        },
         "effective_request": request,
         "effective_request_hash": hash_jsonable(request),
     }

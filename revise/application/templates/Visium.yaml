@@ -8,7 +8,8 @@ paths:
   root_dir: . # EDIT: this is the command launch directory, not the YAML directory.
 
 algorithm:
-  ot_method: pot # KEEP: this Visium protocol uses POT for GA and LR.
+  ot_method: tacco # KEEP: use TACCO for both GA and LR.
+  sr_cell_count_method: cyto_linear_v1 # KEEP: infer virtual-cell counts before filtering.
 
 inputs:
   st:

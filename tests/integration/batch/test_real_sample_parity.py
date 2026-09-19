@@ -84,7 +84,10 @@ def _sample(root, modality):
         'modality': modality,
         'inputs': {'reference': {'path': 'reference.h5ad', 'format': 'h5ad'}},
         'coordinates': {'unit': 'pixel'},
-        'algorithm': {'ot_method': 'tacco' if modality == 'iST' else 'pot'},
+        'algorithm': {
+            'ot_method': 'tacco' if modality in {'iST', 'sST'} else 'pot',
+            **({'sr_cell_count_method': 'cyto_linear_v1'} if modality == 'sST' else {}),
+        },
         'preprocessing': {
             'spatial': {'min_transcript_counts': None, 'min_counts': 1, 'min_cell_counts': 1},
             'reference': {'min_transcript_counts': None, 'min_genes': 1, 'min_cell_counts': 1}},
@@ -116,6 +119,8 @@ def test_real_batch_matches_direct_single_run(tmp_path, modality, monkeypatch):
 
     prepared = read_sample(resolve_sample(batch_path, sample_path.parent))
     document = deepcopy(application_document(prepared, 'T' if modality == 'iST' else None, tmp_path / 'direct'))
+    if modality == 'sST':
+        assert document['algorithm']['sr_cell_count_method'] == 'cyto_linear_v1'
     document['output']['dir'] = str(tmp_path / 'direct').lstrip('/')
     direct_yaml = tmp_path / 'direct.yaml'
     direct_yaml.write_text(yaml.safe_dump(document))

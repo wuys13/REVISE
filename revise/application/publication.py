@@ -61,13 +61,16 @@ def application_metadata(
         }
     else:
         local_refinement = {"strength": config.local_refinement_strength}
+    algorithm = {"ot_method": config.ot_method}
+    if config.mode == "sr":
+        algorithm["sr_cell_count_method"] = config.sr_cell_count_method
     effective_request = {
         "svc_type": config.svc_type,
         "mode": config.mode,
         "application_route": config.svc_type,
         "application_mode": config.mode,
         "selected_cell_type": config.select_cell_type,
-        "algorithm": {"ot_method": config.ot_method},
+        "algorithm": algorithm,
         "inputs": {
             "st_format": config.st_format,
             "reference_filter": {
