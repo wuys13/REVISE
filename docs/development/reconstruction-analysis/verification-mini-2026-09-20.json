@@ -5,7 +5,7 @@
   "status": "executed_with_explicit_partial_capabilities",
   "full_scale_executed": false,
   "scientific_acceptance": false,
-  "committed_or_pushed": false,
+  "committed_or_pushed": true,
   "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
   "environment": {
     "OMP_NUM_THREADS": "1",
@@ -1809,7 +1809,12 @@
     "status": "engineering_completed_with_explicit_partial_capabilities",
     "full_scale_executed": false,
     "scientific_acceptance": false,
-    "committed_or_pushed": false,
+    "committed_or_pushed": true,
+    "final_commits": {
+      "producer": "467af8b9a104328fba8db0e786471620eab4150f",
+      "consumer": "4c4278b3adde1907fd66474ff97957a9c7dab790"
+    },
+    "pushed": true,
     "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
     "environment": {
       "OMP_NUM_THREADS": "1",

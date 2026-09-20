@@ -10,7 +10,7 @@
 
 P1 HD表达保持unknown；Visium0.73尺度保持暂定；sST真零支持仍partial。iST四assembly、H2/H4和未受影响重建复用已有证据，不宣称全量或科学验收。新结果位于`output/mini-acceptance/20260920-closeout`，旧产物保留。
 
-本轮基线HEAD为REVISE `464ee26ac22978c3994e40af50325413e70cef13`、消费者 `3e70ab364f89f9e24e981e3e9239e7fe563138a6`。当前验收包含未提交修改；用户审阅未改。机器记录原字段为上一阶段快照，当前看`closeout`。详细修改、测试、真实产物及剩余事项见[验收表](acceptance.md)。
+本轮基线HEAD为REVISE `464ee26ac22978c3994e40af50325413e70cef13`、消费者 `3e70ab364f89f9e24e981e3e9239e7fe563138a6`。本轮修改已提交并推送至 `revise-2.0` 和 `sl`：REVISE `467af8b9a104328fba8db0e786471620eab4150f`、消费者 `4c4278b3adde1907fd66474ff97957a9c7dab790`。用户审阅材料保留。机器记录原字段为上一阶段快照，当前看`closeout`。详细修改、测试、真实产物及剩余事项见[验收表](acceptance.md)。
 
 ## 协同任务与责任清单
 

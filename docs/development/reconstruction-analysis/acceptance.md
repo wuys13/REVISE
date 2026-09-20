@@ -4,7 +4,7 @@
 
 已完成 SVC-defined Anatomy、正式 Notebook 默认入口及 sST 正支持数值修正，并使用原固定 mini 输入完成真实联测。三路线共用分析 workflow，能力由字段与表达声明决定。实际重建完成的类型合并为单一 SVC；未重建类型不并入。工程收口完成；全量运行与科学解释未验收，sST 真零支持仍为 partial。
 
-本轮基线 HEAD：REVISE `464ee26ac22978c3994e40af50325413e70cef13`，Analysis Agent `3e70ab364f89f9e24e981e3e9239e7fe563138a6`。验收包含本轮未提交修改，未执行 commit/push。用户审阅材料内容未改。旧 `output/mini-acceptance/20260920` 保留；新结果在两仓的 `output/mini-acceptance/20260920-closeout`。机器记录的原有字段保存上一阶段证据，`closeout` 是当前收口记录。
+本轮基线 HEAD：REVISE `464ee26ac22978c3994e40af50325413e70cef13`，Analysis Agent `3e70ab364f89f9e24e981e3e9239e7fe563138a6`。本轮修改已提交并推送：REVISE `467af8b9a104328fba8db0e786471620eab4150f`，Analysis Agent `4c4278b3adde1907fd66474ff97957a9c7dab790`。用户审阅材料内容保留。旧 `output/mini-acceptance/20260920` 保留；新结果在两仓的 `output/mini-acceptance/20260920-closeout`。机器记录的原有字段保存上一阶段证据，`closeout` 是当前收口记录。
 
 ## A. 实际修改
 
