@@ -32,19 +32,6 @@ _RESULT_FILES = {
 }
 
 
-def _to_numpy_matrix(matrix) -> np.ndarray:
-    if sparse.issparse(matrix):
-        values = matrix.toarray()
-    elif isinstance(matrix, pd.DataFrame):
-        values = matrix.to_numpy()
-    else:
-        values = np.asarray(matrix)
-    values = values.astype(float, copy=False)
-    if values.ndim == 1:
-        values = values.reshape(-1, 1)
-    return values
-
-
 def _matrix_sum_mean(matrix) -> tuple[float, float]:
     if sparse.issparse(matrix):
         return float(matrix.sum()), float(matrix.mean())
@@ -150,21 +137,24 @@ def _get_or_build_connectivity(
     return adata.obsp[connectivity_key].tocsr()
 
 
-def _moran_i(matrix, connectivity: sparse.spmatrix) -> np.ndarray:
-    weights = connectivity.tocsr().astype(float)
-    values = _to_numpy_matrix(matrix)
-    n_units = values.shape[0]
-    total_weight = float(weights.sum())
-    if total_weight == 0 or weights.shape != (n_units, n_units):
-        return np.full(values.shape[1], np.nan)
-
-    centered = values - np.mean(values, axis=0, keepdims=True)
-    denominator = np.sum(centered * centered, axis=0)
-    numerator = np.sum(centered * (weights @ centered), axis=0)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        moran = (n_units / total_weight) * numerator / denominator
-    moran[~np.isfinite(moran)] = np.nan
-    return moran
+def _squidpy_moran_i(
+    adata: AnnData,
+    *,
+    connectivity_key: str,
+    genes: Sequence[str],
+) -> np.ndarray:
+    result = sq.gr.spatial_autocorr(
+        adata,
+        connectivity_key=connectivity_key,
+        genes=list(genes),
+        mode="moran",
+        transformation=True,
+        n_perms=None,
+        corr_method=None,
+        use_raw=False,
+        copy=True,
+    )
+    return result.loc[list(genes), "I"].to_numpy(dtype=float)
 
 
 def compute_identity_metrics(
@@ -357,11 +347,23 @@ def compute_conditional_moran_i(
         (edges.data[~same_mask], (edges.row[~same_mask], edges.col[~same_mask])),
         shape=edges.shape,
     ).tocsr()
+    work.obsp[connectivity_key] = same
+    misc = _squidpy_moran_i(
+        work,
+        connectivity_key=connectivity_key,
+        genes=selected_genes,
+    )
+    work.obsp[connectivity_key] = different
+    midc = _squidpy_moran_i(
+        work,
+        connectivity_key=connectivity_key,
+        genes=selected_genes,
+    )
     return pd.DataFrame(
         {
             "Gene": selected_genes,
-            "MISC": _moran_i(work.X, same),
-            "MIDC": _moran_i(work.X, different),
+            "MISC": misc,
+            "MIDC": midc,
             "n_same_edges": int(same.nnz),
             "n_diff_edges": int(different.nnz),
         }
@@ -387,7 +389,11 @@ def compute_global_moran_i(
         {
             "Gene": selected_genes,
             "group": "All",
-            "MoranI": _moran_i(work.X, connectivity),
+            "MoranI": _squidpy_moran_i(
+                work,
+                connectivity_key=connectivity_key,
+                genes=selected_genes,
+            ),
             "n_units": int(work.n_obs),
             "n_edges": int(connectivity.nnz),
         }
@@ -429,7 +435,11 @@ def compute_cell_type_moran_i(
                 {
                     "Gene": selected_genes,
                     "group": str(cell_type),
-                    "MoranI": _moran_i(work.X, connectivity),
+                    "MoranI": _squidpy_moran_i(
+                        work,
+                        connectivity_key=connectivity_key,
+                        genes=selected_genes,
+                    ),
                     "n_units": n_units,
                     "n_edges": int(connectivity.nnz),
                 }

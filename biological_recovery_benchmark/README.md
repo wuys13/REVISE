@@ -12,10 +12,22 @@ modify `revise`.
 - Ordinary spatial coherence: per-gene global Moran's I and independently
   graphed per-cell-type Moran's I.
 
+ARI, AMI and NMI compare the supplied cell-type and predicted-label columns;
+they do not reproduce the separate Figure S19 claim.
+
 TMP/MER uses `adata.X` exactly as supplied. Spatial metrics operate on a copy,
 apply total-count normalization to 10,000 counts followed by `log1p`, and do
-not mutate the input. The caller supplies clustering labels; this module does
-not run Leiden or select a resolution.
+not mutate the input. Moran's I is computed by
+`squidpy.gr.spatial_autocorr(..., transformation=True)` without permutations;
+only the `I` statistic is retained. The caller supplies clustering labels; this
+module does not run Leiden or select a resolution.
+
+For a dataset-level Raw/REVISE/baseline comparison, first intersect the complete
+marker panel with the genes shared by every compared input. Pass that same
+filtered `marker_map` and the same `marker_aliases` to every run, retaining all
+background cell-type marker classes. Before aggregation, confirm that
+`on_markers_used` and `off_markers_used` match across methods for every target.
+Cell matching, when required by a paired analysis, remains caller-controlled.
 
 ## Example
 
@@ -45,4 +57,6 @@ save_evaluation_results(
 
 Global and cell-type-specific Moran results are intentionally saved separately.
 Cell types below `min_cell_type_size` are omitted only from the latter and are
-listed in `run_metadata.json`. No hashes or Git identifiers are recorded.
+listed in `run_metadata.json`. Keep the general default at 10 and pass 51
+explicitly when reproducing Figure S13. No hashes or Git identifiers are
+recorded.

@@ -10,10 +10,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import scanpy as sc
+import squidpy as sq
 from anndata import AnnData
 from scipy import sparse
 
 from biological_recovery_benchmark import (
+    compute_cell_type_moran_i,
     compute_conditional_moran_i,
     compute_global_moran_i,
     compute_identity_metrics,
@@ -80,6 +83,68 @@ def _spatial_adata() -> AnnData:
     return adata
 
 
+def _irregular_connectivity(n_obs: int) -> sparse.csr_matrix:
+    edges = [
+        (0, 1),
+        (0, 2),
+        (0, 9),
+        (1, 2),
+        (1, 10),
+        (2, 3),
+        (3, 4),
+        (4, 5),
+        (4, 10),
+        (5, 6),
+        (6, 7),
+        (7, 8),
+        (9, 10),
+        (9, 11),
+        (9, 12),
+        (10, 11),
+        (10, 13),
+        (11, 12),
+        (12, 13),
+        (13, 14),
+        (13, 15),
+        (14, 15),
+        (15, 16),
+        (16, 17),
+        (16, 19),
+        (17, 18),
+        (18, 19),
+    ]
+    rows = [start for edge in edges for start in edge]
+    cols = [end for edge in edges for end in edge[::-1]]
+    return sparse.csr_matrix(
+        (np.ones(len(rows)), (rows, cols)),
+        shape=(n_obs, n_obs),
+    )
+
+
+def _direct_squidpy_moran(
+    adata: AnnData,
+    connectivity: sparse.csr_matrix,
+    genes: list[str],
+) -> np.ndarray:
+    work = adata.copy()
+    sc.pp.normalize_total(work, target_sum=1e4)
+    sc.pp.log1p(work)
+    work = work[:, genes].copy()
+    work.obsp["spatial_connectivities"] = connectivity
+    result = sq.gr.spatial_autocorr(
+        work,
+        connectivity_key="spatial_connectivities",
+        genes=genes,
+        mode="moran",
+        transformation=True,
+        n_perms=None,
+        corr_method=None,
+        use_raw=False,
+        copy=True,
+    )
+    return result.loc[genes, "I"].to_numpy()
+
+
 def test_identity_and_tmp_mer_match_expected_values():
     adata = _formula_adata()
     identity = compute_identity_metrics(
@@ -105,56 +170,71 @@ def test_identity_and_tmp_mer_match_expected_values():
     assert tmp_mer.loc["B", "MER"] == pytest.approx(3.0 / 1.5)
 
 
-def test_conditional_and_global_moran_match_manual_formula():
-    adata = _formula_adata()
-    graph = sparse.csr_matrix(
-        np.asarray(
-            [
-                [0, 1, 1, 0],
-                [1, 0, 0, 1],
-                [1, 0, 0, 1],
-                [0, 1, 1, 0],
-            ],
-            dtype=float,
-        )
-    )
+def test_moran_wrappers_match_squidpy_on_irregular_graph_and_regraph_by_type():
+    adata = _spatial_adata()
+    graph = _irregular_connectivity(adata.n_obs)
     adata.obsp["spatial_connectivities"] = graph
+    genes = ["A1", "B1"]
     conditional = compute_conditional_moran_i(
         adata,
         cell_type_col="cell_type",
-        genes=["B1"],
+        genes=genes,
     )
-    global_moran = compute_global_moran_i(adata, genes=["B1"])
+    global_moran = compute_global_moran_i(adata, genes=genes)
 
-    work = adata.copy()
-    import scanpy as sc
-
-    sc.pp.normalize_total(work, target_sum=1e4)
-    sc.pp.log1p(work)
-    values = np.asarray(work[:, ["B1"]].X).reshape(-1)
-    centered = values - values.mean()
-
-    def manual(weights):
-        return (
-            len(values)
-            / weights.sum()
-            * (centered @ weights @ centered)
-            / (centered @ centered)
-        )
-
-    labels = adata.obs["cell_type"].to_numpy()
-    rows, cols = graph.nonzero()
-    same = sparse.csr_matrix(
+    labels = adata.obs["cell_type"].astype(str).to_numpy()
+    graph_coo = graph.tocoo()
+    same_mask = labels[graph_coo.row] == labels[graph_coo.col]
+    same = sparse.coo_matrix(
         (
-            np.ones(np.sum(labels[rows] == labels[cols])),
-            (rows[labels[rows] == labels[cols]], cols[labels[rows] == labels[cols]]),
+            graph_coo.data[same_mask],
+            (graph_coo.row[same_mask], graph_coo.col[same_mask]),
         ),
         shape=graph.shape,
+    ).tocsr()
+    different = sparse.coo_matrix(
+        (
+            graph_coo.data[~same_mask],
+            (graph_coo.row[~same_mask], graph_coo.col[~same_mask]),
+        ),
+        shape=graph.shape,
+    ).tocsr()
+    assert np.unique(np.diff(graph.indptr)).size > 1
+    np.testing.assert_allclose(
+        conditional["MISC"],
+        _direct_squidpy_moran(adata, same, genes),
     )
-    different = graph - same
-    assert conditional.loc[0, "MISC"] == pytest.approx(manual(same))
-    assert conditional.loc[0, "MIDC"] == pytest.approx(manual(different))
-    assert global_moran.loc[0, "MoranI"] == pytest.approx(manual(graph))
+    np.testing.assert_allclose(
+        conditional["MIDC"],
+        _direct_squidpy_moran(adata, different, genes),
+    )
+    np.testing.assert_allclose(
+        global_moran["MoranI"],
+        _direct_squidpy_moran(adata, graph, genes),
+    )
+
+    by_type = compute_cell_type_moran_i(
+        adata,
+        cell_type_col="cell_type",
+        genes=genes,
+        min_cell_type_size=9,
+    )
+    for cell_type in ["A", "B"]:
+        selected = adata.obs["cell_type"].astype(str) == cell_type
+        subset = adata[selected].copy()
+        inherited_n_edges = int(subset.obsp["spatial_connectivities"].nnz)
+        del subset.obsp["spatial_connectivities"]
+        sq.gr.spatial_neighbors(
+            subset,
+            spatial_key="spatial",
+            key_added="spatial",
+        )
+        rebuilt = subset.obsp["spatial_connectivities"].tocsr()
+        actual = by_type[by_type["group"] == cell_type].set_index("Gene")
+        expected = _direct_squidpy_moran(subset, rebuilt, genes)
+        np.testing.assert_allclose(actual.loc[genes, "MoranI"], expected)
+        assert actual["n_edges"].iloc[0] == rebuilt.nnz
+        assert rebuilt.nnz != inherited_n_edges
 
 
 def test_evaluate_save_and_plot_smoke(tmp_path):
@@ -201,6 +281,10 @@ def test_evaluate_save_and_plot_smoke(tmp_path):
     assert metadata["min_cell_type_size"] == 10
     assert metadata["dataset"] == "fixture"
     assert metadata["skipped_cell_types"] == ["A"]
+    saved_tmp_mer = pd.read_csv(tmp_path / "tmp_mer_by_cell_type.csv")
+    saved_conditional = pd.read_csv(tmp_path / "misc_midc_by_gene.csv")
+    assert list(saved_tmp_mer["target_cell_type"]) == ["A", "B"]
+    assert list(saved_conditional["Gene"]) == list(adata.var_names)
 
     identity_plot = results["identity_metrics"].assign(method="REVISE")
     conditional_plot = results["conditional_moran"].assign(method="REVISE")
