@@ -1,46 +1,80 @@
-# 当前验收：2026-09-20 双仓 mini 真实联测
+# 当前验收：2026-09-20 双仓收口
 
-[协同入口](cross-repo-review.md) · [实施索引](implementation-index.md) · [比较协议](assembly-comparison-contract.md) · [机器记录](verification-mini-2026-09-20.json)
+[协同入口](cross-repo-review.md) · [实施索引](implementation-index.md) · [比较协议](assembly-comparison-contract.md) · [机器记录（当前见 closeout）](verification-mini-2026-09-20.json)
 
-本轮完成代码修正、六次真实重建（三路线，其中 iST 四 assembly）、正式三文件交付及三个样本的 Notebook / batch / report。范围是原始样本约 1% 的连续空间正方形；完整 Raw 指该 mini 输入全部单位。全量与科学解释未验收。hST 表达来源未知、sST parent 校正缺口仍保留。
+已完成 SVC-defined Anatomy、正式 Notebook 默认入口及 sST 正支持数值修正，并使用原固定 mini 输入完成真实联测。三路线共用分析 workflow，能力由字段与表达声明决定。实际重建完成的类型合并为单一 SVC；未重建类型不并入。工程收口完成；全量运行与科学解释未验收，sST 真零支持仍为 partial。
 
-## 按本轮任务编号交付
+本轮基线 HEAD：REVISE `464ee26ac22978c3994e40af50325413e70cef13`，Analysis Agent `3e70ab364f89f9e24e981e3e9239e7fe563138a6`。验收包含本轮未提交修改，未执行 commit/push。用户审阅材料内容未改。旧 `output/mini-acceptance/20260920` 保留；新结果在两仓的 `output/mini-acceptance/20260920-closeout`。机器记录的原有字段保存上一阶段证据，`closeout` 是当前收口记录。
 
-编号对应 2026-09-20 用户工作包，不替代历史 R1–R8。
+## A. 实际修改
 
-| 本轮编号 | 实际修改或复用 | 本轮证据与状态 |
+| 仓库 | 文件／符号 | 修改内容 | 原因 |
+|---|---|---|---|
+| Analysis Agent | `ImpactWorkflow.stage_support` 及图／报告 | 完整 SVC broad 与坐标定义 Anatomy；沿用 Raw 原点；产物使用 `svc_anatomy_*` | 与重建后统一对象一致，Raw 推断标签缺失不再阻断 Anatomy |
+| Analysis Agent | 连续 Impact Notebook、README | 默认正式 P2 project；保留显式 sample/project/override；按字段声明能力 | 日常入口与已验收正式交付一致 |
+| REVISE | `_correct_sst_parent_gene_expression` | float64 先算 parent–gene 内份额，再乘目标；严格零支持不补值 | 去除固定 epsilon 缩放偏差并避免极小正数比例溢出 |
+| REVISE | SVC `uns.sst_parent_gene_correction`、mini verifier | 保存校正前支持统计及稀疏零支持索引；分开核验正支持残差和 unresolved | 最终有效零不能证明校正前真零；旧文件无诊断为 unobserved |
+| 双仓 | mini 配置、现有验收入口 | 新 sST 输出目录，三项目的新分析输出目录；科学参数不变 | 保留旧结果并明确本次证据对象 |
+
+Anatomy 的 `Other` 仅表示已交付 SVC 窗口未观察到配置的 Tumor/Normal，不代表原组织没有这些类型。Raw/SVC 各自按坐标映射到此背景；没有 SVC Anatomy 网格的点为 `Unknown`。Raw 原始标签不改写，也不被这个背景重新注释。主 cluster 缺失仍只限制依赖它的分支。
+
+## B. 删除或简化
+
+| 原逻辑 | 当前处理 | 科学定义影响 |
 |---|---|---|
-| REVISE 1–2 | cell type `/ → _`，移除写法 collision 拒绝；类型参数去重；冲突计数先统一写法 | 原人工列、历史 cluster、NA 保留；真实 ID 唯一性、概率轴与发布保护仍在；回归通过 |
-| REVISE 3–6 | 复用一次 GA、eligibility、失败传播、单一 SVC、完整 Raw 和发布事务；batch 默认 whole-sample random；显式表达/坐标声明 | 每个 iST run 一次 GA；四个 eligible 类型共 501 SVC；九个单 Level2 类型有原因地跳过。三路线 Raw 矩阵、轴、原标签、坐标与 mini 输入完全一致 |
-| REVISE 7 | P2 random 主链；分析配置直接引用生产 sample.yaml | 3,409 Raw → 501 SVC；17 个 Notebook 代码单元执行；170 份科学表/JSON 与 batch 逐字节一致 |
-| REVISE 8 / H2 | backed 提取三个历史 carrier 的 obs/spatial，构建零基因 baseline | 49,279 × 0；原 ID、各自 Level1、SVC_cluster、坐标逐值一致；来源 SHA256 保存 |
-| REVISE 9–10 / H3–H4 | 四方法真实执行；显式 T、Mono_Macro、Fibroblast；逐 ID 严格坐标检查和共同 ID/gene 范围 | 四方法 upstream 配置、观测轴/标签/坐标一致，仅 assembly/output 不同。共同 ID 为 160/157/68，共同基因 13,088；坐标反例阻止对应类型评分 |
-| REVISE 11 | comparison Notebook 补保存步骤并真实执行 | 36 个方法×类型×resolution 指标、36 份列联表、12 张图、coverage、参数、来源摘要及执行版；seed 42，resolution 0.6/0.7/0.8 |
-| REVISE 12 | hST/sST 真实重建、交付、消费 | hST 5,077 Raw → 4,128 SVC；sST 43 spot → 567 SVC，parent/坐标通过；能力限制见下表 |
-| Analysis 1–3 | 删除 label_aliases；类型与参数 `/ → _`；默认 All、Fibroblast、Mono_Macro、T | 主 SVC_cluster 身份保留；独立 Moran/pathway 沿用原生默认范围 |
-| Analysis 4–5 | Raw Level2 使用 scope 内有效 ID及同 ID坐标，新增 coverage；K-control 缺主标签/窗口 unavailable | P2 All 有效 501/3409，排除 2908；目标类型分别 112/112、191/191、183/183；缺失/部分缺失/运行异常回归通过 |
-| Analysis 6–8 | 六个 mini/full 项目配置；真实 Notebook/batch/report；报告补有效/排除数 | 三个 Notebook 各17个代码单元，无阶段异常；iST/hST/sST 分别170/11/44份科学表/JSON 与 batch一致；12份报告只读刷新，科学文件 hash 不变 |
+| Anatomy 绑定完整 Raw 推断 broad | 直接使用完整交付 SVC 的 broad 与坐标；不新增来源选择／fallback | 按用户确认，背景改为 SVC-defined；不再称完整 Raw tissue |
+| Notebook 默认为旧临时 carrier | 无显式路径时使用正式 P2 project；显式 sample 单独使用时不套用默认项目 | 不改变分析参数优先级或算法 |
+| `X / (current_sum + 1e-10)` | 正支持采用 share-then-target，真零保持 unresolved | 恢复既定 parent–gene 目标；不定义新表达分配方法 |
+| 以最终 `≤1e-12` 推断 zero support | 正式读取校正前诊断；旧文件只描述 effective-zero | 明确证据边界，不反推未观测状态 |
 
-## 真实结果与限制
+未新增 registry、planner、缓存、兼容框架、补标签或补表达策略。内部 normalization、OT、quota、seed、LR eligibility、发布事务、单一 SVC 和完整 Raw 保护继续复用。
 
-| 路线 | 正式交付 | Impact | 独立 Moran / pathway | 解释边界 |
-|---|---|---|---|---|
-| iST | [P2 random](../../../output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/sample.yaml)，Raw 3409×422，SVC 501×13088 | partial，无阶段异常 | partial / succeeded | 小 ROI 无稳定 State/Gain 阈值；QC 后部分 Raw broad 缺失使 Anatomy unavailable；常量基因 Moran 不可计算 |
-| hST | [P1 HD](../../../output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/sample.yaml)，Raw 5077×18085，SVC 4128×3451 | partial，无阶段异常 | skipped / skipped | 输入表达历史未确认，两侧 identity 保持 unknown，表达分支未验收；正常无 SVC_cluster |
-| sST | [P2 Visium](../../../output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/sample.yaml)，Raw 43×18085，SVC 567×5021 | partial，无阶段异常 | partial / succeeded | 无 SVC_cluster 只限制相关分支；K-control 已开启验证；membership_same_units=false；0.73 µm/coordinate 暂定 |
+## C. 实际验证
 
-sST parent 校正为 **partial**：139,457 个正目标 parent–gene 项中，821 项最终聚合为有效零（≤1e-12），涉及总目标表达量的 0.774%；其余138,636项在 rtol=1e-5、atol=1e-6 内一致，最大相对误差5.85e-7。单个 parent 最大总量差约1,953/10,000，不能只用全局比例淡化局部影响。现有 `X / (current_sum + 1e-10)` 乘法校正无法恢复无支持或极小支持的表达，本轮不改变算法。生成细胞总量约51.75–8625.29，中位数680.19，没有恢复最终逐细胞10,000缩放。[完整数值证据](../../../output/mini-acceptance/20260920/evidence/delivery-P2CRC_Visium-default.json)。
+| 场景 | 实际检查 | 结果 | 能证明／不能证明 |
+|---|---|---|---|
+| sST 数值及 verifier | [28 项回归日志](../../../output/mini-acceptance/20260920-closeout/logs/sst-regression-tests.log)、[JUnit](../../../output/mini-acceptance/20260920-closeout/evidence/sst-regression.xml) | 28 passed | 普通／极小／真零支持、无最终逐细胞缩放、诊断保存、严格零输出及旧产物 unobserved 退出码；不证明真零补偿方法 |
+| 消费者 Anatomy／交互／报告 | [聚焦日志](../../../output/mini-acceptance/20260920-closeout/logs/tests-consumer-focused-53passed.log) | 53 passed | 缺 Raw broad、无主 cluster、Unknown、网格不变及产物命名 |
+| 正式发布器 → 真实消费者 | [联合检查](../../../output/mini-acceptance/20260920-closeout/evidence/joint-delivery-tests.xml) | 2 passed | 三文件直接加载，SVC Anatomy 与 Raw Unknown，输入保护 |
+| Notebook 配置入口 | [5 个实际场景](../../../output/mini-acceptance/20260920-closeout/evidence/notebook-entry.json) | passed | 默认正式项目、单独 sample、显式 project、override、错误归属拒绝 |
+| 固定 sST mini | [交付检查](../../../output/mini-acceptance/20260920-closeout/evidence/delivery-P2CRC_Visium-default.json)、[前后对照](../../../output/mini-acceptance/20260920-closeout/evidence/sst-before-after.json) | 发布成功，数值 partial | Raw 43×18085，SVC 567×5021；obs、基因轴、parent 坐标与旧结果一致；配置只变输出目录 |
+| Notebook／batch | [逐文件对照](../../../output/mini-acceptance/20260920-closeout/evidence/notebook-batch-parity.json) | 三路各17个代码单元通过；0 stage errors | 参数与172／14／45份科学表JSON逐字节一致；iST 44份 State/Gain／窗口表与旧版一致 |
+| 报告 | [只读刷新](../../../output/mini-acceptance/20260920-closeout/evidence/report-refresh.json) | 12份 | result、表、图哈希不变；只刷新读取已保存数据的HTML |
+| 输入与旧证据保护 | [最终哈希](../../../output/mini-acceptance/20260920-closeout/evidence/final-input-hashes.json)、[旧证据保护](../../../output/mini-acceptance/20260920-closeout/evidence/previous-evidence-preserved.json) | 25个输入／旧交付、71份旧产物未变 | 旧证据与用户审阅保留；不代表全量容量通过 |
 
-iST 坐标使用已确认0.2125 µm/coordinate；hST使用源 full-resolution metadata 的0.27380817798463214 µm/pixel，观测网格步长约8.00145/8.00017 µm，与8 µm bin一致。ROI中心、边界、原ID、来源摘要及数量见 [input_manifest](../../../output/mini-acceptance/20260920/input_manifest.json)。未平移坐标或改变 QC/reference 范围。
+测试数分套件记录，聚焦子集不与完整套件相加。隔离线程和插件、禁用 readline 的科学环境用于有效验证；初期代理的 pytest capture 导入崩溃不计为通过。
 
-## 证据与测试
+### 本轮真实结果
 
-- [真实比较 Notebook](../../../output/mini-acceptance/20260920/assembly/comparison/assembly_comparison.executed.ipynb) · [HTML](../../../output/mini-acceptance/20260920/assembly/comparison/assembly_comparison.html) · [coverage](../../../output/mini-acceptance/20260920/assembly/comparison/coverage.csv) · [metrics](../../../output/mini-acceptance/20260920/assembly/comparison/metrics.csv)。ARI/NMI 对照指定历史重建标签，不是独立生物学真值，不自动选默认 assembly。
-- 消费者 [iST Notebook](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920/iST/notebook/01_reconstruction_impact.executed.ipynb) · [iST 报告](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920/iST/notebook/report.html) · [hST 报告](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920/hST/notebook/report.html) · [sST 报告](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920/sST/notebook/report.html)。
-- [Notebook/batch parity](../../../output/mini-acceptance/20260920/evidence/notebook-batch-parity.json) · [报告只读刷新](../../../output/mini-acceptance/20260920/evidence/report-refresh.json) · [baseline/四方法身份](../../../output/mini-acceptance/20260920/evidence/baseline-and-method-identities.json) · [四方法配置](../../../output/mini-acceptance/20260920/evidence/four-method-configurations.json)。
-- 生产修改相关141 passed、额外调用链73 passed；消费者全套109 passed；比较与baseline套件最终13 passed（含fixture Notebook）；root联合交付/mini检查12 passed，随后sST校验补充3 passed。套件有重叠，不相加。历史759/964/75不是本轮通过数；当前命令与来源见机器记录。
+| 路线 | 正式交付 | Anatomy | Raw 映射无覆盖 | Impact／独立 Moran／pathway |
+|---|---|---|---:|---|
+| iST | [复用 P2 random](../../../output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/sample.yaml)，3409 → 501 | 96个 Other | 401 | partial／partial／succeeded |
+| hST | [复用 P1 HD](../../../output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/sample.yaml)，5077 → 4128 | 214窗：Other189、Tumor22、Normal2、Interface1 | 275 | partial／skipped／skipped |
+| sST | [新 P2 Visium](../../../output/mini-acceptance/20260920-closeout/delivery/P2CRC_Visium_mini/default/sample.yaml)，43 → 567 | 1个 Interface | 0 | partial／partial／succeeded |
 
-`output/` 为本地运行证据，Git 忽略的大数据需保留或重建，缺文件不能沿用结论。首次 comparison kernel 被 socket 沙箱限制，失败记录已保留；最终执行版源码哈希不变、无cell error。普通启动出现过 OpenMP/numba 环境错误，隔离后重试成功，失败启动不作为科学通过证据。
+三路均无阶段异常，SVC Anatomy窗口/context均生成；sST的Anatomy stage因部分Raw parent scope缺失为partial。iST仍受小ROI稳定阈值支持限制；hST表达身份unknown；hST/sST正常无SVC_cluster。sST单窗结论依赖当前mini及暂定尺度，不推广到全量组织。
+
+sST 139457 个正目标项中，139207 个正支持项全部在 rtol=1e-5、atol=1e-6 内守恒，最大相对误差约1.07e-7。旧821个有效零项中571个恢复；剩余250个是本轮直接观测的校正前严格零支持，涉及2个parent，未解决目标量1086.313，约占总量0.253%，最严重parent约缺9.90%。生成细胞总量范围约51.75–9903.48，中位数680.19；没有最终逐细胞10,000缩放。目标仍是共同基因轴上的内部 parent normalize_total(10000)，不是恢复原始counts。
+
+新消费者 [iST Notebook](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920-closeout/iST/notebook/01_reconstruction_impact.executed.ipynb) · [iST报告](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920-closeout/iST/notebook/report.html) · [hST报告](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920-closeout/hST/notebook/report.html) · [sST报告](../../../../REVISE_Analysis_Agent/output/mini-acceptance/20260920-closeout/sST/notebook/report.html)。完整路径与运行日志见机器记录。
+
+## 上一阶段完成项与复用边界
+
+名称统一与NA保护、collision拒绝删除、一次GA、eligibility与失败传播、单一SVC、完整Raw、正式sample.yaml、Raw Level2按scope有效ID、K-control局部unavailable均保留。本轮没有重做这些实现。
+
+H2 baseline为49279×0，历史ID/Level1/SVC_cluster/坐标保留。H3四方法同ROI/reference/QC/GA/LR/seed；H4逐ID坐标及共同基因检查，T／Mono_Macro／Fibroblast共同ID为160／157／68，共同基因为13088。[比较Notebook](../../../output/mini-acceptance/20260920/assembly/comparison/assembly_comparison.executed.ipynb)保存36指标、36列联表、12图；相关源码和产物未变，本轮复用，不重新运行。历史cluster是指定比较基准，不是独立生物学真值。
+
+## D. 剩余问题
+
+| 问题 | 类型 | 当前处理 | 后续证据 |
+|---|---|---|---|
+| 250项校正前真零支持 | scientific／method | 保留unresolved，不新增分配策略 | 明确补偿语义及跨样本规模后单独讨论 |
+| P1 HD表达来源 | input fact | Raw/SVC保持unknown | 可追溯的原始表达和预处理记录 |
+| Visium 0.73 µm/coordinate | input fact | 保持暂定 | 对应样本的坐标标定来源 |
+| 全量容量与科学解释 | scale／scientific | 本轮未运行、未验收 | 服务器实际峰值／失败记录和科学审阅 |
+| 共坐标、Raw/SVC范围差异及四assembly选择 | scientific | 明示单位与覆盖，不自动给结论 | 更大范围真实数据与独立解释 |
+
+正式三文件主链仍成立。本轮修正的是 Anatomy 来源与日常入口的不一致，以及确定的 sST 数值偏差；没有新建框架掩盖能力缺失或真零支持。
 
 ## 服务器全量入口
 

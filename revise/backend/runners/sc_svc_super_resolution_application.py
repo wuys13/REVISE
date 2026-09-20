@@ -21,6 +21,89 @@ from revise.backend.ops.topology import get_adjacency_graph
 from revise.utils.spot_sr_input import CELL_LOCATIONS_KEY
 
 
+def _correct_sst_parent_gene_expression(
+    svc_expression,
+    parent_targets,
+    spot_indices,
+    parent_ids,
+):
+    """Match each virtual-cell parent/gene total to its normalized target.
+
+    The allocation is multiplicative: a parent/gene with no materialized
+    pre-correction support remains unresolved rather than receiving a new
+    allocation.  Divide each virtual-cell value by its parent/gene total
+    before multiplying by the target so an extremely small positive total
+    cannot make the intermediate target/total ratio overflow.
+    """
+    values = np.asarray(svc_expression, dtype=np.float64)
+    targets = np.asarray(parent_targets, dtype=np.float64)
+    indices = np.asarray(spot_indices, dtype=np.intp)
+    ids = np.asarray(parent_ids, dtype=str)
+    if values.ndim != 2 or targets.ndim != 2:
+        raise ValueError("sST parent-gene correction requires 2D matrices")
+    if values.shape[0] != indices.size or values.shape[1] != targets.shape[1]:
+        raise ValueError("sST parent-gene correction matrix axes do not align")
+    if ids.size != targets.shape[0]:
+        raise ValueError("sST parent-gene correction parent IDs do not align")
+    if indices.size and (indices.min() < 0 or indices.max() >= targets.shape[0]):
+        raise ValueError("sST parent-gene correction parent indices are invalid")
+    if not np.isfinite(values).all() or np.any(values < 0):
+        raise ValueError("sST pre-correction expression must be finite and non-negative")
+    if not np.isfinite(targets).all() or np.any(targets < 0):
+        raise ValueError("sST normalized parent targets must be finite and non-negative")
+
+    current_sum = np.zeros_like(targets, dtype=np.float64)
+    np.add.at(current_sum, indices, values)
+    if not np.isfinite(current_sum).all() or np.any(current_sum < 0):
+        raise ValueError("sST pre-correction parent-gene totals must be finite and non-negative")
+
+    positive_target = targets > 0
+    positive_support = positive_target & (current_sum > 0)
+    true_zero_support = positive_target & (current_sum == 0)
+    zero_locations = np.argwhere(true_zero_support)
+    zero_parent_rows, inverse = np.unique(
+        zero_locations[:, 0], return_inverse=True
+    ) if zero_locations.size else (
+        np.empty(0, dtype=np.intp),
+        np.empty(0, dtype=np.intp),
+    )
+    zero_pairs = np.empty((zero_locations.shape[0], 2), dtype=np.int32)
+    if zero_locations.size:
+        zero_pairs[:, 0] = inverse
+        zero_pairs[:, 1] = zero_locations[:, 1]
+
+    denominators = current_sum[indices]
+    corrected = np.divide(
+        values,
+        denominators,
+        out=np.zeros_like(values, dtype=np.float64),
+        where=denominators > 0,
+    )
+    del denominators
+    corrected *= targets[indices]
+    if not np.isfinite(corrected).all() or np.any(corrected < 0):
+        raise ValueError("sST parent-gene correction produced non-finite or negative output")
+
+    return corrected, {
+        "schema_version": 1,
+        "operator": "share_then_target_no_epsilon",
+        "target_definition": "internally normalized parent expression on the SVC gene axis",
+        "current_sum_dtype": str(current_sum.dtype),
+        "positive_target_entries": int(positive_target.sum()),
+        "positive_support_entries": int(positive_support.sum()),
+        "true_zero_support_entries": int(true_zero_support.sum()),
+        "true_zero_support_target_mass": float(targets[true_zero_support].sum()),
+        "true_zero_support_target_max": float(
+            targets[true_zero_support].max() if true_zero_support.any() else 0.0
+        ),
+        "min_positive_current_sum": float(
+            current_sum[current_sum > 0].min() if (current_sum > 0).any() else 0.0
+        ),
+        "true_zero_support_parent_ids": ids[zero_parent_rows],
+        "true_zero_support_pairs": zero_pairs,
+    }
+
+
 class ScSVCSuperResolution(ApplicationSVC):
     """
     sc-SVC super-resolution for application usage.
@@ -292,11 +375,13 @@ class ScSVCSuperResolution(ApplicationSVC):
         else:
             self.logger.info("Skipping OT enhancement due to small cell count")
 
-        self.logger.info("Rescaling single-cell expressions to match spot totals")
-        current_sum = np.zeros_like(X, dtype=np.float64)
-        np.add.at(current_sum, spot_indices, SVC_X)
-        ratio = X / (current_sum + 1e-10)
-        SVC_X = SVC_X * ratio[spot_indices]
+        self.logger.info("Rescaling single-cell expressions to match parent-gene targets")
+        SVC_X, parent_gene_correction = _correct_sst_parent_gene_expression(
+            SVC_X,
+            X,
+            spot_indices,
+            spots,
+        )
 
         self.logger.info(f"Number of cells processed: {len(self.svc_obs)}")
         self.logger.info(f"Number of unique spots: {len(spots)}")
@@ -308,5 +393,6 @@ class ScSVCSuperResolution(ApplicationSVC):
         svc_adata = sc.AnnData(SVC_X, obs=svc_obs)
         svc_adata.var_names = st_adata_common.var_names
         svc_adata.obsm["spatial"] = svc_obs[["x", "y"]].to_numpy(dtype=float, copy=True)
+        svc_adata.uns["sst_parent_gene_correction"] = parent_gene_correction
         self.svc["sc_svc_dec"] = svc_adata
         return refinement_applied

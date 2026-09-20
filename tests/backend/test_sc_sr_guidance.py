@@ -623,3 +623,72 @@ def test_allocation_completes_before_invalid_virtual_projection_fails(
             "allocation_method": "posterior_reference_allocation",
         }
     ]
+
+
+def test_sst_parent_gene_correction_preserves_positive_support_without_ratio_overflow(
+):
+    from revise.backend.runners import sc_svc_super_resolution_application as module
+
+    minimum = np.nextafter(0.0, 1.0)
+    corrected, diagnostic = module._correct_sst_parent_gene_expression(
+        np.array([[2.0], [2.5e-321], [7.5e-321], [minimum]]),
+        np.array([[5.0], [1e4], [1e4]]),
+        np.array([0, 1, 1, 2]),
+        np.array(["ordinary", "tiny", "zero"]),
+    )
+
+    np.testing.assert_allclose(corrected[0], [5.0])
+    np.testing.assert_allclose(corrected[1:3].sum(axis=0), [1e4])
+    np.testing.assert_allclose(corrected[1:3], [[2500.0], [7500.0]], rtol=2e-3)
+    np.testing.assert_array_equal(corrected[3], [1e4])
+    assert np.isfinite(corrected).all()
+    assert diagnostic["true_zero_support_entries"] == 0
+    assert diagnostic["positive_support_entries"] == 3
+
+
+def test_sst_parent_gene_correction_records_true_zero_without_imputation(
+):
+    from revise.backend.runners import sc_svc_super_resolution_application as module
+
+    corrected, diagnostic = module._correct_sst_parent_gene_expression(
+        np.array([[2.0], [0.0]]),
+        np.array([[5.0], [7.0]]),
+        np.array([0, 1]),
+        np.array(["supported", "unresolved"]),
+    )
+
+    np.testing.assert_array_equal(corrected, [[5.0], [0.0]])
+    assert diagnostic["true_zero_support_entries"] == 1
+    assert diagnostic["true_zero_support_target_mass"] == 7.0
+    np.testing.assert_array_equal(
+        diagnostic["true_zero_support_parent_ids"], ["unresolved"]
+    )
+    np.testing.assert_array_equal(diagnostic["true_zero_support_pairs"], [[0, 0]])
+
+
+@pytest.mark.parametrize("values", [np.array([[np.nan]]), np.array([[-1.0]])])
+def test_sst_parent_gene_correction_rejects_nonfinite_or_negative_pre_support(
+    values,
+):
+    from revise.backend.runners import sc_svc_super_resolution_application as module
+
+
+    with pytest.raises(ValueError, match="pre-correction expression"):
+        module._correct_sst_parent_gene_expression(
+            values,
+            np.array([[1.0]]),
+            np.array([0]),
+            np.array(["spot"]),
+        )
+
+
+def test_sst_parent_gene_correction_rejects_overflowed_parent_total():
+    from revise.backend.runners import sc_svc_super_resolution_application as module
+
+    with pytest.raises(ValueError, match="parent-gene totals"):
+        module._correct_sst_parent_gene_expression(
+            np.array([[np.finfo(np.float64).max], [np.finfo(np.float64).max]]),
+            np.array([[1.0]]),
+            np.array([0, 0]),
+            np.array(["spot"]),
+        )

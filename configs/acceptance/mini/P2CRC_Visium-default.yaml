@@ -44,7 +44,7 @@ local_refinement:
     exp_neighbors: 10
     spatial_neighbors: 10
 output:
-  dir: output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default
+  dir: output/mini-acceptance/20260920-closeout/delivery/P2CRC_Visium_mini/default
 execution:
   seed: 42
 delivery:

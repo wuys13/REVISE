@@ -1,383 +1,634 @@
-# REVISE × REVISE_Analysis_Agent：Codex 实施交接
+# REVISE × REVISE_Analysis_Agent 当前收口任务
 
-日期：2026-09-20
-任务性质：**在现有实现上落实已确认修改，并完成条件允许的真实交付与分析；不是再做一轮只读审阅或方案设计。**
+## 0. 任务定位
 
-## 0. 给执行者的起始指令
+你现在需要继续落实两个仓库的协同收口：
 
-同时理解以下两个仓库，从“重建结果能被独立分析库直接使用”的共同目的出发实施：
+- `REVISE`
+  - 目标分支：`revise-2.0`
+  - 本次审阅基线 commit：`464ee26ac22978c3994e40af50325413e70cef13`
+- `REVISE_Analysis_Agent`
+  - 目标分支：`sl`
+  - 本次审阅基线 commit：`3e70ab364f89f9e24e981e3e9239e7fe563138a6`
 
-- 生产端：`wuys13/REVISE`，主开发分支 `revise-2.0`。
-- 消费端：`wuys13/REVISE_Analysis_Agent`，此前确认的工作分支为 `sl`；开始时核对实际分支和工作树，不假定是 `main`。
+开始前必须先检查当前 HEAD 和工作树；如果已经有更新，以当前工作树为准，不机械重复下面已经完成的修改，也不要覆盖用户已有未提交内容。
 
-先遵守工作区已有 AGENTS.md 等有效指令，再阅读本说明及下面列出的现有交接入口。记录实际分支、HEAD 和与本次任务有关的未提交修改。不要重置、覆盖或清理用户已有工作，不要为对齐旧验收快照而切回旧代码；不自动 push、merge 或更换开发分支。
+这轮不是重新设计两个项目，也不是继续扩大分析能力。
 
-本说明里的问题描述是开工核查入口，不是要求机械应用旧补丁。若当前工作树已解决某项，验证并保留；若文件移动，沿实际调用链找对应实现，不为匹配旧路径创建重复代码。
+当前共同主线已经基本建立：
 
-**请执行，不要仅输出计划。** 开始时用一张小表说明将修改、将验证、受真实输入限制的事项，然后完成代码、相关测试、配置/Notebook 和必要文档调整。有数据、依赖及资源时运行指定真实链；缺少条件时完成不依赖它们的工作，只阻塞对应运行项，报告具体缺项和已经准备好的实际命令。不要重新询问已经明确的命名规则、baseline 身份、分析归属等决策。
+**REVISE 重建 → 正式发布 `sample.yaml + raw.h5ad + SVC.h5ad` → Analysis Agent 独立加载 → Notebook / batch / report 使用同一分析逻辑。**
 
-历史交接页中的“本轮只更新文档”“本轮不修改分析库”“不运行真实重建”描述的是上一轮任务范围，不是本次继续只做文档的理由。本次授权范围按所分配角色执行；科学结论仍必须等待实际证据。
+现在的目标是：
 
-若一个会话负责双仓，可修改双方并完成联测。若分成两个会话，双方阅读同一份说明：生产端会话只改 REVISE，消费端会话只改 Analysis Agent；允许读取另一仓进行核对，不抢改另一仓代码。跨仓依赖写入各自现有交接入口，不额外建立协调系统。
+> **检查并修正仍然存在的少数语义或数值问题，让已经建立的主链更加自洽、简单、可直接使用。**
 
----
+------
 
-## 1. 前因后果：为什么做这轮工作
+# 1. 重要设计原则
 
-### 1.1 最初目的
+## 1.1 做减法，不做加法
 
-REVISE 负责把 ST 与单细胞 reference 重建为统一的 SVC；分析库负责直接分析交付的 Raw/SVC，并支持研究者或 Agent 围绕新科学问题复用、扩展分析。
+如果现有逻辑已经能满足目的，优先复用。
 
-拆仓不是为了让两边分别拥有一套相似框架，而是为了：
+不要主动增加：
 
-| 原先障碍 | 本轮要保持的结果 |
-|---|---|
-| sc-SVC 输出分散在类型目录及 spatial/expr 双载体中，下游需要知道重建内部逻辑 | 正式交付为 `sample.yaml + raw.h5ad + SVC.h5ad`，下游直接加载 |
-| 分析依赖重建 backend，甚至在分析端重新做 Raw Level2 mapping | 推断在生产端完成；分析库不导入 `revise`，不补 OT 或标签 |
-| 不同技术的 Raw/SVC 单位和基因轴不一致 | 默认各自原生分析；只在具体指标需要时局部对应 |
-| Notebook 被拆成很多片段，或者批处理和交互执行各用一套口径 | 少数连续 Notebook，共用方法、参数解析、阶段执行及保存结果 |
-| 工程测试通过被误认为真实重建及科学分析全部完成 | 明确区分实现、fixture 联测、真实运行、科学解释 |
+- 通用兼容层
+- fallback / 自动猜测
+- 自动补标签
+- 自动修复输入
+- 新的 registry / planner
+- 新的缓存或任务调度框架
+- 新的通用 correspondence 层
+- 另一套 Notebook / report 体系
+- 为了让测试“全绿”而改变科学定义
 
-长期分析仍包括三大类：重建影响；Gene/Pathway/Cell-state/CCI/Niche 等常规分析；跨平台/器官/疾病比较。当前若干注册入口不等于三大类全部完成，但本轮不为补齐目录而开发所有未来流程。
+如果某个条件真的不满足：
 
-### 1.2 前轮推进到了哪里
+**把问题暴露出来。**
 
-前轮审阅沿生产、交付、加载、分析和 Notebook 检查过相关实现。主要主干已存在；真实 whole-sample 交付与更完整消费仍需完成。前轮还指出名称值、Raw Level2 局部缺失、无主标签的 K-control，以及四方法坐标检查等具体问题。
+不要通过改变输入、换算法、自动补值等方式让它看起来成功。
 
-这些判断不是当前工作树的自动验收。必须核对现状，不照抄历史测试数，不将以前的隔离反例当作当前真实执行结果。
+------
 
-### 1.3 用户随后明确的新决定
+## 1.2 大规模数据才能回答的问题，本轮后置
 
-**不配置、不保留 `label_aliases`。所有实际参与计算、筛选、分组和展示的 cell type 名称，统一把 `/` 替换为 `_`。**
+这轮不要求通过 mini 数据获得完整生物学结论。
 
-其他方面尽量做减法：围绕已经存在的问题作最小修改，不主动添加额外防御、自动修复、兼容层、缓存或调度框架。问题应被看见，而不是被兜底掩盖。
+例如以下内容不阻塞当前收口：
 
----
+- State / Gain 在全量数据上是否形成稳定区域
+- 四种 assembly 哪个最终最好
+- 大规模生物学解释
+- 跨平台 / 跨器官 / 跨疾病结果
+- 全量运行的资源和容量表现
+- sST 共坐标对空间统计的真实影响
+- 更完整的 uncertainty 理论
+- CCI / niche / recoverability 等后续分析
 
-## 2. 已确定的边界：实施中不要重新设计
+这些只需要在已有文档中的“后续检查”里明确保留。
 
-| 主题 | 已确定行为 |
-|---|---|
-| 正式输入输出 | 维持现有三文件交付；不增加另一个交付格式，不让消费端拼旧双载体或类型目录 |
-| whole-sample | 生产端负责遍历及合并符合既定 LR 条件的类型；实际跳过的类型保留原因，不伪装全覆盖；不在本轮重定义 eligibility |
-| Raw | 保留原始矩阵、单位轴、基因轴、坐标和人工标签；推断标签单独回填，真实缺失保留 |
-| 标签角色 | broad/subtype 是 cell type 标签；`SVC_cluster` 是主重建分群身份，不是 Raw Level2 或新 Leiden 的别名 |
-| 表达 | 保持现有有限、非负、非 log 线性 `.X` 契约及来源声明；允许小数，不根据数值外观推断历史，不把 unknown 改成已知来放行 |
-| 空间与对应 | 不猜单位、不自动变换坐标、不强制全局配对；sST parent spot 与虚拟细胞不是同一单位 |
-| 缺失和失败 | 正常不适用只限制对应分支；真正计算错误仍报错或按现有机制记录 failed；不用宽泛异常捕获把 bug 改成 unavailable |
-| Notebook | 拆代码，不拆故事；参数、关键中间对象、结果与可视化诊断连续可读；不另造一套分析计算 |
-| 配置归属 | REVISE 生成输入事实；分析库项目配置维护分析参数；复用现有 sample/project/override 机制，不新增配置层 |
-| assembly 默认值 | 先用阶段默认 `random` 打通主链；四方法比较不能阻塞主链；最终科学默认值不在没有真实结果时自动决定 |
-| 实验归属 | 四方法比较本轮继续由上游实验实现，分析库链接/复核，不复制、不强塞进 Impact |
-| 发布与数据保护 | 保留已有输入保护、发布回滚和当前结果登记；不为“做减法”顺带重写整套发布系统 |
+**不要为了这些问题扩大 mini ROI、降低阈值、改科学参数或新增方法。**
 
-### 名称替换的精确范围
+------
 
-规则是 `/ → _`，不是生物学同义词推断。`Mono/Macro` 与 `Mono_Macro` 统一为后者；不会因此自动把 `Macro` 变成 `Mono_Macro`，也不会把 `CAF` 自动变成 `Fibroblast`。
+# 2. 当前已经完成的部分
 
-在实际 cell type 标签读取、类型参数解析和新生成标签处落实。不要为了这件事替换 sample ID、observation ID、gene ID、文件路径或任意字符串。已有其他处理行为不要顺带扩展。
+先核对当前代码；如果以下内容仍成立，不要再次修改。
 
-原始文件和历史原始标签列不回写；消费视图及新推断标签统一名称。NA 保持缺失，不转成字符串类别。历史 `SVC_cluster` 保持原值；新 cluster 命名空间若由 broad type 参与构造，使用已标准化的 broad type，不对整列 cluster 身份做无差别替换。
+## REVISE 已基本完成
 
-同一列中 `A/B` 与 `A_B` 按约定属于同一规范名称，可以合并类别，**不能删掉其中任何 observation，也不能因此执行两次同一类型分析**。不保留针对这两种写法的 collision 拒绝或新旧名称并行逻辑。不要为尚未出现的参数键冲突设计新机制。
+- cell type 主流程统一 `/ → _`
+- 缺失值 NA 保留
+- 不再通过 `label_aliases`
+- 已删除 slash normalization 后的 collision 拒绝
+- whole-sample iST 重建
+- 单一 SVC 输出
+- 完整 Raw 保留
+- `sample.yaml + raw.h5ad + SVC.h5ad` 正式交付
+- 事务发布与失败回滚
+- mean / random / within_cluster / outside_cluster 四种 assembly
+- H2 历史 baseline 汇集
+- H3 四 assembly mini 真实执行
+- H4 exact ID / gene / coordinate 检查
+- hST / sST mini 正式重建与交付
+- full configs 和服务器执行入口
 
----
+## Analysis Agent 已基本完成
 
-## 3. 开工阅读与定位
+- 删除主流程 `label_aliases`
+- cell type `/ → _`
+- 默认 scope：
+  - `All`
+  - `Fibroblast`
+  - `Mono_Macro`
+  - `T`
+- Raw Level2 按 scope 内有效 ID 使用
+- Raw Level2 coverage 输出
+- 无 `SVC_cluster` 时 K-control 等相关能力按 unavailable 处理
+- 意外运行错误仍记录为真实 error
+- Notebook / batch / report 使用同一 workflow 和有效参数
+- 项目配置直接引用 REVISE 正式 `sample.yaml`
+- mini iST / hST / sST 均已实际消费
+- report 只读取已保存结果，不重新计算
 
-| 仓库 | 先读 | 按任务下钻 |
-|---|---|---|
-| REVISE | `docs/development/reconstruction-analysis/cross-repo-review.md`；`implementation-index.md` | 同目录 `assembly-comparison-contract.md`、相关验收记录；名称、delivery、publication、assembly、reference preparation 及实际入口 |
-| Analysis Agent | `docs/cross-repo-review/README.md`；`contract-and-code.md`；`evidence-and-gaps.md` | `docs/input-output.md`；`revise_analysis/io.py`、`runner.py`、Impact workflow；连续 Notebook |
+如果这些已经在当前工作树中成立，视为完成项，不继续“优化”。
 
-代码位置在后面的任务表中列出，仅作导航。优先读与本轮问题直接有关的调用链，不展开全仓库防御审计，不为核对一个问题扫描所有无关研究分支。
+------
 
-`reconstruction-impact` 等旧分支只作历史/迁移参考；本轮不在那里继续开发。输出、H5AD 和日志可能没有进入 Git，须检查实际工作区，不得从 Git 中未出现推断它们不存在或已通过。
+# 3. 当前真正需要继续处理的事项
 
----
+本轮重点只有少数几项。
 
-## 4. 协同任务总表
+------
 
-下表编号只用于本次交接，不重编现有文档中的 R1–R8、D1–D3 或 H1–H6。
+# A. Analysis Agent：Anatomy 标签来源
 
-| 协同事项 | 生产端 | 消费端 | 闭环要求 |
-|---|---|---|---|
-| 名称统一 | P-1：统一生产标签、参数及比较口径 | A-1：统一读取/scope/展示，删除 aliases | 真实存在的 `Mono_Macro` 能进入相应分析，不需手工字典 |
-| 交付与分析配置分工 | P-2：正式三文件和真实来源 | A-4：项目配置直接引用该 sample.yaml | 重建重新交付后，分析参数无需重填到生产 YAML |
-| 缺失局部处理 | 不补造标签，保留完整 Raw | A-2、A-3：有效 Level2 和 K-control 前提 | 缺失只限制确实依赖它的分析，意外错误仍可见 |
-| 真实主链 | P-2：真实 GA/LR 到正式产物 | A-5：Notebook/batch/报告消费 | 不用历史单类型 carrier 代替新正式全样本 SVC |
-| 四方法实验 | P-3/P-4/P-5：H2–H4 与真实比较 | 复核或阅读，不复制实现 | baseline、四方法、范围、坐标、保存结果都落实 |
-| hST/sST 能力边界 | P-6：当前路线的真实交付 | A-6：按能力消费，不要求 cluster | 相同交付入口，不同路线只执行适用部分 |
-| 完成情况交接 | 更新现有生产端入口 | 更新现有消费端入口 | 实现、执行、缺项与科学待判分开写，不再加一套证据系统 |
+## 背景
 
----
+当前生产端完整保留 Raw。
 
-## 5. REVISE 实施事项
+REVISE 的 `revise_Level1` 是推断结果，只对实际经过对应推断的 Raw 单位回填，因此合法情况下会存在 NA。
 
-### P-1：名称标准化贯通及删除多余分支
+Analysis Agent 当前 Anatomy 构建路径仍大致是：
 
-**原因：**上游已有斜杠转换，但下游过去通过另一套 aliases 反向解释；这让正式交付与手工示例表现不一致。
-
-**修改：**
-
-- 复用 `revise/utils/labels.py` 的已有轻量函数。在实际 reference 标签、类型选择参数、direct/batch/reference-preparation 的相关分组和正式输出推断标签处检查并贯通规则。
-- 核对 `application/preprocess.py::normalize_reference_labels`，删除因 `A/B → A_B` 与已有 `A_B` 合并而拒绝执行的逻辑；按当前代码需要正确合并 categorical 类别，不丢单位。
-- 核对 `application/delivery.py`：新推断标签统一名称；原始标签与推断标签的冲突计数，双方先按同一规则比较，不能把仅斜杠差异算成注释变化。
-- 同步实际使用的配置、示例和测试。不要批量改历史数据、历史笔记或所有含 `/` 的文本。
-
-**不做：**新共享依赖包、别名 registry、模糊匹配、全局字符串替换或完整标签迁移系统。
-
-**验收：**两个写法得到同一类型；单位数量不丢、不重复运行；原文件不变；仅名称写法变化不增加注释冲突计数。
-
-### P-2：完成阶段默认 random 的真实 whole-sample 交付
-
-**原因：**发布器联测和历史标签空间子链，不能替代从真实 Raw/reference 经实际重建再被消费的主链。
-
-**执行：**核对实际输入和配置，使用现有 `reconstruct.py --config`/`run_application` 或当前正式入口，运行真实 P2 全样本重建，发布 `sample.yaml + raw.h5ad + SVC.h5ad`。保留输入事实、实际类型覆盖与已有跳过记录；不为完成交付修改 eligibility 或科学默认参数。
-
-重点核查 `reconstruct.py`、`application/delivery.py`、`expression.py`、`publication.py`、`backend/adapters.py` 及实际 batch 路径。现有功能已经正确的，不重写。
-
-使用阶段默认 `random`。供消费端直接引用正式 sample.yaml，不手写一份更容易通过的替代声明。表达来源须由原始处理流程、明确记录或可靠输入证据确认，不由非负数值猜测；必要时重建来源清楚的交付，而不是仅改 identity。
-
-**验收：**完整 Raw 未被 QC 后对象替换；正式 SVC 不是历史单类型 spatial 文件冒名；实际被跳过的类型可见；消费端能直接加载并执行适用分析。
-
-### P-3：H2——汇集已有历史 baseline
-
-**原因：**已有标签来自三份历史重建空间载体，不来自 Raw；材料已确认，缺的是汇集，不是新注释。
-
-先核对实际工作区中的来源。此前确认的相对 REVISE 根目录路径是：
-
-```text
-results/sc_SVC_case/P2CRC_Xenium/T/spatial.h5ad
-results/sc_SVC_case/P2CRC_Xenium/Mono_Macro/spatial.h5ad
-results/sc_SVC_case/P2CRC_Xenium/Fibroblast/spatial.h5ad
+```python
+raw_broad = sample.labels("raw", sample.broad_key)
 ```
 
-采用一个短准备脚本或现有合适入口，提取真实 ID、来源自身的 broad type、原 `SVC_cluster` 与 spatial 坐标。新 baseline 为标签/坐标 AnnData，零基因轴；不加载或拼接历史 X 作为比较表达。broad 标准化，cluster 原值保留，身份按 `(broad type, SVC_cluster)` 解释。
+然后用这组标签构建完整 Raw Anatomy。
 
-保留来源与现有摘要记录，拒绝重复/空 observation ID，不按行号重造 ID，不按 Raw 的旧 broad 标签强行重分历史 carrier。历史合计 49,279 行只作核对参照，绝不是截断目标或当前必须匹配的常数。
+这可能存在一个语义问题：
 
-**验收：**汇集后 ID、类型/cluster 计数、逐 ID 坐标与实际来源一致；历史文件不变。来源缺失只阻塞该准备/真实比较，不阻塞 P-1 或消费端代码修复。
+**Anatomy 的目的本来是描述完整 Raw tissue 的组织背景，而不是描述“哪些单位成功获得了重建 broad inference”。**
 
-### P-4：H3——生成四种真实 assembly 输入
+因此当前应先确认：
 
-**原因：**四种算法实现存在，不等于真实表达产物及科学比较完成。
+> Anatomy 应该读取哪一个 Raw 标签来源？
 
-使用现有入口与明确配置，固定 Raw、reference（使用 prepared reference 时固定同一个）、QC/GA/LR、seed，只改变 `output.ist_mapping` 与独立输出位置：
+尤其检查完整 Raw 中是否已经保留原始人工 `Level1`，以及当前 `sample.broad_key` 是否实际指向 `revise_Level1`。
 
-```text
-mean
-random
-within_cluster
-outside_cluster
+## 要做的事情
+
+1. 沿正式 REVISE delivery → sample.yaml → Analysis Agent `Sample` → `stage_support()` 检查实际 Anatomy 使用的列。
+2. 根据现有设计目的，判断 Anatomy 是否应该明确使用完整 Raw 的原始 Level1。
+3. 如果是：
+   - 只在 Anatomy 这个局部调用点修正来源。
+   - 不改变 Reconstruction Impact 中其他 scope / broad routing 的列。
+   - 不把原始 Level1 和 `revise_Level1` 自动混合填充。
+4. 使用一个很小的 fixture 验证：
+   - 原始 Level1 完整；
+   - `revise_Level1` 存在部分 NA；
+   - Anatomy 仍按照设计指定的来源工作。
+
+## 不要做
+
+不要先实现：
+
+- 通用 missing-label Anatomy 系统
+- 自动用原始标签补 `revise_Level1`
+- 多标签来源 fallback
+- 根据“哪列更完整”自动选择
+- 全局放宽所有空间窗口函数对 NA 的约束
+
+如果正确标签来源修正后问题自然消失，就到此为止。
+
+如果正确来源本身仍有缺失，只把真实缺失暴露出来，再另行讨论。
+
+------
+
+# B. Analysis Agent：Notebook 正式默认入口收口
+
+## 背景
+
+当前正式 mini/full 分析已经通过 project YAML 直接引用 REVISE 发布的 `sample.yaml`。
+
+但 `notebooks/01_reconstruction_impact.ipynb` 仍保留历史默认：
+
+```python
+data/P2CRC_Xenium/sample.yaml
 ```
 
-无需每种方法新建 Notebook；无需先建设缓存或调度器。若 P-2 的 random 产物确实与比较输入版本和上游配置一致，可直接明确复用，不强制再算一次；这不需要自动缓存机制。
+该文件还是旧的临时 P2 carrier 入口。
 
-保存现有运行记录支持的有效配置、版本、来源及实际完成状态。若同配置的上游标签或范围仍有差异，记录并核查，不把差异一概归因于 assembly。不因资源不足偷偷降低 QC、缩小科学范围、改算法或用旧 expr.h5ad 替代。
+因此现在存在：
 
-**验收：**四份实际生成的正式 SVC 可定位、来源可核对；未生成的明确列未完成，不能用 fixture 顶替。
+- 验收脚本使用新正式主链
+- 用户直接打开 Notebook 时仍可能进入旧路径
 
-### P-5：H4——修正并执行现有比较 Notebook
+这不符合项目已经迁移到正式交付的状态。
 
-**原因：**比较必须体现新表达结构；只用 baseline 坐标绘图会掩盖方法产物自己的坐标错误；仅 Notebook 内展示不够后续交接。
+Notebook 中也可能仍有类似：
 
-定位：`revise/analysis/assembly_comparison.py`、`reproduce/case/assembly_comparison.ipynb`、`examples/assembly-comparison-real.json`。
+> 样本必须包含完整 SVC reconstruction label
 
-实施内容：
+这样的旧表述，而当前 hST / sST 已允许无 `SVC_cluster` 时按能力 partial 运行。
 
-1. 比较类型采用标准化后的显式列表：`T`、`Mono_Macro`、`Fibroblast`。简化原先为不同写法维护的多别名选择，不保留 `label_aliases` 或新旧双接口。broad 列名仍显式设置；这是列选择，不是标签值映射。
-2. 沿用每类型的真实 ID 交集和四方法共同基因范围，保留范围及排除信息，不补零、不猜对应、不静默换备用列。
-3. 在比较/绘图前，按共同 ID 检查各方法自己的 spatial 坐标与 baseline 的一致性和实际来源/单位。原样复制坐标的路线按相等核对；不一致就阻止相应类型的可比较结论并报告差异，不自动平移、换坐标或放宽容差。
-4. 四个表达矩阵分别在工作副本上使用一致预处理和独立 Leiden。保留协议约定的 `0.6/0.7/0.8`、seed `42`，以及当前其他科学参数，除非实际输入问题要求另作有依据的变更；不得为结果好看选择一个最优 resolution。历史 Leiden 不能代替新分群。
-5. Notebook 保持连续，仅读取已生成输入、不负责重建。直接保存 coverage、metrics、列联表、有效比较参数和图到现有约定或一个明确输出目录。复用现有保存方法，至多加一个薄保存步骤，不构造新的结果框架；同时保留交互显示与执行版 Notebook。
-6. 使用真实输入执行，确认原始输入未被写回。缺真实输入时，代码与 fixture 测试可以完成，但真实比较状态必须保持未完成。
+## 要做的事情
 
-**科学边界：**历史 `SVC_cluster` 是指定的重建标签比较基准，不是独立生物学真值；不是第五种表达方法。ARI/NMI 不能单独证明生物学改善，也不能自动决定默认 assembly。若上游标签/坐标固定，基于固定标签定义的 State 不应被拿来宣称 assembly 优劣；需要比较的是新表达衍生结构及其限制。
+1. 收敛 Notebook 的默认使用方式到当前正式主链。
+2. 最简单的方案优先：
+   - 默认明确使用一个正式 project config；
+   - 或明确要求用户设置 project，而不是默默落到旧临时 sample。
+3. 保留：
+   - `PROJECT_YAML`
+   - `SAMPLE_YAML`
+   - override
+     这些现有能力。
+4. 删除或修改与当前实际行为矛盾的旧说明。
+5. README 与 Notebook 首部保持一致。
 
-### P-6：验收当前 hST/sST 交付，不扩大算法研发
+## 不要做
 
-核对当前实际配置和自前次记录以来的相关修改。尤其现有 sST 的 solver、细胞数估计、parent-spot 校正、空间坐标及来源信息，按当前实际实现验证，不照搬旧测试数；不另起新的细胞数算法或 posterior 研究。
+不要增加：
 
-在真实数据可用时生成正式交付供 A-6 消费。hST/sST 不为满足 Impact 补造 `SVC_cluster`；sST 保留真实 parent 信息，不伪造同单位 ID。保留已去掉最终逐生成细胞缩放到 10,000 的决定，不借验收恢复旧分支。
+- 自动扫描项目
+- 自动发现最近的 sample
+- 缺文件时 fallback 到 example
+- 多套默认策略
+- 第二本“正式 Notebook”
 
-**验收：**当前交付路线的实际行为与声明一致；没有真实数据时，相关代码/针对性验证与真实运行缺项分开报告。
+目标只是：
 
----
+> **日常入口和已经验收的正式路径一致。**
 
-## 6. Analysis Agent 实施事项
+------
 
-### A-1：删除 aliases，统一标签与类型参数
+# C. REVISE：sST parent–gene 校正式
 
-**原因：**过去 `Sample.labels()` 依赖显式字典，默认 scope 还使用 `Mono/Macro`；正式交付不应依靠手工补字典才能识别同一类型。
+## 背景
 
-定位：`revise_analysis/io.py::Sample.labels`、`analyses/_shared.py`、Impact 参数解析，以及当前实际使用的配置、方法和图表入口。
+当前 sST 最终校正代码大致是：
 
-标签读取直接 `/ → _`，保留 NA；默认 scope 和显式 scope 使用同样规则。以 cell type 为键的 parent-window 参数、Anatomy 的类型参数及其他实际类型比较也同步处理。不要只改输出文件名或显示标题而保留旧筛选语义。
-
-删除当前 `label_aliases` 使用与示例，更新活动文档和相关测试，不为旧字典增加兼容解析/弃用警告/迁移流程。不必删除历史审阅中的原文记载。当前四方法类型选择由生产端负责，本库不复制它。
-
-每个独立仓库各自用已有或一个轻量函数即可，不为了共享一行逻辑新增公共依赖。新逻辑集中在少数实际入口，不在每个函数里重复处理。
-
-**验收：**两种写法无需 aliases 得到同一 scope 的完整单位；标准化没有删行或重复处理；结果中的 cell type 写法一致。
-
-### A-2：Raw Level2 按 scope 的有效标签范围计算
-
-**原因：**完整 Raw 中，未被相应推断覆盖的单位本来就允许缺 Level2。当前重点核查的逻辑是 `stage_baseline` 里 `labels.isna().any()` 导致整份 baseline 关闭。
-
-定位：`analyses/reconstruction_impact.py::stage_baseline`、`stage_diversity` 中 Raw Level2 分支及直接相关汇总/图表。
-
-最小完整修改：保留有效标签；实际 scope 内使用有效 Level2 ID；标签和坐标使用同一批 ID。只改 `dropna()` 而后续仍按整个 scope 重排标签是不完整的，需沿消费者一起修正。
-
-在现有 baseline/coverage 汇总里记录该 scope 的总单位、有效单位、缺失/排除单位即可，无需 cohort 管理器。无有效标签时仅该 baseline unavailable。保持完整 Raw 不变，不裁剪 State、Anatomy 或其他分析的总体输入；不补 Level2、不把缺失变成类别。
-
-**验收：**T 单位标签完整、范围外 B 单位缺失时，T baseline 可用；T 内有部分缺失时，只在有效 T 单位计算并显示排除数；全缺失时没有虚构结果。
-
-### A-3：无主标签或相应窗口结果时，K-control 明确不适用
-
-**原因：**hST/sST 合规交付可能没有 `SVC_cluster`；当 Raw baseline 可用且打开 `raw_k_control` 时，不应因访问 `None.reindex()` 或不存在的窗口键而异常。
-
-定位：`ImpactWorkflow._raw_k_control` 及其实际调用前提。
-
-在真正消费主标签、目标 cluster 数和该 scope 窗口的位置增加最少的前提判断；缺少时仅记录该控制/相应比较不可用。沿用现有 unavailable 状态与阶段结果，不新增通用状态机，不顺带重写参数依赖系统。
-
-不要用宽泛 `except Exception` 把意外错误包成不适用。Moran、pathway 及其他满足前提的分支仍独立运行。若数值计算发生真实错误，保留原有抛出/failed 行为。
-
-**验收：**无 SVC 主标签、Raw 表达和 baseline 可用、K-control 开启时，不产生该前提缺失导致的异常；不依赖主标签的分析仍有实际输出。
-
-### A-4：用分析项目配置引用正式 sample.yaml
-
-**原因：**输入事实归生产端，分析参数归消费端；上游重新发布时不应抹掉下游调好的设置。
-
-复用现有 `resolve_analysis_parameters`、project samples 列表和 override。把本轮 P2 的分析范围、窗口、抽样、基因集及可选控制维护在分析项目配置里，直接引用 P-2 的正式 sample.yaml。不要编辑生成的 YAML 来加入 aliases、修文件事实或伪造来源。
-
-不是要求删除通用的 sample-level 参数支持，也不是新建配置层。当前示例若仍指向临时 Fibroblast spatial carrier，应明确区分历史标签子链与新的正式输入，而不是将旧文件改名视为新交付。
-
-**验收：**同一正式交付在 Notebook 与 batch 使用同一有效参数；重新交付输入后无需把分析参数重新手填回生产文件。
-
-### A-5：完成真实连续分析与阅读链
-
-**原因：**已有真实标签空间子链，并不等于当前全样本 SVC 的真实表达、空间和对照链全部完成。
-
-使用 P-2 的正式交付。沿既有连续 Notebook 运行并保存输入/标签、baseline、支持、diversity、State/Gain、Anatomy、分子、membership 和集成结果中实际适用的部分。保留 Fibroblast/CAF 的重点，也检查正式输入里计划使用的 T、Mono_Macro 等范围；某类不在生产交付中则如实展示，不补造、不静默缩成一个最容易通过的 scope。
-
-Raw baseline、Gain、K-control、membership、Moran、pathway 按各自真实前提执行；一侧表达可用时保留该侧分子结果，不因另一侧 unknown 而全关。缺资源时先核对既有配置/本地资源，不临时更换基因集以让流程通过。
-
-Notebook 与 batch 共用原有工作流和参数，检查同口径结果；报告仅读保存结果。保留可调参数、中间表和关键图的连续阅读，不能只剩一键运行和最终报告链接。
-
-修正 Notebook 中与实际行为冲突的旧说明，例如将完整主标签误写成所有输入的全局加载前提。不要为了旧文案反向增加硬门槛。
-
-**验收：**真实输入、有效参数、实际范围、主要表图和缺失/失败原因可连续阅读；没有输入写回；当前结果不由历史旧文件补齐。
-
-### A-6：按能力消费 hST/sST，并收敛说明
-
-使用 P-6 的正式交付验证：没有 `SVC_cluster` 只限制相关分支；不同单位轴不妨碍原生表达/空间分析；sST parent 信息不被解释成共同单位 ID。
-
-本轮不新增通用 correspondence。只有当前具体指标真正需要 parent aggregation 等行为时，才在那个指标里落实已有明确关系；不要先造一个适配全部技术的中间对象。
-
-更新既有输入协议、Notebook/能力说明和交接入口。继续区分 Impact、正式 Moran/pathway 流程与尚未真实验收的通用工具；不要把未来分析愿景写成已完成。
-
----
-
-## 7. 必要验收：围绕已知问题，不扩成防御矩阵
-
-| 检查 | 最小场景 | 预期行为 |
-|---|---|---|
-| 名称一致性 | 含 `Mono/Macro`、`Mono_Macro`，不提供 aliases | 统一为一个规范类型；全部有效 observation 保留；scope 不丢、不重复 |
-| 推断与原标签比较 | 仅 `/` 与 `_` 不同 | 不因这一个字符规则报告真实注释冲突 |
-| Level2 局部性 | T 完整、范围外 B 缺失；另验 T 内部分缺失 | T 有效 baseline 可算；使用/排除数量明确，不改变其他分析范围 |
-| K-control 不适用 | 无 SVC 主标签，Raw baseline 已有，开启控制 | 该控制明确不可用；不发生 None/缺键异常，不拦独立分子分析 |
-| 实际错误仍暴露 | 在相关数值步骤触发一个真实执行错误 | 不被本轮新增代码吞成 unavailable 或伪成功；复用已有适合的错误测试即可 |
-| 坐标一致性 | 共同 ID 中一个方法坐标实际偏移 | 阻止相应比较，不用 baseline 坐标掩盖偏移 |
-| 正式接口 | 生产发布器产物进入真实 loader/runner | 不用手写替代配置或全 mock 消费者证明打通；输入不写回 |
-| 真实主链 | 实际 Raw/reference 经 GA/LR 后交付并分析 | 与 fixture 分开记录；展示类型覆盖、分析状态、真实结果位置 |
-| 真实四方法 | 已确认 baseline + 四份真实产物 | 共同范围、全部约定分辨率、表图均保存；无默认赢家 |
-| hST/sST | 对应正式产物进入消费者 | 路线适用能力可用；正常不适用局部记录，不伪造 cluster/同单位配对 |
-
-优先扩充现有相关测试。生产联测入口可从 `tests/integration/test_analysis_delivery.py` 和 `scripts/verify_review_handoff.py` 追踪；有需要时显式设置 `REVISE_ANALYSIS_ROOT` 到被验收的实际消费端工作树。具体命令以当前文件和本地环境为准，不把旧机器的绝对 Python 路径写入通用执行逻辑。
-
-针对被修改文件运行相应回归；若涉及公共入口再扩大必要覆盖。缺依赖导致的 skip 不算联合通过。不要删除仍有效的旧测试来掩盖问题；对于用户明确改变的名称/aliases/collision 行为，应修改测试的预期并解释行为变更，而非保留旧兼容路径。
-
-### 真实运行缺条件时
-
-依次核对现有配置指向的输入、已记录历史来源和实际可访问工作区。只报告实际缺失/权限/依赖/资源问题，不推测。完成能独立做的代码、配置与 fixture 测试，并写出使用真实路径的下一条执行命令；未解析的路径不得伪装成可直接运行命令。
-
-不擅自把历史处理不明的 X 声明成线性；不自动改 solver、下采样、替换基因集或拿 synthetic 输出充真实结果。运行因真实错误停止时保留日志，能定位的小缺陷直接修复；需要新的科学选择时报告具体分歧，不顺带扩大方法研发。
-
----
-
-## 8. 执行顺序
-
-```text
-核对当前工作树与已有实现
-        ↓
-P-1 与 A-1/A-2/A-3：名称及局部语义修复 + 针对性测试
-        ↓
-P-2 + A-4/A-5：random 真实主链、参数分工、Notebook/batch/报告
-        ├── P-3 + P-4 → P-5：历史 baseline、四方法生成、真实比较
-        └── P-6 + A-6：hST/sST 真实交付与按能力消费
-        ↓
-读取结果，修复实际出现的问题，更新已有交接与验收说明
+```python
+current_sum = ...
+ratio = X / (current_sum + 1e-10)
+SVC_X = SVC_X * ratio[spot_indices]
 ```
 
-P-3/P-5 中不依赖真实方法产物的代码可以提前实施。主链与比较链只保留实际数据依赖，不把最终方法选择设为主链前提。不强制引入自动并行执行系统。
+当前 mini 验收已经发现：
 
-若两个会话分别实施，生产端将实际交付路径、输入事实与未完成处交给消费端；消费端将真实消费发现的具体问题按输入、调用、实际结果交回。使用现有交接入口即可，不增设分布式任务账本。
+- 大多数正支持 parent–gene 项守恒良好
+- 仍有一部分正目标最终聚合接近零
+- 当前状态被诚实记录为 partial
 
----
+这里要把两类问题分开。
 
-## 9. 本轮不做
+### 1. 正支持但非常小
 
-| 不做的内容 | 原因 |
-|---|---|
-| labels 的兼容层、别名 registry、模糊匹配或双名称展示体系 | 用户已经选择一个简单字符规范 |
-| 自动补 Raw Level2、重跑 Leiden 冒充 SVC_cluster、猜表达历史 | 会掩盖真实输入事实 |
-| 全局 Raw/SVC 配对、通用 sidecar/correspondence/ComparisonView | 原生轴独立，具体指标才局部处理 |
-| 四方法自动缓存、通用调度、重试/恢复、预先资源优化框架 | 先运行已有明确流程，实际遇到问题再局部处理 |
-| 复制比较实验到分析库、按方法/类型拆大量 Notebook | 双重维护且破坏连续科学阅读 |
-| 新 Agent planner/插件系统/完整能力状态框架 | 不属于现有交付和消费缺口 |
-| 在线 CELLxGENE、统一 posterior/gene-wise uncertainty、out-of-spot、所有 CCI/niche/跨域正式流程 | 继续作为后置研究和产品扩展 |
-| 全仓库重构、防御审计、清理所有历史脚本/分支 | “做减法”不等于另开一场大改造 |
-| 未有真实结果时自动选赢家、改变最终默认 assembly | 工程完成与科学选择不同 |
+如果 `current_sum > 0`，加入固定 `1e-10` 会使校正结果偏离严格的目标比例。
 
-保留已经必要且工作正常的输入保护、真实 ID 唯一性、正式发布和当前结果登记。H4 坐标检查是已明确的比较语义缺口，不是扩展防御性框架的借口。
+这属于可以直接从公式层面判断的问题，不需要大规模数据。
 
----
+### 2. 真正零支持
 
-## 10. 最终交付与汇报
+如果某个 parent–gene：
 
-交付实际代码改动、必要配置/脚本/Notebook、针对性测试、条件允许的真实输出，以及现有交接文档更新。数据和大结果沿当前 `.gitignore`/输出约定处理，不为了审阅把完整 H5AD 加进 Git。
+```text
+target > 0
+current_sum == 0
+```
 
-不要新建与已有入口重复的 plan/spec/contract/README 家族。已有证据可引用但必须保留原适用版本；本轮结果另按已有机制记录，不覆盖旧记录后声称新版本通过。
+纯乘法校正无论如何都不能恢复该表达。
 
-最终先给以下表格，再解释少数关键问题：
+这属于算法语义问题，不能由 Codex 自行选择一种补偿方式。
 
-| 任务编号 | 当前结论 | 实际修改/复用位置 | 本次测试或运行 | 真实产物/证据位置 | 剩余问题与责任方 |
-|---|---|---|---|---|---|
-| P-1/A-1 等 | 已实现已验证／已实现未跑真实数据／条件不足／后置 | 实际文件与关键符号 | 实际命令与实际结果 | 实际路径 | 仅列真实未完成项 |
+## 要做的事情
 
-并明确回答：
+1. 检查校正前的 `current_sum`，不要仅根据最终输出 ≤1e-12 就把所有情况叫 zero support。
+2. 区分：
+   - strictly positive support
+   - true zero support
+3. 对 **positive support**：
+   - 明确当前 epsilon 是否只是为了避免除零。
+   - 如果是，只对正支持项使用不会引入系统缩放误差的比例计算。
+4. 对 **true zero support**：
+   - 不新增自动分配策略。
+   - 保留并明确报告。
+5. 更新已有验证代码，使报告明确区分：
+   - positive-support residual
+   - zero-support unresolved target
+6. 用极小 synthetic case 验证：
+   - 普通正值
+   - 极小正值
+   - 真零
 
-1. 哪些此前已做，不再重复；哪些本轮改了；哪些多余逻辑被删了。
-2. 当前是否完成了“真实生产 → 正式交付 → 真实消费”的主链；完成到哪个样本/路线/范围。
-3. 四方法真实比较是否完成，缺的是代码、输入、运行资源还是科学判读。
-4. 是否出现本说明之外的实际需求；它为什么阻塞当前目的、最小处理是什么。未发生的潜在问题不要扩充为必做事项。
-5. 哪些只是合规的 unavailable，哪些是真错误，哪些仍待用户科学判断；没有真实结果的不能写成科学完成。
+## 不要做
 
-**完成的标准是用户能直接使用并看到真实结果与真实缺口，不是修改文件更多、状态全绿或文档更完整。**
+不要自行实现：
 
----
+- 给零支持 gene 加 pseudocount
+- 均分给所有虚拟细胞
+- nearest-cell 补值
+- reference 表达补偿
+- 修改 OT
+- 新的 imputation 策略
 
-## 附：来源与时效
+这些都属于后续科学决策。
 
-本说明由已确认的用户决策和前轮审阅整理，不新增另一套科学算法协议。2026-09-20 再次读取的上游/消费端交接页及局部源码用于定位；本说明编写期间未修改两仓代码、未重新运行完整测试或真实重建。执行者需以开工时本地工作树核实。
+本轮目标只是：
 
-关键来源：
+> **把确定的数值问题修正，把真正没有定义好的问题暴露出来。**
 
-- 生产端交接：`https://github.com/wuys13/REVISE/blob/revise-2.0/docs/development/reconstruction-analysis/cross-repo-review.md`
-- 生产端四方法约定：`https://github.com/wuys13/REVISE/blob/revise-2.0/docs/development/reconstruction-analysis/assembly-comparison-contract.md`
-- 消费端交接：`https://github.com/wuys13/REVISE_Analysis_Agent/blob/sl/docs/cross-repo-review/README.md`
-- 消费端名称入口：`https://github.com/wuys13/REVISE_Analysis_Agent/blob/sl/revise_analysis/io.py`
-- 消费端 Level2/K-control：`https://github.com/wuys13/REVISE_Analysis_Agent/blob/sl/revise_analysis/analyses/reconstruction_impact.py`
+------
 
-这些链接是定位依据，不是必须回退到的提交快照。历史交接页保留的 aliases/只审阅限制，按本轮用户决定与实际任务范围更新。
+# D. 来源声明：只核对，不开发新方法
+
+目前仍有两个明确未完全确认的输入事实。
+
+## hST expression identity
+
+当前 P1 HD 的表达历史仍为 unknown。
+
+不要根据：
+
+- 非负
+- 整数
+- 数值范围
+- 看起来像 counts
+
+自动把它升级成 raw_counts。
+
+要做的只有：
+
+1. 检查已有数据来源或 preprocessing 记录；
+2. 能确认则更新正式配置；
+3. 不能确认则继续保持 unknown。
+
+unknown 是有效结果，不是错误。
+
+------
+
+## sST physical scale
+
+当前 P2 Visium 配置使用：
+
+```yaml
+microns_per_coordinate: 0.73
+```
+
+但现有注释说明该值仍 provisional。
+
+这里只需要核对已有来源。
+
+- 能确认 → 保留并在文档中说明来源。
+- 不能确认 → 不要把依赖这一值的物理尺度解释写成已确认。
+
+不要新开发尺度估计算法。
+
+------
+
+# 4. 当前不要求解决的内容
+
+以下内容只更新已有“remaining / future checks”文档，不开发。
+
+## 后续真实数据检查
+
+- State/Gain 在大规模数据上能否形成稳定区域
+- region threshold 的真实稳定性
+- State × Anatomy 的生物学解释
+- EMT / Moran / pathway 的真实结论
+- 四种 assembly 的最终科学选择
+- K-control 对真实结论的影响
+- 全量 P2 Xenium / HD / Visium 的最终结果
+- 全量资源和峰值内存
+- sST 共 parent 坐标对 Moran 等空间统计的科学影响
+- Raw/SVC `All` 覆盖范围不同对解释的影响
+- sST zero-support 的跨样本规模和科学后果
+
+## 后续方法方向
+
+- unified uncertainty
+- gene-wise uncertainty
+- online CELLxGENE
+- out-of-spot
+- 通用 Raw↔SVC correspondence
+- CCI / niche / cross-platform正式流程
+
+本轮不要因为看到这些 TODO 就开始实现。
+
+------
+
+# 5. 关于 mini 验收应该如何理解
+
+当前 mini 的作用主要是：
+
+### 可以证明
+
+- 真实数据能够经过当前 REVISE 路线运行
+- 正式三文件可以发布
+- Analysis Agent 可以直接消费
+- 不同 route 的能力限制不会被错误兜底
+- Notebook/batch/report 使用同一套逻辑
+- 四种 assembly 比较工具链实际能执行
+
+### 不要求证明
+
+- 小 ROI 一定能找到稳定 State/Gain region
+- mini 数据能支持生物学结论
+- 四方法 mini ARI/NMI 能决定最终方法
+- hST unknown 表达能做分子分析
+- 全量数据一定能在当前资源限制下运行
+
+因此，不要为了使 mini 结果更“完整”而：
+
+- 降低 200-window threshold
+- 改 window size
+- 改 min_window_units
+- 选择更有利的 ROI
+- 改科学参数
+- 自动填补标签
+
+mini 如果因为支持不足而 unavailable，这是合理结果。
+
+------
+
+# 6. 测试要求
+
+不要新增大规模防御测试。
+
+优先复用现有测试。
+
+只针对实际修改补最小测试。
+
+## Analysis Agent
+
+### Anatomy
+
+至少覆盖：
+
+```text
+raw original Level1 完整
+revise_Level1 局部缺失
+→ Anatomy 使用确定的正确来源
+```
+
+### Notebook
+
+检查：
+
+```text
+正式 project
+→ 正式 REVISE sample.yaml
+→ 与 batch 使用相同 effective parameters
+```
+
+不需要重新运行全部真实重建来测试 Notebook 路径修改。
+
+------
+
+## REVISE
+
+### sST correction
+
+最小数值测试：
+
+```text
+case 1: positive ordinary support
+case 2: extremely small positive support
+case 3: true zero support
+```
+
+需要明确检查：
+
+- 正支持分支是否满足预期守恒
+- 真零是否被明确识别为 unresolved
+- 不产生 NaN / inf
+- 不重新引入 final per-cell 10000 scaling
+
+除此之外，不扩展测试矩阵。
+
+------
+
+# 7. 文档收口
+
+本轮完成代码修改后，只更新现有文档。
+
+不要创建新的 review / handoff 文档体系。
+
+建议只改现有：
+
+## REVISE
+
+```text
+docs/development/reconstruction-analysis/
+    acceptance.md
+    cross-repo-review.md
+```
+
+若 sST 校正状态发生变化，同时更新机器可读验证记录或相应 verifier 输出定义。
+
+## Analysis Agent
+
+```text
+docs/cross-repo-review/evidence-and-gaps.md
+docs/input-output.md
+docs/analyses/reconstruction-impact.md
+notebooks/README.md
+```
+
+仅修改受本轮实际变化影响的部分。
+
+------
+
+# 8. 实施顺序
+
+建议按这个顺序。
+
+## Step 1：先核对当前工作树
+
+输出简短表格：
+
+| 项目                           | 当前是否仍存在 | 是否需要修改 |
+| ------------------------------ | -------------- | ------------ |
+| Anatomy source                 |                |              |
+| Notebook old default           |                |              |
+| Notebook outdated cluster text |                |              |
+| sST positive-support epsilon   |                |              |
+| hST expression source          |                |              |
+| sST scale source               |                |              |
+
+已经解决的不要重做。
+
+------
+
+## Step 2：完成 Analysis Agent 的两个收口
+
+1. Anatomy label source
+2. Notebook 正式默认入口和文案
+
+跑聚焦测试。
+
+------
+
+## Step 3：完成 REVISE 的 sST 数值核对
+
+1. 区分 positive / zero support
+2. 修正能明确判断的 positive-support 计算
+3. zero-support 保留 unresolved
+4. 更新 verifier
+5. 跑聚焦测试
+
+------
+
+## Step 4：核对已有 provenance
+
+检查 hST expression、sST scale。
+
+没有新证据就不要改声明。
+
+------
+
+## Step 5：更新现有文档
+
+最终状态分成：
+
+```text
+Engineering completed
+Current local fixes completed
+Known unresolved input/method facts
+Deferred large-data/scientific checks
+```
+
+------
+
+# 9. 明确禁止的实现方式
+
+以下行为都不要做：
+
+- 自动补 Raw 标签
+- 自动从原始 Level1 填 `revise_Level1`
+- 自动根据列完整程度选 Anatomy source
+- 自动猜 expression identity
+- 自动猜 physical scale
+- 自动降低 region threshold
+- 自动调整 scientific parameters 让 mini 成功
+- 为 zero-support expression 自动补值
+- 自动扩大 OT memory limit
+- 自动缩 reference
+- 自动 fallback 到其他 assembly
+- 新增 global compatibility layer
+- 新建第二套分析入口
+- 新建第二套 report
+- 把四方法比较复制到 Analysis Agent
+- 为后续 uncertainty / CCI / niche 提前写框架
+
+------
+
+# 10. 最后汇报格式
+
+完成后不要只说“all tests passed”。
+
+请给出以下四张表。
+
+## A. 实际修改
+
+| 仓库 | 文件/符号 | 修改内容 | 为什么 |
+| ---- | --------- | -------- | ------ |
+|      |           |          |        |
+
+## B. 删除或简化
+
+| 原逻辑 | 当前如何简化 | 是否改变科学定义 |
+| ------ | ------------ | ---------------- |
+|        |              |                  |
+
+## C. 实际验证
+
+| 场景 | 命令/测试 | 结果 | 能证明什么 | 不能证明什么 |
+| ---- | --------- | ---- | ---------- | ------------ |
+|      |           |      |            |              |
+
+## D. 剩余问题
+
+| 问题 | 类型                                             | 当前为何不解决 | 后续需要什么证据 |
+| ---- | ------------------------------------------------ | -------------- | ---------------- |
+|      | implementation / input fact / scientific / scale |                |                  |
+
+最后明确回答：
+
+1. 当前两个仓库的正式主链是否仍然成立？
+2. 本轮有没有发现新的真实接口错位？
+3. 哪些问题已经通过做减法解决？
+4. 哪些问题被明确保留，而没有用防御性实现隐藏？
+5. 是否新增了任何不必要的框架；如果有，删除它。

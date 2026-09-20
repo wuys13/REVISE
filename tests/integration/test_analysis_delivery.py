@@ -66,6 +66,13 @@ def test_published_sample_is_consumed_by_real_analysis_entrypoint(tmp_path, monk
     assert stages['diversity']['status'] == 'completed', stages['diversity']
     destination = tmp_path / 'analysis' / sample.sample_id / 'reconstruction_impact'
     assert (destination / 'tables/window_diversity_svc_T.csv').is_file()
+    anatomy = pd.read_csv(destination / 'tables/svc_anatomy_context.csv', index_col=0)
+    assert set(anatomy.index) == set(sample.svc.obs_names)
+    assert anatomy['broad_label'].eq('T').all()
+    raw_anatomy = pd.read_csv(destination / 'tables/raw_point_anatomy.csv', index_col=0)
+    assert raw_anatomy.loc['s36', 'anatomy_region'] == 'Unknown'
+    assert not raw_anatomy.loc['s36', 'anatomy_covered']
+    assert not (destination / 'tables/raw_anatomy_context.csv').exists()
     saved = json.loads((destination / 'result.json').read_text())
     assert saved['status'] == result['status']
     assert (destination / 'report.html').is_file()

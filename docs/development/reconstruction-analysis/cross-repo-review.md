@@ -2,13 +2,15 @@
 
 [本轮完整验收与服务器命令](acceptance.md) · [实施索引](implementation-index.md) · [比较协议](assembly-comparison-contract.md) · [本轮机器记录](verification-mini-2026-09-20.json)
 
-2026-09-20 已完成双仓修改及约1%连续ROI真实联测。REVISE定义并交付SVC；Analysis Agent消费既定SVC。正式入口是同次发布的 `sample.yaml + raw.h5ad + SVC.h5ad`。本轮修改两个工作树，未提交或推送；用户已有未跟踪审阅材料保留。
+2026-09-20 已完成双仓 mini 联测及后续收口。REVISE定义并交付SVC；Analysis Agent按字段消费统一对象。正式入口是同次发布的 `sample.yaml + raw.h5ad + SVC.h5ad`。实际完成重建的类型合并；未重建类型不并入。
 
 ## 当前结论与证据时效
 
-iST四assembly及hST/sST均已真实生成。三份分析Notebook和batch科学产物一致，报告仅读保存结果。P1 HD表达历史未知，表达分析仍未验收；sST parent校正有821个有效零项，不能宣称全部逐基因守恒。小规模运行、全量验收和科学解释分开记录，详见当前验收表。
+本轮 Anatomy 改由完整交付 SVC 的 broad 和坐标定义，保留 Raw 共享原点；Notebook 默认正式 P2 project。sST改为稳定的share-then-target校正，571个旧有效零项恢复，剩余250个校正前真零项明确unresolved。三份Notebook与batch的172/14/45份科学表JSON一致，iST的44份State/Gain及窗口表未变，12份报告只读刷新。
 
-本轮基准HEAD：REVISE `5b21cec38106b2d864b7d6d9ec8fb5cb87cf893a`，消费者 `4118061983f15d0a51b6fdac8c9e4f534cd2c814`。验收对象包括未提交改动。历史 `verification-review-handoff.json`、`coordination-source-snapshot.json` 为旧快照，不代表当前工作树通过；当前摘要见本轮机器记录。
+P1 HD表达保持unknown；Visium0.73尺度保持暂定；sST真零支持仍partial。iST四assembly、H2/H4和未受影响重建复用已有证据，不宣称全量或科学验收。新结果位于`output/mini-acceptance/20260920-closeout`，旧产物保留。
+
+本轮基线HEAD为REVISE `464ee26ac22978c3994e40af50325413e70cef13`、消费者 `3e70ab364f89f9e24e981e3e9239e7fe563138a6`。当前验收包含未提交修改；用户审阅未改。机器记录原字段为上一阶段快照，当前看`closeout`。详细修改、测试、真实产物及剩余事项见[验收表](acceptance.md)。
 
 ## 协同任务与责任清单
 
@@ -43,6 +45,7 @@ iST四assembly及hST/sST均已真实生成。三份分析Notebook和batch科学�
 | 表达 | 显式来源支持有限非负非 log `.X`；允许小数；unknown 不升级 | 当前固定线性 X；identity unknown 或旧 scale unknown 限制表达 | P2 iST/sST 真实表达消费；P1 HD unknown 明确限制表达 |
 | 坐标 | 校验两侧坐标形状／有限；sST 已补将真实生成 x/y 写入 obsm.spatial；um 转 micron，未知不猜比例 | 各分析按物理单位／比例判断能力 | 有尺度的小 fixture 已验证；未知真实输入不保证物理分析可用 |
 | 轴与关系 | 原 Raw 保持；iST 真实 ID，sST 真实 parent 信息；不强造通用配对 | 默认 native objects 独立；成员关系按明确单位交集处理 | 真实 mini ID/parent已验证；sST禁用同单位membership |
+| Anatomy 来源 | 实际重建完成的类型合并为 SVC；未重建类型不并入 | 完整 SVC broad 与坐标定义 Anatomy；保留共享 Raw 原点，再映射各侧观测点 | Other 仅描述已交付 SVC 窗口未观察到 Tumor/Normal；无 SVC Anatomy 网格为 Unknown，不代表原组织缺少这些类型 |
 | 失败与输入保护 | 事务发布与回滚，eligible 计算失败不交付半样本 | 输出 status/stage_errors/unavailable；不改输入 H5AD | 失败注入及输入哈希测试；partial 不是全成功 |
 | Confidence | 原最大注释权重；reference 共用数值，阶段来源独立 | 不是所有分析必需的统一科学置信度 | 未建立新 posterior 消费协议，不能跨阶段解释为同一概率 |
 | 四方法比较 | 独立 Notebook 重跑表达 Leiden，对照既有 SVC_cluster | 交接说明供核对／后续接入，不要求消费者自动运行该 Notebook | 真实 mini 四方法已比较；科学解释和最终默认值未定 |
