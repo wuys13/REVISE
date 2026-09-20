@@ -1810,9 +1810,13 @@
     "full_scale_executed": false,
     "scientific_acceptance": false,
     "committed_or_pushed": true,
-    "final_commits": {
+    "implementation_commits": {
       "producer": "467af8b9a104328fba8db0e786471620eab4150f",
       "consumer": "4c4278b3adde1907fd66474ff97957a9c7dab790"
+    },
+    "final_commits": {
+      "producer": "5e2a5af",
+      "consumer": "e34b0d7"
     },
     "pushed": true,
     "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
