@@ -9,12 +9,20 @@ import pandas as pd
 import numpy as np
 
 from revise.utils.provenance import input_identities
+from revise.utils.labels import normalize_cell_type_label
 from .config import ApplicationConfig
 from .expression import consumer_declaration, is_known_linear
 
 
 DELIVERY_VERSION = 2
 LABEL_COLUMNS = {"broad": "revise_Level1", "subtype": "revise_Level2"}
+
+
+def _normalized_labels(values):
+    """Normalize inferred cell-type values while preserving missing labels."""
+    return values.map(
+        lambda value: normalize_cell_type_label(value) if pd.notna(value) else value
+    )
 
 
 def is_sample_delivery(config):
@@ -65,11 +73,16 @@ def prepare_raw(config, raw, svc, ctx, *, owned=False):
         ids = inferred.obs_names
         if not ids.is_unique or not ids.isin(raw.obs_names).all():
             raise ValueError("Inferred observation IDs do not uniquely align to original Raw")
-        values = inferred.obs[source].astype("string").reindex(raw.obs_names)
+        values = _normalized_labels(
+            inferred.obs[source].astype("string").reindex(raw.obs_names)
+        )
         raw.obs[target] = pd.Categorical(values.to_numpy(dtype=object, na_value=None))
         if source in raw.obs:
-            original = raw.obs[source].astype("string")
-            conflicts[source] = int((original.notna() & values.notna() & original.ne(values)).sum())
+            original = _normalized_labels(raw.obs[source].astype("string"))
+            comparable = original.notna() & values.notna()
+            conflicts[source] = int(
+                original.loc[comparable].ne(values.loc[comparable]).sum()
+            )
     # sST assigns virtual-cell broad labels in cell_type, not the spot source column.
     svc_broad = "cell_type" if config.mode == "sr" and "cell_type" in svc.obs else config.broad_column
     # Publish inference aliases on SVC without replacing its existing labels.
@@ -78,7 +91,11 @@ def prepare_raw(config, raw, svc, ctx, *, owned=False):
         if source and source in svc.obs:
             if target in svc.obs:
                 raise ValueError(f"SVC already contains reserved inference column: {target}")
-            svc.obs[target] = pd.Categorical(svc.obs[source].astype(object))
+            svc.obs[target] = pd.Categorical(
+                _normalized_labels(svc.obs[source].astype("string")).to_numpy(
+                    dtype=object, na_value=None
+                )
+            )
     raw.uns["revise_delivery"] = {
         "version": DELIVERY_VERSION,
         "annotation_sources": {key: column for key, column in LABEL_COLUMNS.items()

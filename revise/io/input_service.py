@@ -314,7 +314,7 @@ class REVISEInputService:
                     )
             selected = columns.get("select_cell_type")
             if mode == "application" and task == "sc_svc" and selected:
-                labels = adata.obs[cell_type_col].astype(str)
+                labels = adata.obs[cell_type_col].astype("string")
                 if (
                     requires_patient_match
                     and patient_key
@@ -324,7 +324,11 @@ class REVISEInputService:
                     labels = labels[
                         adata.obs[patient_key].astype(str).eq(patient_sample)
                     ]
-                normalized_labels = labels.map(normalize_cell_type_label)
+                normalized_labels = labels.map(
+                    lambda value: normalize_cell_type_label(value)
+                    if pd.notna(value)
+                    else value
+                )
                 normalized_selected = normalize_cell_type_label(str(selected))
                 if normalized_selected not in set(normalized_labels):
                     available = sorted(
@@ -416,23 +420,6 @@ class REVISEInputService:
         context: str,
     ) -> None:
         REVISEInputService._require_obs(adata, required, context=context)
-        for name in required:
-            original = adata.obs[name].astype(str)
-            normalized = original.str.replace("/", "_", regex=False)
-            label_pairs = pd.DataFrame(
-                {"original": original, "normalized": normalized}
-            ).drop_duplicates()
-            collisions = label_pairs.groupby(
-                "normalized",
-                sort=False,
-            )["original"].nunique()
-            if (collisions > 1).any():
-                names = collisions[collisions > 1].index.tolist()
-                raise ValueError(
-                    f"Invalid input: {context}; field=obs[{name!r}]; "
-                    "expected=labels must not collide after '/' normalization; "
-                    f"actual_collisions={names[:5]}"
-                )
 
     @staticmethod
     def _validate_spatial(adata: AnnData, *, context: str) -> None:

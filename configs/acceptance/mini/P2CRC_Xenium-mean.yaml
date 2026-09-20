@@ -1,0 +1,52 @@
+# mini real-data acceptance; launch from the REVISE root.
+# confirmed by user; original counts
+schema_version: 1
+application:
+  svc_type: sc-SVC
+  mode: cluster
+paths:
+  root_dir: .
+algorithm:
+  ot_method: tacco
+inputs:
+  st:
+    path: output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad
+    format: h5ad
+    expression:
+      identity: raw_counts
+      scale: untransformed_nonnegative
+  reference:
+    path: raw_data/Real_application/adata_sc_all_reanno.h5ad
+    format: h5ad
+    filter_column: Patient
+    filter_value: P2CRC
+    expression:
+      identity: raw_counts
+      scale: untransformed_nonnegative
+preprocessing:
+  spatial:
+    min_transcript_counts: 60
+    min_cell_counts: 100
+  reference:
+    min_transcript_counts: null
+    min_cell_counts: 100
+global_anchoring:
+  broad_column: Level1
+local_refinement:
+  subtype_column: Level2
+  alpha: 0.2
+  resolutions:
+  - 0.6
+  - 0.7
+  - 0.8
+output:
+  dir: output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean
+  ist_mapping: mean
+execution:
+  seed: 42
+delivery:
+  sample_id: P2CRC_Xenium_mini
+  coordinates:
+    key: spatial
+    unit: pixel
+    microns_per_coordinate: 0.2125

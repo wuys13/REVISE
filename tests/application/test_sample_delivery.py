@@ -67,6 +67,20 @@ def test_full_raw_inferences_and_consumer_document(tmp_path):
     assert document['expression']['svc']['scale'] == 'unknown'
 
 
+def test_delivery_normalizes_inferred_labels_before_comparing_original_annotations(tmp_path):
+    cfg, raw, ctx = delivery_fixture(tmp_path)
+    raw.obs["Level1"] = ["T", "Mono_Macro", "excluded"]
+    ctx.runner.st_adata.obs["Level1"] = ["T", "Mono/Macro"]
+    ctx.svc.artifacts["outputs"]["sc_svc_spatial"].obs["Level1"] = ["T", "Mono/Macro"]
+
+    publish_outputs(cfg, output_paths(cfg), ctx, raw=raw)
+    ctx.pending_publication[0]()
+
+    stored = read_h5ad(output_paths(cfg)["raw"])
+    assert stored.obs.loc["s1", "revise_Level1"] == "Mono_Macro"
+    assert stored.uns["revise_delivery"]["original_label_conflicts"]["Level1"] == 0
+
+
 @pytest.mark.parametrize('failure', ['write', 'install', 'record'])
 @pytest.mark.parametrize('mapping', ['random', 'within_cluster', 'outside_cluster'])
 def test_delivery_failure_preserves_all_previous_bytes(monkeypatch, tmp_path, failure, mapping):

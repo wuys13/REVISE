@@ -1,0 +1,55 @@
+# full real-data acceptance; launch from the REVISE root.
+# counts confirmed by user; coordinate scale provisional
+schema_version: 1
+application:
+  svc_type: sc-SVC
+  mode: sr
+paths:
+  root_dir: .
+algorithm:
+  ot_method: tacco
+  sr_cell_count_method: cyto_linear_v1
+inputs:
+  st:
+    path: raw_data/Real_application/P2CRC_Visium.h5ad
+    format: h5ad
+    expression:
+      identity: raw_counts
+      scale: untransformed_nonnegative
+  reference:
+    path: raw_data/Real_application/adata_sc_all_reanno.h5ad
+    format: h5ad
+    expression:
+      identity: raw_counts
+      scale: untransformed_nonnegative
+    filter_column: Patient
+    filter_value: P2CRC
+preprocessing:
+  spatial:
+    min_transcript_counts: null
+    min_counts: 20
+    min_cell_counts: 20
+  reference:
+    min_transcript_counts: null
+    min_genes: 20
+    min_cell_counts: 20
+global_anchoring:
+  broad_column: Level1
+local_refinement:
+  strength: 0.0
+  graph:
+    method: pca
+    alpha: 0.2
+    n_neighbors: 10
+    exp_neighbors: 10
+    spatial_neighbors: 10
+output:
+  dir: results/acceptance-full/P2CRC_Visium/default
+execution:
+  seed: 42
+delivery:
+  sample_id: P2CRC_Visium
+  coordinates:
+    key: spatial
+    unit: pixel
+    microns_per_coordinate: 0.73

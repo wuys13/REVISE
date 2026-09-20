@@ -178,6 +178,25 @@ def test_sp_sr_reference_label_normalization_preserves_surrounding_whitespace_by
     assert normalized.obs["Level1"].tolist() == [" Mono_Macro "]
 
 
+def test_reference_label_normalization_merges_slash_equivalents_without_dropping_rows():
+    from revise.application.preprocess import normalize_reference_labels
+
+    reference = AnnData(
+        X=np.ones((3, 1)),
+        obs=pd.DataFrame(
+            {"Level1": ["Mono/Macro", "Mono_Macro", None]},
+            index=["cell-1", "cell-2", "cell-3"],
+        ),
+        var=pd.DataFrame(index=["g1"]),
+    )
+
+    normalized = normalize_reference_labels(reference, ["Level1"])
+
+    assert normalized.obs_names.tolist() == reference.obs_names.tolist()
+    assert normalized.obs["Level1"].tolist()[:2] == ["Mono_Macro", "Mono_Macro"]
+    assert pd.isna(normalized.obs.loc["cell-3", "Level1"])
+
+
 @pytest.mark.parametrize("matrix_format", ["dense", "sparse"])
 def test_cyto_linear_v1_expression_score_matches_formula_without_sparse_densification(
     monkeypatch,

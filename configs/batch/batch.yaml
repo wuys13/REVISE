@@ -20,11 +20,11 @@ global_anchoring:
   broad_column: Level1
 local_refinement:
   subtype_column: Level2
-  cell_types: [T, Macro, Fibroblast]
+  # Omit cell_types for one whole-sample run; set it only for an explicit legacy single-type task.
   alpha: 0.2
   resolutions: [0.6, 0.7, 0.8]
 output:
-  ist_mapping: paired # paired | mean | random
+  ist_mapping: random # paired | mean | random
 execution:
   seed: 42
 # Only explicitly configured aspects run. See analysis-example.yaml.

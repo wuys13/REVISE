@@ -19,6 +19,7 @@ import yaml
 
 from .config import ResolvedSample, discover_samples, load_batch_config, resolve_sample
 from .sample import file_identity, read_sample
+from revise.utils.labels import normalize_cell_type_label
 
 
 ROUTES = {'hST': {'svc_type': 'sp-SVC'},
@@ -129,18 +130,23 @@ def _cell_types(document: dict) -> list[str | None]:
     labels = local['cell_types']
     if not isinstance(labels, list) or not labels:
         raise ValueError('local_refinement.cell_types must be a non-empty list')
+    normalized = []
     for label in labels:
         _validate_cell_type_label(label)
-    if len({label.casefold() for label in labels}) != len(labels):
+        value = normalize_cell_type_label(label)
+        if value not in normalized:
+            normalized.append(value)
+    if len({label.casefold() for label in normalized}) != len(normalized):
         raise ValueError('cell_types contain duplicate or colliding directory names')
-    return labels
+    return normalized
 
 
 def _validate_cell_type_label(label: str) -> None:
+    normalized = normalize_cell_type_label(label) if isinstance(label, str) else ''
     if (not isinstance(label, str) or not label.strip() or label != label.strip()
-            or '/' in label or '\\' in label or any(ord(c) < 32 for c in label)
-            or label.casefold() in _RESERVED_CELL_TYPES or label.startswith('.')):
-        raise ValueError(f'Unsafe cell type directory: {label!r}; use an explicit label mapping')
+            or '\\' in label or any(ord(c) < 32 for c in label)
+            or normalized.casefold() in _RESERVED_CELL_TYPES or normalized.startswith('.')):
+        raise ValueError(f'Unsafe cell type directory: {label!r}')
 
 
 def application_document(sample, cell_type: str | None, output_root: Path) -> dict:
@@ -549,17 +555,20 @@ def _output_directory(output: Path, relative: Path) -> Path:
     return directory
 
 
-def _validate_task_selection(resolved: ResolvedSample, cell_type: str | None) -> None:
+def _validate_task_selection(resolved: ResolvedSample, cell_type: str | None) -> str | None:
     labels = _cell_types(resolved.document)
     if resolved.document.get('modality') == 'iST':
+        if cell_type is not None:
+            _validate_cell_type_label(cell_type)
+            cell_type = normalize_cell_type_label(cell_type)
         has_explicit_list = 'cell_types' in resolved.document.get('local_refinement', {})
         if not has_explicit_list and cell_type is not None:
-            _validate_cell_type_label(cell_type)
-            return
+            return cell_type
         if cell_type not in labels:
             raise ValueError(f'cell_type must be one of the configured iST types: {labels}')
     elif cell_type is not None:
         raise ValueError('cell_type is only valid for iST samples')
+    return cell_type
 
 
 def _selected_sample(input_root: Path, sample_id: str) -> Path:
@@ -598,7 +607,7 @@ def run_reconstruction_task(config_path: str | Path, sample_id: str, *, cell_typ
     config_path = Path(config_path).resolve()
     sample_dir = _selected_sample(input_root, sample_id)
     resolved = resolve_sample(config_path, sample_dir)
-    _validate_task_selection(resolved, cell_type)
+    cell_type = _validate_task_selection(resolved, cell_type)
     destination = output / Path(sample_id)
     task_root = _task_root(output, sample_id, cell_type)
     output.mkdir(parents=True, exist_ok=True)
@@ -632,7 +641,7 @@ def verify_reconstruction_task(resolved: ResolvedSample, cell_type: str | None =
     """Return a current handoff for one task without acquiring the output lock."""
     if not isinstance(resolved, ResolvedSample):
         raise TypeError('resolved must be a ResolvedSample')
-    _validate_task_selection(resolved, cell_type)
+    cell_type = _validate_task_selection(resolved, cell_type)
     if not resolved.document.get('enabled', True):
         raise ValueError('Sample is disabled')
     sample = read_sample(resolved)

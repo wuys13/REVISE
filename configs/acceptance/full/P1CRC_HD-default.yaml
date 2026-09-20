@@ -1,0 +1,45 @@
+# full real-data acceptance; launch from the REVISE root.
+# source expression history unconfirmed
+schema_version: 1
+application:
+  svc_type: sp-SVC
+paths:
+  root_dir: .
+algorithm:
+  ot_method: pot
+inputs:
+  st:
+    path: raw_data/Real_application/P1CRC_HD.h5ad
+    format: h5ad
+    expression:
+      identity: unknown
+      scale: unknown
+  reference:
+    path: raw_data/Real_application/adata_sc_all_reanno.h5ad
+    format: h5ad
+    expression:
+      identity: raw_counts
+      scale: untransformed_nonnegative
+preprocessing:
+  spatial:
+    min_transcript_counts: null
+    min_counts: 20
+    min_cell_counts: 30
+  reference:
+    min_transcript_counts: null
+    min_genes: 20
+    min_cell_counts: 50
+global_anchoring:
+  broad_column: Level1
+local_refinement:
+  strength: 0.2
+output:
+  dir: results/acceptance-full/P1CRC_HD/default
+execution:
+  seed: 42
+delivery:
+  sample_id: P1CRC_HD
+  coordinates:
+    key: spatial
+    unit: pixel
+    microns_per_coordinate: 0.27380817798463214

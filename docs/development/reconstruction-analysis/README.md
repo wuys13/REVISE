@@ -1,8 +1,8 @@
 # REVISE 重建与分析衔接：事项总览
 
-本目录组织 REVISE 与 `REVISE_Analysis_Agent` 的协议迭代：为什么做、已经讨论到哪里、后续需要什么，以及如何进入执行计划。核对日期：2026-09-19。
+本目录组织 REVISE 与 `REVISE_Analysis_Agent` 的协议迭代：为什么做、已经讨论到哪里、后续需要什么，以及如何进入执行计划。核对日期：2026-09-20。
 
-**当前已完成 R1–R8 已定范围的工程实现（R8b 限本地来源），以及 D1/C1；本轮进行双库审阅前浅验收和材料收尾。** 真实全量重建、T/Macro/CAF 科学比较与最终默认值后置；D2 保持现状，D3 和在线来源不进入近期开发。见[双库审阅入口](cross-repo-review.md)和[当前验收表](acceptance.md)。
+**当前已完成 R1–R8 已定范围的工程实现（R8b 限本地来源），以及 D1/C1；本轮完成双仓修改及约1%连续ROI真实联测。** 真实mini四方法比较已执行；全量、生物学解释与最终默认值后置；D2 保持现状，D3 和在线来源不进入近期开发。见[双库审阅入口](cross-repo-review.md)和[当前验收表](acceptance.md)。
 
 ## 从问题进入
 
@@ -25,17 +25,17 @@
 <a id="items"></a>
 ## 完整事项表
 
-“讨论已确认”指行为方向；“计划已有草案”仍需逐项审阅，不能视为“执行计划已对齐”。R1 已完成；R2/R3/R4 的生产端实现和工程验收已完成，但真实样本、科学解释和真实表达联合验收仍未完成（线性 fixture 已通过）；R7/R8 本地准备、R5/R6/D1/C1 均已完成工程验证；真实验收统一后置。
+“讨论已确认”指行为方向；“计划已有草案”仍需逐项审阅，不能视为“执行计划已对齐”。R1 已完成；R2/R3/R4 的生产端实现和工程验收已完成，但mini正式交付与消费已完成，hST unknown表达和sST校正缺口单独保留；全量与科学解释未完成；R7/R8 本地准备、R5/R6/D1/C1 均已完成工程验证；当前真实结果见验收表。
 
 | 类别 | 事项与细节入口 | 讨论 | 执行计划 | 实施 | 下一步 |
 |---|---|---|---|---|---|
-| 一 | [R1 sST 最终逐细胞归一化删除](categories/01-small-changes.md#r1) | 已确认 | [已对齐](plans/sr-final-scaling.md) | 已有实现；385 项针对测试通过 | 工程完成；随真实 sST 验收核对 |
-| 二 | [R2 全类型重建与 sample 级 SVC](categories/02-sample-delivery.md#r2) | 已确认：批次行为已对齐 | [第二批总计划](plans/whole-sample-delivery.md#r2) · [详细计划](plans/whole-sample-svc.md) | 生产端实现；工程验收完成；真实样本未验收 | 使用 P2CRC_Xenium 完成真实输入核对 |
-| 二 | [R3 完整 Raw 与已有推断](categories/02-sample-delivery.md#r3) | 已确认：Raw、推断列和冲突规则已对齐 | [第二批总计划](plans/whole-sample-delivery.md#r3) · [详细计划](plans/raw-publication.md) | 生产端实现；工程验收完成；真实样本未验收 | 使用 P2CRC_Xenium 完成真实 Raw/provenance 核对 |
-| 二 | [R4 分析配置与联合验收](categories/02-sample-delivery.md#r4) | 已确认：交接边界已对齐 | [第二批总计划](plans/whole-sample-delivery.md#r4-c1) · [详细计划](plans/analysis-handoff.md) | fixture 消费已验证；真实样本未验收；真实 sST 表达验收未完成 | 使用 P2CRC_Xenium 完成后续 loader 与标签/空间消费检查 |
-| 二 | [C1 分析端消费协议协同](categories/02-sample-delivery.md#c1) | 已确认线性输入契约与责任边界 | [已对齐](plans/ot-assembly.md) | 生产端对接及表达 fixture 通过 | 真实样本与具体科学分析后置 |
+| 一 | [R1 sST 最终逐细胞归一化删除](categories/01-small-changes.md#r1) | 已确认 | [已对齐](plans/sr-final-scaling.md) | 已有实现；385 项针对测试通过 | mini已核查，parent校正存在有效零项；见验收表 |
+| 二 | [R2 全类型重建与 sample 级 SVC](categories/02-sample-delivery.md#r2) | 已确认：批次行为已对齐 | [第二批总计划](plans/whole-sample-delivery.md#r2) · [详细计划](plans/whole-sample-svc.md) | 生产端实现；工程验收完成；mini已联测；全量待验收 | P2 mini已核对；后续服务器全量 |
+| 二 | [R3 完整 Raw 与已有推断](categories/02-sample-delivery.md#r3) | 已确认：Raw、推断列和冲突规则已对齐 | [第二批总计划](plans/whole-sample-delivery.md#r3) · [详细计划](plans/raw-publication.md) | 生产端实现；工程验收完成；mini已联测；全量待验收 | 使用 P2CRC_Xenium 完成真实 Raw/provenance 核对 |
+| 二 | [R4 分析配置与联合验收](categories/02-sample-delivery.md#r4) | 已确认：交接边界已对齐 | [第二批总计划](plans/whole-sample-delivery.md#r4-c1) · [详细计划](plans/analysis-handoff.md) | fixture 消费已验证；mini已联测；全量待验收；真实 sST 表达验收未完成 | 使用 P2CRC_Xenium 完成后续 loader 与标签/空间消费检查 |
+| 二 | [C1 分析端消费协议协同](categories/02-sample-delivery.md#c1) | 已确认线性输入契约与责任边界 | [已对齐](plans/ot-assembly.md) | 生产端及iST/sST mini表达联测通过 | hST unknown、sST校正缺口和全量/科学解释后置 |
 | 三 | [R5 OT assembly](categories/03-assembly-research.md#r5) | 已确认两种模式 | [已对齐](plans/ot-assembly.md) | 已有实现；工程验证完成 | 用户逐项审阅；真实验收另定 |
-| 三 | [R6 assembly 比较与最终默认值](categories/03-assembly-research.md#r6) | 已确认 Notebook 目标；科学结论后置 | [已对齐](plans/ot-assembly.md#r6比较-notebook) | 已有实现；工程验证完成 | Notebook 已交付；真实运行后置 |
+| 三 | [R6 assembly 比较与最终默认值](categories/03-assembly-research.md#r6) | 已确认 Notebook 目标；科学结论后置 | [已对齐](plans/ot-assembly.md#r6比较-notebook) | 已有实现；工程验证完成 | mini Notebook已执行；科学解释后置 |
 | 四 | [D1 confidence](categories/04-future-extensions.md#d1) | 已确认与 R7 合并定义 | [已对齐](plans/ot-assembly.md) | 已有实现；工程验证完成 | 已共用函数并记录阶段来源 |
 | 四 | [R7 Reference 评估、排序、选择](categories/04-future-extensions.md#r7) | 已确认：本地候选、三种分数、max_median top-1 | [已对齐](plans/reference-preparation.md) | 已实现并通过工程验收 | 真实规模与科学质量后续评估 |
 | 四 | [R8a Patient ID 候选来源](categories/04-future-extensions.md#r8a) | 已确认：显式配对列和值，不推断 Patient | [已对齐](plans/reference-preparation.md) | paired 提取及消费已验证 | 按实际 pool 提供明确配对列和值 |
@@ -55,11 +55,11 @@
 <a id="cadence"></a>
 ## 先后关系与讨论节奏
 
-1. 第一批 R1 已完成；第二批已完成 R2/R3/R4 的生产端实现和工程验收，内部按“全类型计算 → Raw 与发布 → 分析交接 → 整体验证”执行。真实 P2CRC_Xenium、科学解释和 sST 表达联合验收仍待后续，不为每个小事项重新启动流程。其余第三、四类始终保留；R7/R8 已完成本地准备与接入。
+1. 第一批 R1 已完成；第二批已完成 R2/R3/R4 的生产端实现和工程验收，内部按“全类型计算 → Raw 与发布 → 分析交接 → 整体验证”执行。P2CRC_Xenium mini与sST真实表达消费已完成；全量、sST校正缺口及科学解释仍待后续，不为每个小事项重新启动流程。其余第三、四类始终保留；R7/R8 已完成本地准备与接入。
 2. R2 是 iST 全类型输出主线；R3 的原始对象保护可并行推进，但完整 iST annotation 验收依赖 R2。R4 联合验收依赖 R2/R3 的同次交付。
 3. sST 表达分析额外依赖 C1 的真实消费能力。数据产品交付、成功加载、标签/空间分析和具体科学解释分开判断，统一记录在[验收清单](acceptance.md)。
-4. R5 两种 OT 模式与 R6 比较 Notebook 已完成工程验证；真实 T/Macro/CAF 重分群对照和最终默认值后置。R7/R8 不以真实比较完成为前提。
-5. D1 与 reference 评分共用数值定义，保留现有列；不新建 posterior 协议。R5/R6/C1 已按[本批计划](plans/ot-assembly.md)完成工程验证，真实验收由用户随后安排。
+4. R5 两种 OT 模式与 R6 比较 Notebook 已完成工程验证；T/Mono_Macro/Fibroblast mini重分群对照已运行，最终默认值后置。R7/R8 不以真实比较完成为前提。
+5. D1 与 reference 评分共用数值定义，保留现有列；不新建 posterior 协议。R5/R6/C1 已按[本批计划](plans/ot-assembly.md)完成工程验证，本轮mini验收见当前验收表，全量随后在服务器执行。
 
 ## 后续如何更新
 

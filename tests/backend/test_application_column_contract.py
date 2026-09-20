@@ -304,7 +304,7 @@ def test_application_preprocessing_normalizes_configured_reference_labels():
     assert normalized.obs["minor_type"].tolist() == ["T_1", "T_2"]
 
 
-def test_reference_label_normalization_rejects_category_collisions():
+def test_reference_label_normalization_merges_category_spellings():
     from revise.application.preprocess import normalize_reference_labels
 
     reference = AnnData(
@@ -313,8 +313,10 @@ def test_reference_label_normalization_rejects_category_collisions():
         var=pd.DataFrame(index=["g1"]),
     )
 
-    with pytest.raises(ValueError, match="collide after slash normalization"):
-        normalize_reference_labels(reference, ["major_type"])
+    normalized = normalize_reference_labels(reference, ["major_type"])
+
+    assert normalized.obs_names.tolist() == ["c1", "c2"]
+    assert normalized.obs["major_type"].tolist() == ["A_B", "A_B"]
 
 
 def test_sp_local_refinement_trims_by_the_configured_cell_type(monkeypatch):

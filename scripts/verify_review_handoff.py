@@ -21,6 +21,7 @@ TESTS = [
     'tests/integration/test_analysis_delivery.py',
     'tests/batch/test_ot_assembly_contract.py',
     'tests/analysis/test_assembly_comparison.py',
+    'tests/analysis/test_prepare_assembly_baseline.py',
 ]
 
 
@@ -73,9 +74,12 @@ def main():
     inputs_dir.mkdir()
     methods, baseline = helpers['_write_fixture'](inputs_dir)
     config = {'method_paths': {k: str(v) for k, v in methods.items()},
-              'baseline_path': str(baseline), 'type_aliases': {'T': ['T cell']},
-              'broad_column': 'revise_Level1', 'baseline_subtype_column': 'SVC_cluster',
-              'seed': 23, 'resolutions': [0.6, 0.7], 'plot_resolution': 0.6}
+              'baseline_path': str(baseline), 'cell_types': ['T'],
+              'broad_column': 'Level1', 'baseline_subtype_column': 'SVC_cluster',
+              'spatial_key': 'spatial', 'coordinate_unit': 'pixel',
+              'microns_per_coordinate': 0.2125, 'seed': 23,
+              'resolutions': [0.6, 0.7], 'plot_resolution': 0.6,
+              'output_dir': str(destination / 'notebook-report')}
     config_path = destination / 'notebook-config.json'
     config_path.write_text(json.dumps(config, indent=2))
     os.environ['REVISE_ASSEMBLY_COMPARISON_CONFIG'] = str(config_path)

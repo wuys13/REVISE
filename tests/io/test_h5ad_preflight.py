@@ -681,7 +681,7 @@ def test_preflight_rejects_missing_reference_label(tmp_path):
         _preflight(tmp_path)
 
 
-def test_preflight_rejects_reference_labels_that_collide_after_normalization(
+def test_preflight_allows_reference_labels_that_merge_after_normalization(
     tmp_path,
 ):
     _write_application_inputs(tmp_path)
@@ -689,8 +689,7 @@ def test_preflight_rejects_reference_labels_that_collide_after_normalization(
     adata.obs["Level1"] = ["A/B", "A_B"]
     adata.write_h5ad(tmp_path / "sc.h5ad")
 
-    with pytest.raises(ValueError, match=r"role=sc_ref.*Level1.*collide"):
-        _preflight(tmp_path)
+    assert _preflight(tmp_path)[1]["status"] == "ready"
 
 
 @pytest.mark.parametrize("task", ["sc_svc"])

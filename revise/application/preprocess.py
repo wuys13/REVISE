@@ -88,14 +88,6 @@ def normalize_reference_labels(
             if not labels.str.contains("/", regex=False).any():
                 continue
             normalized = labels.str.replace("/", "_", regex=False)
-        pairs = pd.DataFrame({"original": labels, "normalized": normalized}).drop_duplicates()
-        collisions = pairs.groupby("normalized", sort=False)["original"].nunique()
-        if (collisions > 1).any():
-            names = collisions[collisions > 1].index.tolist()
-            raise ValueError(
-                f"Reference labels in {column!r} collide after slash normalization: "
-                f"{names[:5]}"
-            )
         values = pd.Series(pd.NA, index=result.obs.index, dtype="object")
         values.loc[valid] = normalized.to_numpy(dtype=object)
         result.obs[column] = values

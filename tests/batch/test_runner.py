@@ -373,13 +373,28 @@ def test_interrupted_task_and_changed_code_rerun(tmp_path, fake_solver, monkeypa
     assert runner.run_batch(config)['summary']['succeeded'] == 1
 
 
-@pytest.mark.parametrize('labels', [['../escape'], ['inputs'], ['T', 't'], ['T', 'T']])
+@pytest.mark.parametrize('labels', [['../escape'], ['inputs'], ['T', 't']])
 def test_unsafe_or_colliding_type_directories_rejected(tmp_path, fake_solver, labels):
     from revise.batch.runner import run_batch
     make_sample(tmp_path / 'data' / 'one', cell_types=labels)
     result = run_batch(batch_config(tmp_path))
     assert result['summary']['failed'] == 1
     assert not fake_solver
+
+
+def test_batch_normalizes_equivalent_slash_type_names_and_runs_once(tmp_path, fake_solver):
+    from revise.batch.runner import run_batch, run_reconstruction_task
+
+    config = batch_config(tmp_path)
+    make_sample(tmp_path / 'data' / 'one', cell_types=['Mono/Macro', 'Mono_Macro'])
+
+    result = run_batch(config)
+
+    assert result['summary'] == {'succeeded': 1, 'failed': 0, 'reused': 0}
+    assert fake_solver == ['Mono_Macro']
+    direct = run_reconstruction_task(config, 'one', cell_type='Mono/Macro')
+    assert direct['status'] == 'reused'
+    assert direct['cell_type'] == 'Mono_Macro'
 
 
 def test_invalid_input_invalidates_old_handoff(tmp_path, fake_solver):

@@ -25,6 +25,7 @@ from revise.config.runner_conf import (
 from revise.io import REVISEInputService
 from revise.svc import SVC
 from revise.utils import benchmark_case_leaf
+from revise.utils.labels import normalize_cell_type_label
 from revise.utils.spot_sr_input import ensure_all_cells_in_spot
 
 
@@ -194,7 +195,7 @@ def _require_concrete_cell_type(value: Any) -> str:
         raise ValueError(
             "route.select_cell_type must name one concrete broad cell type"
         )
-    return select_ct
+    return normalize_cell_type_label(select_ct)
 
 
 def _optional_concrete_cell_type(value: Any) -> str | None:
@@ -531,7 +532,10 @@ class ScSvcApplicationStrategy(RunnerBackedStrategy):
         if selected is None:
             broad = ctx.runner.st_adata.obs[cell_type_col]
             actual_types = sorted(
-                {str(value) for value in broad.loc[valid_label_mask(broad)]}
+                {
+                    normalize_cell_type_label(str(value))
+                    for value in broad.loc[valid_label_mask(broad)]
+                }
             )
         else:
             actual_types = [selected]

@@ -1,0 +1,1803 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-20",
+  "kind": "dual-repository real-data contiguous mini acceptance",
+  "status": "executed_with_explicit_partial_capabilities",
+  "full_scale_executed": false,
+  "scientific_acceptance": false,
+  "committed_or_pushed": false,
+  "python": "/Users/stephen/miniconda3/envs/python3.10/bin/python",
+  "environment": {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMBA_NUM_THREADS": "1",
+    "PYTHONHASHSEED": "42",
+    "MPLBACKEND": "Agg",
+    "test_isolation": "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1; NUMBA_DISABLE_JIT=1; sys.modules[readline]=None"
+  },
+  "repositories": {
+    "producer": {
+      "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE",
+      "branch": "revise-2.0",
+      "base_head": "5b21cec38106b2d864b7d6d9ec8fb5cb87cf893a",
+      "worktree_sha256": {
+        "configs/acceptance/full/P1CRC_HD-default.yaml": "5754f14a920e4b68064277a8dfc355c64bbb08fcc73e51c8574447971e60ff66",
+        "configs/acceptance/full/P2CRC_Visium-default.yaml": "732b9be8eb2d890825b697405d369e793a09835dd6d92e852f858ce73b877f56",
+        "configs/acceptance/full/P2CRC_Xenium-mean.yaml": "09364772d7dcc42c3a692e6b01177a6643aa2dfe5eede71620335555ab9f942d",
+        "configs/acceptance/full/P2CRC_Xenium-outside_cluster.yaml": "0353f2150d5f3657aa83feeab43cdc95926649e84c18534365aa04bc1156077c",
+        "configs/acceptance/full/P2CRC_Xenium-random.yaml": "6da349fbfffe0a3d22b56c4a6c41b967010e8e916f1b3f0cfcccd19f194157c4",
+        "configs/acceptance/full/P2CRC_Xenium-within_cluster.yaml": "867a06357b3a3ac0190d55fb9864ca3a1bba95ef8a7b8411968650a7a7a7f57e",
+        "configs/acceptance/mini/P1CRC_HD-default.yaml": "357007165defba6643145e8b2cf29152b4130be3c4ced28bcb4cbaa96f6c7a76",
+        "configs/acceptance/mini/P2CRC_Visium-default.yaml": "af7599fc9f9a349e3fb30da73100f77f828b70aaf34732887cd91b3b97307477",
+        "configs/acceptance/mini/P2CRC_Xenium-mean.yaml": "5218083e278ef19a1bd0c33ecd1001948907903f2540d7ee6d609b774eed92ab",
+        "configs/acceptance/mini/P2CRC_Xenium-outside_cluster.yaml": "b00ac6427074a380515a28b2076948503ab597d00351a183ecb5174bac24daf5",
+        "configs/acceptance/mini/P2CRC_Xenium-random.yaml": "22cf7d5c001ac1221128c985784f9f45d885fd3bd39810fb8a5581e4777f847f",
+        "configs/acceptance/mini/P2CRC_Xenium-within_cluster.yaml": "2528ecc1b1d23a7b3c39ed4e8b565826081061bff7214d9f93ac77de387d0feb",
+        "configs/batch/batch.yaml": "3c172de41f7e943f1a1e5417707cb6ed24690d199b30707772ccaf07bd8511d0",
+        "examples/assembly-comparison-real.json": "8b1b39c336ebc909cc384db694a71936b0ba0872f9c81c0661b378b7fa244b39",
+        "reproduce/case/assembly_comparison.ipynb": "2c3eb7b0ebdb5412535d27f64a5f461b23a0639d1a3f9a1700e558c61baf736a",
+        "revise/analysis/assembly_comparison.py": "7699d292b7f23068e6443b1534d7b0912bf9ee0b7eb178a03b8506f5aedb8229",
+        "revise/application/delivery.py": "9153abe88edb1c0449b67893c62ad6dc57ec562ba98bd22339d3502bc192f17e",
+        "revise/application/preprocess.py": "32fe9f88f4b8000eb78e78858a219c682d61a40365d380852ee7bd278d447478",
+        "revise/backend/adapters.py": "ca17d055971e680c16ade8d713881f4e296d281372d47c9db4e43e481b95f91b",
+        "revise/batch/runner.py": "1efcbfd755ce2a48b13411854dfa9ddc5f94d9bc825cfebefd57e42af2fb7c85",
+        "revise/io/input_service.py": "04929f34e1519e007017da2e87a936e5fb22e436df670badf1bd664eda7eee54",
+        "scripts/execute_acceptance_notebook.py": "7aa5b7edfcc08b4c0d3891b0200cdd38656e113754b2127d03eeed8f0ee915fa",
+        "scripts/prepare_assembly_baseline.py": "60c37305924d6d0bf490fa8da1724ab31d488a8ca6033be378255eebc715be96",
+        "scripts/prepare_mini_acceptance.py": "80b8a8ed1640f49079b2df9d00df3b8c9caa117240edb43bff11000bb351fd6f",
+        "scripts/verify_mini_delivery.py": "53d1eec2b1d205bc7134af7411eeff177f621db3907eebdca50cb34e99be082e",
+        "scripts/verify_review_handoff.py": "490c1d77dc2cf9596818cd3293ff2c594e66b62be599ccfea6f3f018953c1e0c",
+        "tests/analysis/test_assembly_comparison.py": "96a36d5004f410665882bafdc6aa2e89e1d7b754f3750b50e9acf12581efc969",
+        "tests/analysis/test_prepare_assembly_baseline.py": "a71639eef876721524977a1ea14ecec52a9fc1b105ca0dd267f5d6e2c9805983",
+        "tests/application/test_mini_acceptance_inputs.py": "8f7860ecb50e6f91665942e02e6143a472f39a924729008ebbc395819853d0d7",
+        "tests/application/test_mini_delivery_verification.py": "84b30ae7acc97dfa496598ec364452caf98e792497a8932872d33892ea16e6d3",
+        "tests/application/test_preprocess.py": "7fbd5759aee8f523f2dda22905f33e11a460ce4aa7d8683b6947392ff6a5c305",
+        "tests/application/test_sample_delivery.py": "9eabae2432f40a0ce6e0206bf263adbdd7e22fff73cf664d7fd5d1abaaf3bcf6",
+        "tests/batch/test_runner.py": "6983561038a1de8ec08cbc3d0cc7bcc930a285c815a3eb7d485364b28df2e629",
+        "tests/io/test_h5ad_preflight.py": "04d1d29160724c65776e82a37b9c6612967e585ca12fbaa7032bd94ed21448b9"
+      }
+    },
+    "consumer": {
+      "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent",
+      "branch": "sl",
+      "base_head": "4118061983f15d0a51b6fdac8c9e4f534cd2c814",
+      "worktree_sha256": {
+        "configs/p1_hd_full_project.yaml": "5798a91f6b265bb28af23cbbf05cabf7da150a2e66bb95c347a3935bcee41401",
+        "configs/p1_hd_project.yaml": "1cb96f55b051987a21c7070d3bc7ad2bbea1d23765c5a894e07a8e4b708b78d6",
+        "configs/p2_full_project.yaml": "a9815f38b18e2b9b59282fb41ff91e6489fc5cd302d57878af0f9f089e2ad607",
+        "configs/p2_project.yaml": "1d838a4218446502ab356ffa7d86ef33ef3b6ed6477e8c6a61251b3810796417",
+        "configs/p2_visium_full_project.yaml": "8666b1cf8b0263d8e76f054708233d375854bb52c5d8dce2909ab71dcf481863",
+        "configs/p2_visium_project.yaml": "5ec24e9616f8998b74de5bdec71413dda840ba544bd58d0fa427fbb3783a9219",
+        "configs/sample.template.yaml": "7d224fa5d38b7ac008b88935b8e370bddc389b65d49af28b4dcf5aacdd24e758",
+        "data/P2CRC_Xenium/sample.yaml": "6e2513872ad2c2255dd652d6fc853ce9b8912f03a98f184e576edd3ae81d58c8",
+        "data/example/sample.yaml": "a03126d7a1b41af11c994b6aac82ee2dcbeded9b7f0b6399c4a2266377842957",
+        "data/example_reconstruction/sample.yaml": "85c59446e90988661509e6288813141b90d946b49dc6c6a05c329dd934f29930",
+        "notebooks/README.md": "da00734ad81948a14eb1bdfe87cf6b0cd88fad7c4d3f8c8f3c35de56069ebe9a",
+        "revise_analysis/analyses/_shared.py": "4971886876cefe66c1924436df4c376fe41d25f9b8c46783ffee01587a033ef9",
+        "revise_analysis/analyses/reconstruction_impact.py": "c713993f2f0450155bcd6df0f2e11e3681a83e3ca5e93cff748570b6621eedbf",
+        "revise_analysis/io.py": "9bad02b1e8f72d49cd29e753ad33f1043c5240737694c518ff080e4106944639",
+        "revise_analysis/reporting/report.py": "09554d0a3366129b767d7981af4dfac9ae4e9a337016eaab2adcb095ce116df5",
+        "scripts/create_example.py": "59a5d8f401bcc72f41e8964c84a072fd7b1e6c7bb33e0ca43493f642f62098d0",
+        "tests/test_io_runner.py": "e138d34ba26aade9c24fba892a983ef4f11804030dc39bae33050b58a8baa1d3",
+        "tests/test_reading_contract.py": "d38cdbe1965af5f9082bbcf5903c0666a5fb713d2d116cb176b536dc49ab75b9",
+        "tests/test_reporting.py": "aa584a860508d2d9207849fe0877cefd6e68be12fb108404f0ff39d48c577497",
+        "tests/test_revision_impact.py": "fd1634c7727b0a27384305902c297a829fe88da3a538eb2a42eefae1f5344fe2",
+        "tests/test_workflows.py": "61893749cf5250f2355915fceca02fba2b5c4a2dc900d038eca7eeab5174d95d"
+      }
+    }
+  },
+  "real_deliveries": {
+    "delivery-P1CRC_HD-default": {
+      "kind": "real-data mini delivery verification",
+      "sample": "P1CRC_HD",
+      "mapping": "default",
+      "status": "passed",
+      "input_shape": [
+        5077,
+        18085
+      ],
+      "raw_shape": [
+        5077,
+        18085
+      ],
+      "svc_shape": [
+        4128,
+        3451
+      ],
+      "raw_original_matrix_axes_labels_coordinates_preserved": true,
+      "inputs_unchanged": true,
+      "relationship": "retained native IDs and exact original coordinates",
+      "raw_inferred_broad_counts": {
+        "Fibroblast": 1437,
+        "Plasma": 1012,
+        "Vascular EC": 620,
+        "Pericyte": 273,
+        "Mono_Macro": 236,
+        "DC": 167,
+        "SMC": 108,
+        "Lymphatic EC": 81,
+        "T": 72,
+        "B": 47,
+        "Mast": 33,
+        "Tumor": 25,
+        "Gliacyte": 14,
+        "Intestinal Epithelial": 3
+      },
+      "svc_broad_counts": {
+        "Fibroblast": 1437,
+        "Plasma": 1012,
+        "Vascular EC": 620,
+        "Pericyte": 273,
+        "Mono_Macro": 236,
+        "DC": 167,
+        "SMC": 108,
+        "Lymphatic EC": 81,
+        "T": 72,
+        "B": 47,
+        "Mast": 33,
+        "Tumor": 25,
+        "Gliacyte": 14,
+        "Intestinal Epithelial": 3
+      },
+      "raw_missing_subtype": 5077,
+      "expression": {
+        "raw": {
+          "matrix": "X",
+          "identity": "unknown",
+          "scale": "unknown"
+        },
+        "svc": {
+          "matrix": "X",
+          "identity": "unknown",
+          "scale": "unknown"
+        }
+      },
+      "coordinates": {
+        "key": "spatial",
+        "unit": "pixel",
+        "microns_per_coordinate": 0.27380817798463214
+      },
+      "hashes": {
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P1CRC_HD_mini.h5ad": "63c410b6004f8b2f019a34891b330f2bf74a4e78b8a58b73d395515dd4433e74",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/raw.h5ad": "87e335fa012ef9100394a78fab50bb1cfd90276a8be3b71ea4f44aedeb5456b9",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/SVC.h5ad": "e2595121ea3b8b21b56ca142cefc0a4e01108103a715c3760359b4c6b8edb08c",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/sample.yaml": "e0948bda981cc62657d9fe2c656472ebfe68acb1672cda6c51d8f4a32bd4aa64"
+      }
+    },
+    "delivery-P2CRC_Visium-default": {
+      "kind": "real-data mini delivery verification",
+      "sample": "P2CRC_Visium",
+      "mapping": "default",
+      "status": "partial",
+      "input_shape": [
+        43,
+        18085
+      ],
+      "raw_shape": [
+        43,
+        18085
+      ],
+      "svc_shape": [
+        567,
+        5021
+      ],
+      "raw_original_matrix_axes_labels_coordinates_preserved": true,
+      "inputs_unchanged": true,
+      "relationship": "virtual-cell coordinates equal parent spot coordinates",
+      "raw_inferred_broad_counts": {
+        "Tumor": 37,
+        "Plasma": 6
+      },
+      "svc_broad_counts": {
+        "Tumor": 259,
+        "Plasma": 99,
+        "Fibroblast": 63,
+        "T": 44,
+        "Mono_Macro": 43,
+        "Intestinal Epithelial": 20,
+        "Vascular EC": 13,
+        "SMC": 11,
+        "Pericyte": 10,
+        "B": 2,
+        "DC": 2,
+        "Lymphatic EC": 1
+      },
+      "raw_missing_subtype": 43,
+      "expression": {
+        "raw": {
+          "matrix": "X",
+          "identity": "raw_counts"
+        },
+        "svc": {
+          "matrix": "X",
+          "identity": "sst_parent_spot_corrected_expression"
+        }
+      },
+      "coordinates": {
+        "key": "spatial",
+        "unit": "pixel",
+        "microns_per_coordinate": 0.73
+      },
+      "hashes": {
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Visium_mini.h5ad": "309f7b9cc7509eb8703f5526fbcfc31ec26a70caa5d93ca6b16e363caae04ade",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/raw.h5ad": "acb9b9ac5ff1dd2ea82321153b38baa586917510ee95a534c1333d8e94d3ed49",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/SVC.h5ad": "5bc83d76fa2b476d0ace8773653904148685d5100f1b1c00ac30d32b6bdb1bcc",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/sample.yaml": "a208ba858150fc6fb8e960b6b551d7f89c9ca1e5cfb7fe82d2303ee28076986d"
+      },
+      "parent_gene_conservation": {
+        "status": "partial",
+        "target": "Raw restricted to the SVC gene axis then per-parent normalize_total(10000)",
+        "parent_count": 43,
+        "gene_count": 5021,
+        "positive_target_entries": 139457,
+        "zero_support_entries": 821,
+        "zero_support_target_mass": 3327.7298732915383,
+        "zero_support_target_mass_fraction": 0.007738906682073345,
+        "zero_support_max_target": 12.87001287001287,
+        "zero_support_examples": [
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "TNFRSF25",
+            "normalized_parent_target": 7.855459544383346,
+            "aggregated_svc": 1.5346369980672112e-74
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "DNAJC11",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 0.0
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "H6PD",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 1.3450036395615345e-74
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "UBE4B",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 3.185501698664868e-74
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "EFHD2",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 9.646570269096579e-75
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "ZBTB17",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 0.0
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "UBR4",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 1.5099259529158959e-74
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "CAMK2N1",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 0.0
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "KDM1A",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 0.0
+          },
+          {
+            "parent_id": "CAACCATGCCTGGTAG-1",
+            "gene": "HNRNPR",
+            "normalized_parent_target": 3.927729772191673,
+            "aggregated_svc": 0.0
+          }
+        ],
+        "supported_entries": 138636,
+        "supported_nonconserving_entries": 0,
+        "unexpected_positive_output_entries": 0,
+        "supported_max_absolute_error": 0.00010400294695500634,
+        "supported_max_relative_error": 5.848974856469625e-07,
+        "parent_total_max_absolute_error": 1953.024156859923,
+        "parent_count_with_zero_support": 2,
+        "parent_max_missing_mass_fraction": 0.1953024453024453,
+        "cell_total": {
+          "min": 51.75112869654636,
+          "median": 680.1931963649783,
+          "max": 8625.294787893037
+        }
+      }
+    },
+    "delivery-P2CRC_Xenium-mean": {
+      "kind": "real-data mini delivery verification",
+      "sample": "P2CRC_Xenium",
+      "mapping": "mean",
+      "status": "passed",
+      "input_shape": [
+        3409,
+        422
+      ],
+      "raw_shape": [
+        3409,
+        422
+      ],
+      "svc_shape": [
+        501,
+        13088
+      ],
+      "raw_original_matrix_axes_labels_coordinates_preserved": true,
+      "inputs_unchanged": true,
+      "relationship": "retained native IDs and exact original coordinates",
+      "raw_inferred_broad_counts": {
+        "Tumor": 1232,
+        "Plasma": 312,
+        "Intestinal Epithelial": 207,
+        "Mono_Macro": 191,
+        "T": 183,
+        "Vascular EC": 136,
+        "Fibroblast": 112,
+        "SMC": 51,
+        "Pericyte": 46,
+        "DC": 15,
+        "Lymphatic EC": 15,
+        "B": 2,
+        "Mast": 1
+      },
+      "svc_broad_counts": {
+        "Mono_Macro": 191,
+        "T": 183,
+        "Fibroblast": 112,
+        "DC": 15
+      },
+      "raw_missing_subtype": 2908,
+      "expression": {
+        "raw": {
+          "matrix": "X",
+          "identity": "raw_counts"
+        },
+        "svc": {
+          "matrix": "X",
+          "identity": "reference_expression_mean"
+        }
+      },
+      "coordinates": {
+        "key": "spatial",
+        "unit": "pixel",
+        "microns_per_coordinate": 0.2125
+      },
+      "hashes": {
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/raw.h5ad": "2528707ce7d5b5548cc351643f3360c19a54bc1f14d5953278fc317f26965118",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/SVC.h5ad": "c4a917e8cc4f65fc93e8419e0509a02bf13d847a6ec7777a0cd299d3c50d9bce",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/sample.yaml": "4db852feca3682b2ce6e163fd1d8fee0e46c3183865914c2f40ec12a349a9b07"
+      }
+    },
+    "delivery-P2CRC_Xenium-outside_cluster": {
+      "kind": "real-data mini delivery verification",
+      "sample": "P2CRC_Xenium",
+      "mapping": "outside_cluster",
+      "status": "passed",
+      "input_shape": [
+        3409,
+        422
+      ],
+      "raw_shape": [
+        3409,
+        422
+      ],
+      "svc_shape": [
+        501,
+        13088
+      ],
+      "raw_original_matrix_axes_labels_coordinates_preserved": true,
+      "inputs_unchanged": true,
+      "relationship": "retained native IDs and exact original coordinates",
+      "raw_inferred_broad_counts": {
+        "Tumor": 1232,
+        "Plasma": 312,
+        "Intestinal Epithelial": 207,
+        "Mono_Macro": 191,
+        "T": 183,
+        "Vascular EC": 136,
+        "Fibroblast": 112,
+        "SMC": 51,
+        "Pericyte": 46,
+        "DC": 15,
+        "Lymphatic EC": 15,
+        "B": 2,
+        "Mast": 1
+      },
+      "svc_broad_counts": {
+        "Mono_Macro": 191,
+        "T": 183,
+        "Fibroblast": 112,
+        "DC": 15
+      },
+      "raw_missing_subtype": 2908,
+      "expression": {
+        "raw": {
+          "matrix": "X",
+          "identity": "raw_counts"
+        },
+        "svc": {
+          "matrix": "X",
+          "identity": "reference_expression_outside_cluster"
+        }
+      },
+      "coordinates": {
+        "key": "spatial",
+        "unit": "pixel",
+        "microns_per_coordinate": 0.2125
+      },
+      "hashes": {
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/raw.h5ad": "c226b2e9acbf2f8e618ab1dbb9fe5c889e7b06c41b4144b81301ce8264a93cca",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/SVC.h5ad": "3005cc564ceff8b70210e98f25e77003203baa5ede4f3d2eecc06623a0725c2e",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/sample.yaml": "546d5f104a475c6b57e97a82e8bd0762bd4990d1ab69bd95db12ef8f1ba1532c"
+      }
+    },
+    "delivery-P2CRC_Xenium-random": {
+      "kind": "real-data mini delivery verification",
+      "sample": "P2CRC_Xenium",
+      "mapping": "random",
+      "status": "passed",
+      "input_shape": [
+        3409,
+        422
+      ],
+      "raw_shape": [
+        3409,
+        422
+      ],
+      "svc_shape": [
+        501,
+        13088
+      ],
+      "raw_original_matrix_axes_labels_coordinates_preserved": true,
+      "inputs_unchanged": true,
+      "relationship": "retained native IDs and exact original coordinates",
+      "raw_inferred_broad_counts": {
+        "Tumor": 1232,
+        "Plasma": 312,
+        "Intestinal Epithelial": 207,
+        "Mono_Macro": 191,
+        "T": 183,
+        "Vascular EC": 136,
+        "Fibroblast": 112,
+        "SMC": 51,
+        "Pericyte": 46,
+        "DC": 15,
+        "Lymphatic EC": 15,
+        "B": 2,
+        "Mast": 1
+      },
+      "svc_broad_counts": {
+        "Mono_Macro": 191,
+        "T": 183,
+        "Fibroblast": 112,
+        "DC": 15
+      },
+      "raw_missing_subtype": 2908,
+      "expression": {
+        "raw": {
+          "matrix": "X",
+          "identity": "raw_counts"
+        },
+        "svc": {
+          "matrix": "X",
+          "identity": "reference_expression_random"
+        }
+      },
+      "coordinates": {
+        "key": "spatial",
+        "unit": "pixel",
+        "microns_per_coordinate": 0.2125
+      },
+      "hashes": {
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/raw.h5ad": "d2f462f5718eedcadaf4d7be509670ecead47959680bf8931b09da8db8b4c1da",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/SVC.h5ad": "0bee74e412ccec03663492d0fa32cb01194b145f1586be984e04ab1ac9a1b425",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/sample.yaml": "169bf50a4cf9537520c611027162da32f8131fbf7a62dd09fd088a6a0a1e2085"
+      }
+    },
+    "delivery-P2CRC_Xenium-within_cluster": {
+      "kind": "real-data mini delivery verification",
+      "sample": "P2CRC_Xenium",
+      "mapping": "within_cluster",
+      "status": "passed",
+      "input_shape": [
+        3409,
+        422
+      ],
+      "raw_shape": [
+        3409,
+        422
+      ],
+      "svc_shape": [
+        501,
+        13088
+      ],
+      "raw_original_matrix_axes_labels_coordinates_preserved": true,
+      "inputs_unchanged": true,
+      "relationship": "retained native IDs and exact original coordinates",
+      "raw_inferred_broad_counts": {
+        "Tumor": 1232,
+        "Plasma": 312,
+        "Intestinal Epithelial": 207,
+        "Mono_Macro": 191,
+        "T": 183,
+        "Vascular EC": 136,
+        "Fibroblast": 112,
+        "SMC": 51,
+        "Pericyte": 46,
+        "DC": 15,
+        "Lymphatic EC": 15,
+        "B": 2,
+        "Mast": 1
+      },
+      "svc_broad_counts": {
+        "Mono_Macro": 191,
+        "T": 183,
+        "Fibroblast": 112,
+        "DC": 15
+      },
+      "raw_missing_subtype": 2908,
+      "expression": {
+        "raw": {
+          "matrix": "X",
+          "identity": "raw_counts"
+        },
+        "svc": {
+          "matrix": "X",
+          "identity": "reference_expression_within_cluster"
+        }
+      },
+      "coordinates": {
+        "key": "spatial",
+        "unit": "pixel",
+        "microns_per_coordinate": 0.2125
+      },
+      "hashes": {
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/raw.h5ad": "07cca08c91d57a0cea2313732304874c758045ce83e6099172deb3d6a0e0733c",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/SVC.h5ad": "0e6aee0810132407d85d6d8d5ef2480c78dc82ce44a48f4fef1b45fb2eddffab",
+        "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/sample.yaml": "407d8e39feb45d75e1e4b095f75ad5162a330e72f6ed4e8ed9acff560e8b2471"
+      }
+    }
+  },
+  "reconstruction_runs": [
+    {
+      "provenance": "output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/sp-SVC/application__sp-SVC/20260920_151821_119520_27ced1d1/provenance.json",
+      "status": "succeeded",
+      "runtime_seed": 42,
+      "global_anchoring_runs": 1,
+      "duration_seconds": 22.21205283299787,
+      "input_identities": [
+        {
+          "role": "sc_ref",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+        },
+        {
+          "role": "st",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P1CRC_HD_mini.h5ad",
+          "sha256": "63c410b6004f8b2f019a34891b330f2bf74a4e78b8a58b73d395515dd4433e74"
+        }
+      ]
+    },
+    {
+      "provenance": "output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/sc-SVC/application__sc-SVC__sr/20260920_151325_024247_b705896e/provenance.json",
+      "status": "succeeded",
+      "runtime_seed": 42,
+      "global_anchoring_runs": 1,
+      "duration_seconds": 7.753558124997653,
+      "input_identities": [
+        {
+          "role": "sc_ref",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+        },
+        {
+          "role": "st",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Visium_mini.h5ad",
+          "sha256": "309f7b9cc7509eb8703f5526fbcfc31ec26a70caa5d93ca6b16e363caae04ade"
+        }
+      ]
+    },
+    {
+      "provenance": "output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/sc-SVC/application__sc-SVC__cluster/20260920_150912_880759_bedcde7b/provenance.json",
+      "status": "succeeded",
+      "runtime_seed": 42,
+      "global_anchoring_runs": 1,
+      "duration_seconds": 14.371368624968454,
+      "input_identities": [
+        {
+          "role": "sc_ref",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+        },
+        {
+          "role": "st",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad",
+          "sha256": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481"
+        }
+      ]
+    },
+    {
+      "provenance": "output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/sc-SVC/application__sc-SVC__cluster/20260920_151156_642527_0011b03f/provenance.json",
+      "status": "succeeded",
+      "runtime_seed": 42,
+      "global_anchoring_runs": 1,
+      "duration_seconds": 14.92157700000098,
+      "input_identities": [
+        {
+          "role": "sc_ref",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+        },
+        {
+          "role": "st",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad",
+          "sha256": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481"
+        }
+      ]
+    },
+    {
+      "provenance": "output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/sc-SVC/application__sc-SVC__cluster/20260920_150824_380145_3aff80ae/provenance.json",
+      "status": "succeeded",
+      "runtime_seed": 42,
+      "global_anchoring_runs": 1,
+      "duration_seconds": 21.720077958947513,
+      "input_identities": [
+        {
+          "role": "sc_ref",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+        },
+        {
+          "role": "st",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad",
+          "sha256": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481"
+        }
+      ]
+    },
+    {
+      "provenance": "output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/sc-SVC/application__sc-SVC__cluster/20260920_151056_806266_2c2e00e5/provenance.json",
+      "status": "succeeded",
+      "runtime_seed": 42,
+      "global_anchoring_runs": 1,
+      "duration_seconds": 14.836893292027526,
+      "input_identities": [
+        {
+          "role": "sc_ref",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+          "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714"
+        },
+        {
+          "role": "st",
+          "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad",
+          "sha256": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481"
+        }
+      ]
+    }
+  ],
+  "analysis": {
+    "iST": {
+      "notebook": {
+        "source": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/notebooks/01_reconstruction_impact.ipynb",
+        "source_sha256": "2417769a693183d72191a3627419b50b5a21cc308f708d24317d08b1ac0bdea7",
+        "kind": "real-data mini notebook execution",
+        "kernel": "python3",
+        "scientific_acceptance": false,
+        "status": "passed",
+        "source_unchanged": true,
+        "code_cells": 17,
+        "cell_errors": []
+      },
+      "batch": [
+        {
+          "analysis": "pathway_activity",
+          "status": "succeeded",
+          "unavailable": [],
+          "result": "output/mini-acceptance/20260920/iST/batch/P2CRC_Xenium_mini/pathway_activity/result.json"
+        },
+        {
+          "analysis": "reconstruction_impact",
+          "status": "partial",
+          "unavailable": [
+            {
+              "component": "raw_anatomy_context",
+              "reason": "labels must not contain missing values",
+              "stage": "support"
+            },
+            {
+              "component": "state_All",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "gain_All",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "state_Fibroblast",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "gain_Fibroblast",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "state_Mono_Macro",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "gain_Mono_Macro",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "state_T",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "gain_T",
+              "reason": "stable region threshold unavailable: no_stable_threshold",
+              "stage": "regions"
+            },
+            {
+              "component": "moran:svc:All:genes",
+              "reason": "472/13088 genes not computable: {'constant_expression': 472}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:Fibroblast:genes",
+              "reason": "28/422 genes not computable: {'constant_expression': 28}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:Fibroblast:genes",
+              "reason": "2373/13088 genes not computable: {'constant_expression': 2373}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:Mono_Macro:genes",
+              "reason": "24/422 genes not computable: {'constant_expression': 24}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:Mono_Macro:genes",
+              "reason": "1561/13088 genes not computable: {'constant_expression': 1561}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:T:genes",
+              "reason": "18/422 genes not computable: {'constant_expression': 18}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:T:genes",
+              "reason": "2147/13088 genes not computable: {'constant_expression': 2147}",
+              "stage": "molecular"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/iST/batch/P2CRC_Xenium_mini/reconstruction_impact/result.json"
+        },
+        {
+          "analysis": "spatial_autocorrelation",
+          "status": "partial",
+          "unavailable": [
+            {
+              "component": "moran:svc:genes",
+              "reason": "472/13088 genes not computable: {'constant_expression': 472}"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/iST/batch/P2CRC_Xenium_mini/spatial_autocorrelation/result.json"
+        }
+      ]
+    },
+    "hST": {
+      "notebook": {
+        "source": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/notebooks/01_reconstruction_impact.ipynb",
+        "source_sha256": "2417769a693183d72191a3627419b50b5a21cc308f708d24317d08b1ac0bdea7",
+        "kind": "real-data mini notebook execution",
+        "kernel": "python3",
+        "scientific_acceptance": false,
+        "status": "passed",
+        "source_unchanged": true,
+        "code_cells": 17,
+        "cell_errors": []
+      },
+      "batch": [
+        {
+          "analysis": "pathway_activity",
+          "status": "skipped",
+          "unavailable": [
+            {
+              "component": "pathway:raw",
+              "reason": "raw: expression matrix identity is unknown"
+            },
+            {
+              "component": "pathway:svc",
+              "reason": "svc: expression matrix identity is unknown"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/hST/batch/P1CRC_HD_mini/pathway_activity/result.json"
+        },
+        {
+          "analysis": "reconstruction_impact",
+          "status": "partial",
+          "unavailable": [
+            {
+              "component": "svc_reconstruction_labels",
+              "reason": "SVC reconstruction label column 'SVC_cluster' is unavailable",
+              "stage": "input"
+            },
+            {
+              "component": "partition:raw",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "baseline"
+            },
+            {
+              "component": "raw_level2_baseline",
+              "reason": "Raw column 'Level2' is unavailable",
+              "stage": "baseline"
+            },
+            {
+              "component": "raw_anatomy_context",
+              "reason": "labels must not contain missing values",
+              "stage": "support"
+            },
+            {
+              "component": "window_support",
+              "reason": "SVC reconstruction labels unavailable",
+              "stage": "support"
+            },
+            {
+              "component": "window_diversity",
+              "reason": "SVC reconstruction labels or spatial geometry unavailable",
+              "stage": "diversity"
+            },
+            {
+              "component": "state:All",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "state:Fibroblast",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "state:Mono_Macro",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "state:T",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "raw_k_control",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "regions"
+            },
+            {
+              "component": "moran:raw:All",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:All",
+              "reason": "svc: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:All",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:Fibroblast",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:Fibroblast",
+              "reason": "svc: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:Fibroblast",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:Mono_Macro",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:Mono_Macro",
+              "reason": "svc: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:Mono_Macro",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:T",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:T",
+              "reason": "svc: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:T",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            },
+            {
+              "component": "pathway:raw:HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
+              "reason": "raw: expression matrix identity is unknown",
+              "stage": "molecular"
+            },
+            {
+              "component": "pathway:svc:HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
+              "reason": "svc: expression matrix identity is unknown",
+              "stage": "molecular"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/hST/batch/P1CRC_HD_mini/reconstruction_impact/result.json"
+        },
+        {
+          "analysis": "spatial_autocorrelation",
+          "status": "skipped",
+          "unavailable": [
+            {
+              "component": "moran:raw",
+              "reason": "raw: expression matrix identity is unknown"
+            },
+            {
+              "component": "moran:svc",
+              "reason": "svc: expression matrix identity is unknown"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/hST/batch/P1CRC_HD_mini/spatial_autocorrelation/result.json"
+        }
+      ]
+    },
+    "sST": {
+      "notebook": {
+        "source": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/notebooks/01_reconstruction_impact.ipynb",
+        "source_sha256": "2417769a693183d72191a3627419b50b5a21cc308f708d24317d08b1ac0bdea7",
+        "kind": "real-data mini notebook execution",
+        "kernel": "python3",
+        "scientific_acceptance": false,
+        "status": "passed",
+        "source_unchanged": true,
+        "code_cells": 17,
+        "cell_errors": []
+      },
+      "batch": [
+        {
+          "analysis": "pathway_activity",
+          "status": "succeeded",
+          "unavailable": [],
+          "result": "output/mini-acceptance/20260920/sST/batch/P2CRC_Visium_mini/pathway_activity/result.json"
+        },
+        {
+          "analysis": "reconstruction_impact",
+          "status": "partial",
+          "unavailable": [
+            {
+              "component": "svc_reconstruction_labels",
+              "reason": "SVC reconstruction label column 'SVC_cluster' is unavailable",
+              "stage": "input"
+            },
+            {
+              "component": "partition:raw:Fibroblast",
+              "reason": "no 'Fibroblast' units on raw",
+              "stage": "baseline"
+            },
+            {
+              "component": "partition:raw:Mono_Macro",
+              "reason": "no 'Mono_Macro' units on raw",
+              "stage": "baseline"
+            },
+            {
+              "component": "partition:raw:T",
+              "reason": "no 'T' units on raw",
+              "stage": "baseline"
+            },
+            {
+              "component": "raw_level2_baseline",
+              "reason": "Raw column 'Level2' is unavailable",
+              "stage": "baseline"
+            },
+            {
+              "component": "window_support",
+              "reason": "SVC reconstruction labels unavailable",
+              "stage": "support"
+            },
+            {
+              "component": "window_diversity",
+              "reason": "SVC reconstruction labels or spatial geometry unavailable",
+              "stage": "diversity"
+            },
+            {
+              "component": "state:All",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "state:Fibroblast",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "state:Mono_Macro",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "state:T",
+              "reason": "SVC parent local diversity unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "raw_k_control",
+              "reason": "SVC reconstruction labels unavailable",
+              "stage": "regions"
+            },
+            {
+              "component": "parent_anatomy:raw:Fibroblast",
+              "reason": "no 'Fibroblast' units on raw",
+              "stage": "anatomy"
+            },
+            {
+              "component": "parent_anatomy:raw:Mono_Macro",
+              "reason": "no 'Mono_Macro' units on raw",
+              "stage": "anatomy"
+            },
+            {
+              "component": "parent_anatomy:raw:T",
+              "reason": "no 'T' units on raw",
+              "stage": "anatomy"
+            },
+            {
+              "component": "moran:raw:All:genes",
+              "reason": "445/18085 genes not computable: {'constant_expression': 445}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:Fibroblast",
+              "reason": "nonempty expression cohort and gene axis required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:Fibroblast:genes",
+              "reason": "1/5021 genes not computable: {'constant_expression': 1}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:Fibroblast",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:Mono_Macro",
+              "reason": "nonempty expression cohort and gene axis required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:Mono_Macro",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:raw:T",
+              "reason": "nonempty expression cohort and gene axis required",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran:svc:T:genes",
+              "reason": "2/5021 genes not computable: {'constant_expression': 2}",
+              "stage": "molecular"
+            },
+            {
+              "component": "moran_shared_genes:T",
+              "reason": "both native Moran results required",
+              "stage": "molecular"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/sST/batch/P2CRC_Visium_mini/reconstruction_impact/result.json"
+        },
+        {
+          "analysis": "spatial_autocorrelation",
+          "status": "partial",
+          "unavailable": [
+            {
+              "component": "moran:raw:genes",
+              "reason": "445/18085 genes not computable: {'constant_expression': 445}"
+            }
+          ],
+          "result": "output/mini-acceptance/20260920/sST/batch/P2CRC_Visium_mini/spatial_autocorrelation/result.json"
+        }
+      ]
+    }
+  },
+  "engineering_tests": [
+    {
+      "scope": "producer normalization, delivery, preflight, batch",
+      "passed": 141,
+      "evidence": "implement_producer agent executed targeted suite",
+      "overlap_with_other_suites": true
+    },
+    {
+      "scope": "producer request, sc-local OT, direct/batch, reference API",
+      "passed": 73,
+      "evidence": "implement_producer agent executed targeted suite",
+      "overlap_with_other_suites": true
+    },
+    {
+      "scope": "consumer complete suite",
+      "passed": 109,
+      "evidence": "consumer_scope agent executed with NUMBA_DISABLE_JIT=1",
+      "overlap_with_other_suites": true
+    },
+    {
+      "scope": "consumer final reporting/impact focused checks",
+      "passed": 31,
+      "evidence": "consumer_scope agent executed after final report refinement",
+      "overlap_with_other_suites": true
+    },
+    {
+      "scope": "comparison and historical baseline including fixture Notebook",
+      "passed": 13,
+      "evidence": "producer_contract agent executed after common-coordinate-scope fix",
+      "overlap_with_other_suites": true
+    },
+    {
+      "scope": "joint-regression",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit": "output/mini-acceptance/20260920/evidence/joint-regression.xml",
+      "log": "output/mini-acceptance/20260920/logs/joint-regression.log",
+      "overlap_with_other_suites": true
+    },
+    {
+      "scope": "sst-verification-tests",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit": "output/mini-acceptance/20260920/evidence/sst-verification-tests.xml",
+      "log": "output/mini-acceptance/20260920/logs/sst-verification-tests.log",
+      "overlap_with_other_suites": true
+    }
+  ],
+  "artifacts": {
+    "output/mini-acceptance/20260920/evidence/baseline-and-method-identities.json": "85c939135e214e5ff60fa49213797274b361f05fcebcaefff4d50245bd5b0302",
+    "output/mini-acceptance/20260920/evidence/delivery-P1CRC_HD-default.json": "7ef8d2d4bc0536458de5b5effa06c030ec8928a28b91087574ae425e698ef50d",
+    "output/mini-acceptance/20260920/evidence/delivery-P2CRC_Visium-default.json": "80f64377f0065588a4a1eb53045893da4eda0d27bd943f1c4c58019e3e305913",
+    "output/mini-acceptance/20260920/evidence/delivery-P2CRC_Xenium-mean.json": "7d0bab9baf99a9993108d621639de57ff1c89658716d0d6d7e0ade2f5b9b8dda",
+    "output/mini-acceptance/20260920/evidence/delivery-P2CRC_Xenium-outside_cluster.json": "af59992af7b76eb6edad02e0a27c642e725a00b1bed812ee93baa98a144ade12",
+    "output/mini-acceptance/20260920/evidence/delivery-P2CRC_Xenium-random.json": "f7a98ccddc6746c15800cec9ea14cac3eda7c77895001371ed65a2fe4c95b9ff",
+    "output/mini-acceptance/20260920/evidence/delivery-P2CRC_Xenium-within_cluster.json": "7211f79b37d088382e4c4f36cdbe319b27adda1bfffe8954ffb1e5ff06c07834",
+    "output/mini-acceptance/20260920/evidence/final-input-hashes.json": "aab6f2cee3a8600156a35b039b11a485efaf168131da67b27227b51cbf6f623f",
+    "output/mini-acceptance/20260920/evidence/four-method-configurations.json": "bef88a03fc8fd8416b0fda8d1f4bdefae73fc25f0395fd5b801f19073d86ea20",
+    "output/mini-acceptance/20260920/evidence/joint-regression.xml": "c5aff17785548072c35b337b97b1447e564e35bb9b8742feea3440751ef51408",
+    "output/mini-acceptance/20260920/evidence/notebook-batch-parity.json": "1ba0026e48ca2e5dec67e4d5da15a9e36539d8efdb1b1e70278f2665ec4e582f",
+    "output/mini-acceptance/20260920/evidence/report-refresh.json": "cd5d98d65ae98d58201c49d86d482a7155208711c47e6a1fbe27816a6c84cf4d",
+    "output/mini-acceptance/20260920/evidence/sst-verification-tests.xml": "9fbb48ff4b0c0c1fae3ae61b5348159e4472ebad637bd2b8569e6dbfab7473e7",
+    "output/mini-acceptance/20260920/assembly/comparison/Fibroblast-mean-r0.7.png": "9546e8ba9f0bb0bf1098589cc26d068043d9782e628c50287e09e1642ef389e1",
+    "output/mini-acceptance/20260920/assembly/comparison/Fibroblast-outside_cluster-r0.7.png": "e3ddeafb6e2f82704afc5554a42074b2d601b2ccabe759db3f920034c535b081",
+    "output/mini-acceptance/20260920/assembly/comparison/Fibroblast-random-r0.7.png": "17407cad383ad2838607f828be364fcee2e6ab6df7f03473cbb6a7c343c9e06c",
+    "output/mini-acceptance/20260920/assembly/comparison/Fibroblast-within_cluster-r0.7.png": "a779c0dae37d4741d12d04db86f5d8c58fc70247b1cd01dadba0a62c2d468a19",
+    "output/mini-acceptance/20260920/assembly/comparison/Mono_Macro-mean-r0.7.png": "74e35a5e51cf26098b8e1d7d7f4b9d56498ead72cc5c83b30724514458cdfbfe",
+    "output/mini-acceptance/20260920/assembly/comparison/Mono_Macro-outside_cluster-r0.7.png": "f543ffc9cd9765d50cf18fef059efacb334996569bdf821d392994c701f7c7c1",
+    "output/mini-acceptance/20260920/assembly/comparison/Mono_Macro-random-r0.7.png": "03288ac52eb7301aa8002d732a4051f5e78d38ed05dc2d3c177d34090351d7ca",
+    "output/mini-acceptance/20260920/assembly/comparison/Mono_Macro-within_cluster-r0.7.png": "5e3ec670dee6aced2502c02ecdf6340d7717ac6d6a077c91b6237b33fea531cd",
+    "output/mini-acceptance/20260920/assembly/comparison/T-mean-r0.7.png": "e5457d2cf91ba3f93ce71e1dda1f42aa5f77bbf91402b0f7c5b653b10733e9e2",
+    "output/mini-acceptance/20260920/assembly/comparison/T-outside_cluster-r0.7.png": "c9b7794532a8a61ae4658c5691d264ef291154ea1a59f3b4754e561d937ef423",
+    "output/mini-acceptance/20260920/assembly/comparison/T-random-r0.7.png": "9138269df04b5eef59759df2fde580424252e4316b950d6a0c1e18d536f164fb",
+    "output/mini-acceptance/20260920/assembly/comparison/T-within_cluster-r0.7.png": "e0df6f952eeb9bde260fed2c5a40157106d7932c45cf5948234513ac396eb20c",
+    "output/mini-acceptance/20260920/assembly/comparison/assembly_comparison.executed.ipynb": "669e9f8882fb82b41220c73b2edc4cb31c86afb37e2ff72c1575bf6887f333b6",
+    "output/mini-acceptance/20260920/assembly/comparison/assembly_comparison.html": "010007e7504dac9786c9ef0f4391d751ad83adeeb32a313b5c98a3bfa11dea71",
+    "output/mini-acceptance/20260920/assembly/comparison/baseline_provenance.json": "3202afa666683491eaf7de634fa1bd0e505ecfb6df89a7f969d3172f063e88a9",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-mean-r0.6.csv": "a86e16c006d9cb1442ce70f490ffd1dc655bcb639c18d4426a0dc935dae0e3e5",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-mean-r0.7.csv": "a86e16c006d9cb1442ce70f490ffd1dc655bcb639c18d4426a0dc935dae0e3e5",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-mean-r0.8.csv": "a86e16c006d9cb1442ce70f490ffd1dc655bcb639c18d4426a0dc935dae0e3e5",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-outside_cluster-r0.6.csv": "f720dcde0016a2f0265f1cb9a7557d128faff569823911d097cfa4ca6523e02e",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-outside_cluster-r0.7.csv": "f720dcde0016a2f0265f1cb9a7557d128faff569823911d097cfa4ca6523e02e",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-outside_cluster-r0.8.csv": "07e03c3fad68afe9f949286a683e12a8e643c4e28be26f1ac624e1d9ec6b46b0",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-random-r0.6.csv": "c221ef980843ddac693f0a7f6025819ff4422a1945874616599fceebfacceac7",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-random-r0.7.csv": "27012b33d8caadbf766e96b5bca4f333fb2aab52c1eabe9d5ca344f24646a092",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-random-r0.8.csv": "64f2ba7b718a86e0af04b028145a5ed4cc2d6c8d7c6e33097b5851b8c8e1aedb",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-within_cluster-r0.6.csv": "61f6b9cd07f5a70158f98901de5b9c9d8239454b1f55fb5b818b1583c6b5b535",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-within_cluster-r0.7.csv": "4f37e5eff1c353dd6c2b1097fc7280a3131abb06bf78e41db9678d5006ae8f28",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Fibroblast-within_cluster-r0.8.csv": "7c6006e30dc724a466e549c186d899b62fb5cec10c3119fa9b05608bac1d6fd9",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-mean-r0.6.csv": "af721a12799dcce93605ac0b947a2210b4dbfc6e803bceeb8c0873c6f7df3530",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-mean-r0.7.csv": "af721a12799dcce93605ac0b947a2210b4dbfc6e803bceeb8c0873c6f7df3530",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-mean-r0.8.csv": "af721a12799dcce93605ac0b947a2210b4dbfc6e803bceeb8c0873c6f7df3530",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-outside_cluster-r0.6.csv": "a6f0d5c4c05ccc72c2b6957775211a190f150ba381d8782997638d0066e3d9f9",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-outside_cluster-r0.7.csv": "a6f0d5c4c05ccc72c2b6957775211a190f150ba381d8782997638d0066e3d9f9",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-outside_cluster-r0.8.csv": "771f652329a09f53f398559a23956099b4cfaf463fa2759ce5cc212b4a074d32",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-random-r0.6.csv": "1a50eba729c43becd3b92d0621cd12b2719fe591abda3386fbd49c864df09d56",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-random-r0.7.csv": "7aac35dd68c2c212101f687b7076317e28c39f1f199dadfe780cb7307c15b49c",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-random-r0.8.csv": "6812a3c4518a9b491250bf8d477f6fa5dec2f1af15951f57f976174f5ddbaaa4",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-within_cluster-r0.6.csv": "ef517e4a31f9519c0ca3906325c4fc46cd39f50ca95c612d48f5224eff2bfd86",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-within_cluster-r0.7.csv": "ef517e4a31f9519c0ca3906325c4fc46cd39f50ca95c612d48f5224eff2bfd86",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/Mono_Macro-within_cluster-r0.8.csv": "ef517e4a31f9519c0ca3906325c4fc46cd39f50ca95c612d48f5224eff2bfd86",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-mean-r0.6.csv": "402e1edcd4278509ca47dbb20b7396ba42410b81c8a50258391151662c75d55d",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-mean-r0.7.csv": "402e1edcd4278509ca47dbb20b7396ba42410b81c8a50258391151662c75d55d",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-mean-r0.8.csv": "402e1edcd4278509ca47dbb20b7396ba42410b81c8a50258391151662c75d55d",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-outside_cluster-r0.6.csv": "4d0d46a80dd8e50f32a811197cb26a4b9cd1cae32664f737f74ae78ccd14d448",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-outside_cluster-r0.7.csv": "4d0d46a80dd8e50f32a811197cb26a4b9cd1cae32664f737f74ae78ccd14d448",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-outside_cluster-r0.8.csv": "4d0d46a80dd8e50f32a811197cb26a4b9cd1cae32664f737f74ae78ccd14d448",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-random-r0.6.csv": "b38bd4960005fe02da78cc61b32b3392d37a0ce3c9f69c54f8d641ca76ca931f",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-random-r0.7.csv": "0ad15633b4edf35be86d1383f12619cc8b25d40f4467f652f3f24af3e4ce91e4",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-random-r0.8.csv": "0a1cdadbc31515101b6ad867387e19b75449328fef135a96af15a67b4b2039f8",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-within_cluster-r0.6.csv": "76fa48a39f6b0168401242a138792ec01e6191be69a7297ec8a47426e2803cf2",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-within_cluster-r0.7.csv": "e60730dbcbb2e5d0e713d25f628e4de4eec80425d5be25ef32791187761528db",
+    "output/mini-acceptance/20260920/assembly/comparison/contingencies/T-within_cluster-r0.8.csv": "2bf022f2d2f2c05647883716c128508a7133bda5ae942270bfed7d46b6ae3517",
+    "output/mini-acceptance/20260920/assembly/comparison/coverage.csv": "044f1f50f679e7b80625411b6a9dd26305aaf22ebd51f6a0a50e90507f7c0c4a",
+    "output/mini-acceptance/20260920/assembly/comparison/effective_parameters.json": "9422d4234bf1b5b509cf151a57680b0cb00cba10602c045af4ef6ee305f04f60",
+    "output/mini-acceptance/20260920/assembly/comparison/input_summary.csv": "605ba985bb2cc4650fcffef2945f37e0d42eff54bc2a33143f84250316a8f86e",
+    "output/mini-acceptance/20260920/assembly/comparison/metrics.csv": "40a21225d855819f0951e6f074c129def2d395f783c7a761a06064ad71e19ef7",
+    "output/mini-acceptance/20260920/assembly/comparison/notebook_execution.json": "1f18aec1c157d3120698d1ebfbecda7e21cbf0ea1e45a905e826f9988a1ca1b0",
+    "output/mini-acceptance/20260920/assembly/comparison/scope_summary.csv": "45919d15f13e3968eceee0af2eb74d1376f0281fa4d210027f00112e71bac7ed",
+    "output/mini-acceptance/20260920/evidence/documentation-check.json": "bb1e45acd91873a2653fc048aa81356a14b0f6367dc4f73348a9ece2305b583d"
+  },
+  "comparison": {
+    "notebook": {
+      "source": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/reproduce/case/assembly_comparison.ipynb",
+      "source_sha256": "2c3eb7b0ebdb5412535d27f64a5f461b23a0639d1a3f9a1700e558c61baf736a",
+      "kind": "real-data mini notebook execution",
+      "kernel": "python3",
+      "scientific_acceptance": false,
+      "status": "passed",
+      "source_unchanged": true,
+      "code_cells": 9,
+      "cell_errors": []
+    },
+    "scope_summary": [
+      {
+        "broad_type": "T",
+        "status": "ok",
+        "issues": "",
+        "shared_id_count": "160",
+        "shared_gene_count": "13088",
+        "shared_id_preview": "('194125', '194218', '194220', '194268', '194282')",
+        "shared_gene_preview": "('A1CF', 'A2M', 'A4GALT', 'AAAS', 'AACS', 'AADAT', 'AAGAB', 'AAK1', 'AAMDC', 'AAMP')"
+      },
+      {
+        "broad_type": "Mono_Macro",
+        "status": "ok",
+        "issues": "",
+        "shared_id_count": "157",
+        "shared_gene_count": "13088",
+        "shared_id_preview": "('194141', '194185', '194197', '194216', '194217')",
+        "shared_gene_preview": "('A1CF', 'A2M', 'A4GALT', 'AAAS', 'AACS', 'AADAT', 'AAGAB', 'AAK1', 'AAMDC', 'AAMP')"
+      },
+      {
+        "broad_type": "Fibroblast",
+        "status": "ok",
+        "issues": "",
+        "shared_id_count": "68",
+        "shared_gene_count": "13088",
+        "shared_id_preview": "('194123', '195347', '195535', '195700', '195702')",
+        "shared_gene_preview": "('A1CF', 'A2M', 'A4GALT', 'AAAS', 'AACS', 'AADAT', 'AAGAB', 'AAK1', 'AAMDC', 'AAMP')"
+      }
+    ],
+    "metric_rows": 36,
+    "contingency_tables": 36,
+    "png_count": 12,
+    "baseline_and_method_identities": {
+      "status": "passed",
+      "baseline_shape": [
+        49279,
+        0
+      ],
+      "baseline_source_obs_values_ids_and_coordinates_exact": true,
+      "source_counts": {
+        "T": {
+          "n_obs": 14219,
+          "cluster_counts": {
+            "0": 3480,
+            "1": 2463,
+            "2": 2303,
+            "3": 2003,
+            "4": 1550,
+            "5": 1403,
+            "6": 1017
+          }
+        },
+        "Mono_Macro": {
+          "n_obs": 17605,
+          "cluster_counts": {
+            "0": 3981,
+            "1": 3795,
+            "2": 2635,
+            "3": 2504,
+            "4": 1954,
+            "5": 1608,
+            "6": 715,
+            "7": 413
+          }
+        },
+        "Fibroblast": {
+          "n_obs": 17455,
+          "cluster_counts": {
+            "0": 3806,
+            "1": 2754,
+            "2": 2529,
+            "3": 2453,
+            "4": 2142,
+            "5": 1404,
+            "6": 800,
+            "7": 776,
+            "8": 621,
+            "9": 170
+          }
+        }
+      },
+      "four_method_axes_labels_coordinates_identical": true,
+      "label_columns": [
+        "Level1",
+        "Level2",
+        "SVC_cluster",
+        "revise_Level1",
+        "revise_Level2"
+      ],
+      "method_specific_obs_metadata_allowed": true,
+      "method_shapes": {
+        "random": [
+          501,
+          13088
+        ],
+        "mean": [
+          501,
+          13088
+        ],
+        "within_cluster": [
+          501,
+          13088
+        ],
+        "outside_cluster": [
+          501,
+          13088
+        ]
+      }
+    },
+    "results_unchanged_after_common_scope_fix": true
+  },
+  "notebook_batch_parity": {
+    "iST": {
+      "status": "passed",
+      "n_scientific_tables_json": 170,
+      "parameters_equal": true,
+      "manifest_equal": true,
+      "stage_errors": [],
+      "analysis_status": "partial",
+      "tables_sha256": {
+        "tables/gain_All_common_valid_windows.csv": "5dc1589921b9a15847b5402243656264a0ab17f07ca80ade28f9621fd7f0fd32",
+        "tables/gain_All_region_windows.csv": "4f3f9bfec39267e96e1bbd1d14f769dae2cba104c7136c936dab80392384ddaa",
+        "tables/gain_All_threshold.json": "d5ad6983b86626e1193198921865a9a194a8df51779eaada02285ba3a31c5f2c",
+        "tables/gain_Fibroblast_common_valid_windows.csv": "a79f05f59acfda54fde24b7a642849c5da1e03cff0d93ffaa28355da945560dc",
+        "tables/gain_Fibroblast_region_windows.csv": "08589100907ca6a6f2cb7b1d6dfcb39e83d4d15c8b0a9c2aed806cceee6e51fd",
+        "tables/gain_Fibroblast_threshold.json": "dd51675fbe0727403eb0b3e0ad608217fe3a89b49da5f0c30a7f9ff500ee0573",
+        "tables/gain_Mono_Macro_common_valid_windows.csv": "29dbdeacb3b27f8916f3d2ec0ae0d8374c4004217651dba58fcefdd59b29687f",
+        "tables/gain_Mono_Macro_region_windows.csv": "321772a25542747b71cd4cd740534edcadb4b469e9e048e68587f71c7a869b24",
+        "tables/gain_Mono_Macro_threshold.json": "87440f74f517a7737da51d1dac6ff4acc307e1e27c6faf73c66c8774b52fb88a",
+        "tables/gain_T_common_valid_windows.csv": "c933b243b0628d0338fcd6497ee69dd934dc8ab7ec543a6add54f25db519f0f9",
+        "tables/gain_T_region_windows.csv": "e78b4000725d50c0f5c01e6d52bf4f075d735bdeddec8ee3d93cf9d0823306b8",
+        "tables/gain_T_threshold.json": "6aa7371cb962695550ab5ca9d73bca4dd9d3c622a4ff5ef1efadf04df3d4b3cb",
+        "tables/input_manifest.json": "3251c0190e1ab5fceb59f89d8d58348f68329bd376b829413ed56d9589a39de0",
+        "tables/input_overview.csv": "25f97cac200c3d138b703dfac19b22fd0cf3fa50d76ee23c066ba9e7b84e2bac",
+        "tables/integrated_anatomy_conditionals_All.csv": "d86f609277ec3c38bbf6245498a504a0df8377660d49950610b8791076affd13",
+        "tables/integrated_anatomy_conditionals_Fibroblast.csv": "a9e7c6b0d9202410d92e6e45edc17a4a5c31a968f58d439de5823e537c235084",
+        "tables/integrated_anatomy_conditionals_Mono_Macro.csv": "5dfc917ef1ab663e484e696b41c80576d77c030b043c8fa657de05ee8b44b842",
+        "tables/integrated_anatomy_conditionals_T.csv": "e0b421d626f4374941e757a39fe126b0a98342c46d97627f7e61c8db6a60c55f",
+        "tables/integrated_changed_unit_context_All.csv": "6005d2d85a083359a37577a323757875c517eeb87be4822f51abcba10790d4b7",
+        "tables/integrated_changed_unit_context_Fibroblast.csv": "e9b9bac789026030716379bb4de5913958e59ca6b257199725a2a8f734bd9f59",
+        "tables/integrated_changed_unit_context_Mono_Macro.csv": "676c996e77fc55aaf1035fd9d118eb46274f30d9539c08f37de5367a6cb0b91a",
+        "tables/integrated_changed_unit_context_T.csv": "f329e6626befecd3cb42a2260ebf303fd3748502f762d546d58825ffe292a34d",
+        "tables/integrated_changed_units_All.csv": "b8318b05f18ee0f3b0cf79d05e3e07cca1df7d6a77d16b3bb7edea8e252cfc3a",
+        "tables/integrated_changed_units_Fibroblast.csv": "10e9dafc776bee7906695f93653672db289b3ee3d9af3b36f1f954a6b72e785a",
+        "tables/integrated_changed_units_Mono_Macro.csv": "33e33aa77acdc9056c30596de0bf3fbe922716f7f2c23dc930f64a621f5a5f21",
+        "tables/integrated_changed_units_T.csv": "e9ef15a0ece56a025f96df76e2802ce0519bc1c85d0fda25cc9c3de1ce236d10",
+        "tables/integrated_label_composition_All.csv": "210a288edb731f3071c0538222c9b06c00ca5189e78a758e007d330d67d70816",
+        "tables/integrated_label_composition_Fibroblast.csv": "6b3de544fb432e3088278eb657447e3b6de2dd8e299ca456ee12ce0dccb2138b",
+        "tables/integrated_label_composition_Mono_Macro.csv": "af3fbe535b4014c2385341e43a2f34f6b581ab3912a653b46a0a14d91b5ec6d7",
+        "tables/integrated_label_composition_T.csv": "f30d6986f1c0a671949e015e982e8a851768ea3a67be3fb8c5710aaeb36c533c",
+        "tables/integrated_label_units_All.csv": "cd4022cb1b26303335925b93aa29bba7ec5aac5b97504dc7f29cc82ed504703c",
+        "tables/integrated_label_units_Fibroblast.csv": "d5d8b4f7df1970e0edee20d185e9c0b49a9c104c76fb012d7f8da0187749bf9c",
+        "tables/integrated_label_units_Mono_Macro.csv": "5e91baafd13cc35c8eaa7933dfab12babd2e95d74c9126ce7ebf6d5e7f5d13e4",
+        "tables/integrated_label_units_T.csv": "39e0d7d9a127aaceb5d0f01a9d536ed4fbceacfd4e2619af8aea389cb54b4f60",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "c03ce765f36f577f85b3ffc40ebaffff871f10be1f1263e96a40476c15344116",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "befbe7e906b9ca247c1cca0c5e350ee37c663e0c4089ae5945ddf0f7e904aa1d",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "273cdddbf9f7a8fe0f0fb9a781c44dc4743404b9f62eab36c4a2b7ec0d50a52c",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "36d066bee3d98a3e6f528d2903c94fbd8f69ed873a7a26c2ef30a3ed749106f7",
+        "tables/integrated_program_raw_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "b3d484063cdf718452142048bf899b91ce118c5bb10135357fd304664f7895e5",
+        "tables/integrated_program_raw_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "fb758cdeb5a589ae0e7da0652da19fe6635a79a17fbf2bbb4c0134484b4e63cd",
+        "tables/integrated_program_raw_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "7db7d7866f49e3cf3ca33e4202acd58ee91f1df8afbc74d13cd0f717fd974b47",
+        "tables/integrated_program_raw_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "c09c3575f2fca4f1e573095352a1b85f7b6a53f492ba2c81d0868d4513ffed4b",
+        "tables/integrated_program_raw_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "482c9725be7479aa1f5f3261b316318dc7b1c8f7a2c179e7c3cb6194dd93e367",
+        "tables/integrated_program_raw_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "2eff07c104ae1ad1c5cb46a1235c1197ea9f9107cdeeb801fd2c5b406b608ad7",
+        "tables/integrated_program_raw_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "019c857d94b2deea2269993bfa8cb8367611d46abf35155d1214cf568f0a509e",
+        "tables/integrated_program_raw_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "05c8e0c218609b0429ccda2323ea99365553da9ac621d2a74ae31c4f1ad3edcf",
+        "tables/integrated_program_raw_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "51ea299a3c725d1cee309e82c354161235cbd7add6fa57b3805cc7e4dd962cfe",
+        "tables/integrated_program_raw_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "ca1e4cdb2966d4688ee998497b5b34ec59dadc3bc397f92c9852e31d1783f69e",
+        "tables/integrated_program_raw_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "b71bda92711fcfdd4c8e2bdbdc104910ab41724c89a707729e979f87949e32fe",
+        "tables/integrated_program_raw_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "2dc8ca3cb8b188103edb6a15d6f09947fc2cdea6bb4d47fe2e01f69d59efca0a",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "50a034565394c7cdc4e7824e5c7a4407cc24319ab57a709cba57a971574559d6",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "a4cfc5ae74be6f0a2d92b62e44f57933914db2c6d081324d2106d427932eb230",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "5e010347e49d0abd4470d70c1e6105058ecc2d71377132940cd08eaf3a7c78bb",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "0b7a93c9aa635b384d1bcec9d376d373e06699a0da606adb254f3fd569a6a3cc",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "8002c35c91301cc37f79b10793e202566ca8d06db5ccb9f888214f2bbb6cfea1",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "10f9e1f5419e1853165000a0b84837a68b00fab9a9c15cb1d577b3265db06d69",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "2b0f4376f1a42f28103f2775770fe2411fcf4278547c1ed9c37a0a7984cc4368",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "d38b62b5670fbaefc6bf0140a322775af388d9a1b9f63fe9b0708564431cffc3",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "35ed4f954705f55401e8064cc2f7f5e1bd265172dd4f309b05649625aa72b127",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "6080eaef73a7692d103becad67352555539767501fc18c4dc7ad40738b1fd7cd",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "6349377d0a3bd4fc0f86fc7eb14b917263ec4759efd995b70d8bf54e84532309",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "91efa247827c1f2ca2e89a1ebe9161870b44bc1d41543479b51cb24974bb9c9a",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "65befed3dd3f50ef2c7ef216ed262cbca5ae7174e88458125d201383429d7e68",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "a8ca731f9e0956c634be7dc2527f2cb282676566d3ea289db902c85e3ce0710c",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "4690b3d810a30ec185dc8df32e344ce88dd5419ec41374cec1279e16f0c51b8c",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "42fc48d81ca6a0a427863388e13194c98db607f47198620336aafecbec9f9a57",
+        "tables/integrated_region_anatomy_summary_All.csv": "2d2f5eec19536b3c5e4f97c6495d4c1aa4706bdde1e5aa7b632927a4bf92197b",
+        "tables/integrated_region_anatomy_summary_Fibroblast.csv": "192cf4c789f4dae91b4eea894c1e0a4cc91f96b00273ceaa6ee564d07e46fa8a",
+        "tables/integrated_region_anatomy_summary_Mono_Macro.csv": "84ec34bebb75b047cd2cae29400c47f865b31d5feab22f45f367e44357b787be",
+        "tables/integrated_region_anatomy_summary_T.csv": "81c17924267b5aceba0b3e933f051437b208ea6eb9cd1308115dae8ad56befbb",
+        "tables/integrated_spatial_evidence_All.csv": "b256a533e5a27f28455be75c0b0f2d67f13be93de37c27df539039de93ced6de",
+        "tables/integrated_spatial_evidence_Fibroblast.csv": "8802c5980166e146febdede0b3122e19469feeb7b8927092c6c138daa1cef65a",
+        "tables/integrated_spatial_evidence_Mono_Macro.csv": "8a15ab974cad57c90a206bc5243969168fcf3bbf33741eb527a1c701b0d3093c",
+        "tables/integrated_spatial_evidence_T.csv": "506f866dd49476eb23dbfbf56825522168e91a8b6c40a03498b3a1815d75d812",
+        "tables/membership_All.csv": "a69022127a7347b4e623593bf60d9f3f28a5fe5ff0d187bc3621cb5b107d6998",
+        "tables/membership_Fibroblast.csv": "b5d134d080eaed82f6098327d13e97ea225e82930cc3aa6bb52319f782a9daee",
+        "tables/membership_Mono_Macro.csv": "950c29319c14dde31e82cd6379e3d2e77f803091478f0a9d414a349860eb25ef",
+        "tables/membership_T.csv": "dc89911746a2ae89015a1291d0c0c1d003fed676206af77b88085b686e792f1c",
+        "tables/membership_contingency_All.csv": "3c477a81f012b07515caa7e96a778ea8699be7b5483234314cc25c7816dff8cb",
+        "tables/membership_contingency_Fibroblast.csv": "90077c965b5e55fa6ab59e645e4b94496c581c25fef0732568934d0a7c209db5",
+        "tables/membership_contingency_Mono_Macro.csv": "c89201d994dbdd5a1b38cfc693b69f71db7bd6928d4b19b919a21e20564ffee1",
+        "tables/membership_contingency_T.csv": "09eed496dc936cb7d8f9257bb99ae09242b6c088baa04b6724da229d81c2561e",
+        "tables/membership_summary_All.json": "a4538ef5cce9984c35a7199d81e33b4f5e955c33451e0c75682cfc67adfa049f",
+        "tables/membership_summary_Fibroblast.json": "8c1873e31251b822b07277b1874c17a864dec420059860a9c60100dda1d8a547",
+        "tables/membership_summary_Mono_Macro.json": "b43de62fb0f2bf669ab2ed0cce2b319cadc934f9fab005570d4b0667eeab9850",
+        "tables/membership_summary_T.json": "e571c2eb01254ee944ae3cfdbc18785b2b648067bc57eaec2bbfc210d5cf577f",
+        "tables/moran_raw_All.csv": "f5b2ab8ecd92e04c4ef9a17d1d40b9c9cf35055df034d38cfa623e4bf754c0b1",
+        "tables/moran_raw_Fibroblast.csv": "2b3a963568d9a6f5a16ddc0ea3478d6a4e4be03f0058a05b16fd4b3fd985ba22",
+        "tables/moran_raw_Mono_Macro.csv": "752313a505028750ceb3bf0902ad95484250fd8dccd1a28abcbf235667514e3f",
+        "tables/moran_raw_T.csv": "f4f97527c7eb08e23e9ef1ae0f1bfe6729e995dbfa55991b2010205badd562b3",
+        "tables/moran_shared_genes_All.csv": "36ce986eb66a889e88940af0551268b2b013eae49d3a80d30d9cff7e8ec36ea6",
+        "tables/moran_shared_genes_All_metadata.json": "acb7133d36de20d7f0691557f3d6199202e480b55db76041d3df1b1be59e42ea",
+        "tables/moran_shared_genes_Fibroblast.csv": "fccdbbea06b7953ab7f3fb846e4b412843b03e424eb831a9d5c3964a3ce64c1c",
+        "tables/moran_shared_genes_Fibroblast_metadata.json": "989405ecde2dd7e763698691c2df590d82ad6de20f5c7011bf4ef6f2e839a08e",
+        "tables/moran_shared_genes_Mono_Macro.csv": "1b6622cf5430ec3e33a6850caaf382bae954f4c37f302579d99852849c7bdf0e",
+        "tables/moran_shared_genes_Mono_Macro_metadata.json": "6c83ee545db69ef33da923a091f1aac0e08e2fd8903cf7e91cc4668230b965cd",
+        "tables/moran_shared_genes_T.csv": "0f552544c6f0a5b4b29ecd504a21405c3f73b3d4e18f7979ca8f3ba8687bdec9",
+        "tables/moran_shared_genes_T_metadata.json": "8e46bfc8d94ceacfa1b9cdddba3d8d3e3b2be8eb946ea5c2703d5defdbad53e6",
+        "tables/moran_svc_All.csv": "d9e5a7b72f20c9385ffdd3263a515d861c6a6bf5da02aff9528a81f2744dea98",
+        "tables/moran_svc_Fibroblast.csv": "bac8ac25a9b1afe5ad6927c0890673504d8c7aeb202b23c3ee43248644f21c8c",
+        "tables/moran_svc_Mono_Macro.csv": "8120ea328782fffd4aca1d8367d458c7f597c0b13403a6741d6e85e101ac330a",
+        "tables/moran_svc_T.csv": "c37c7bd0c1b9e28d17eea2169e1deeae03038c43cf417997bbb7eb2a6826041a",
+        "tables/parent_anatomy_raw_All.csv": "f107cf93b01976741af2f97402e332347e1f31ba02adb1a1695316528fb4d6b8",
+        "tables/parent_anatomy_raw_Fibroblast.csv": "8c0da6c090eedddba83be30aa2ce19da0893a947c80d9f89c8baea525c2d64d2",
+        "tables/parent_anatomy_raw_Mono_Macro.csv": "f35fbc0e8956c42ee235c80298f4b8282cac930a038def84f11eb96fca6a64e0",
+        "tables/parent_anatomy_raw_T.csv": "136b0e4ef779be67327d4b4a9e5899d1427c9cf91fd6f9b97b392d1926392251",
+        "tables/parent_anatomy_raw_baseline_All.csv": "d7e6066353bf186914336ee65c8d832b6c155dc78b68169a3f86490f1235483d",
+        "tables/parent_anatomy_raw_baseline_Fibroblast.csv": "01b339513f5322748de3312a24a19d9890d07b1b487ee95fe3bc8d25f456d164",
+        "tables/parent_anatomy_raw_baseline_Mono_Macro.csv": "2e70c7b02b239fbe89f0808c6c79ecee5a6a26ce10952513ce15f487ca2656e1",
+        "tables/parent_anatomy_raw_baseline_T.csv": "0f688df6dded4119c5a1c9ed921b2ddc65200e73bf8eb6551aff94d8f94c2e88",
+        "tables/parent_anatomy_svc_All.csv": "07714c64786ca886cc630e2a16736b948145c164812144e60fb2ad59962d2c59",
+        "tables/parent_anatomy_svc_Fibroblast.csv": "8db00fe76b6f11fafbfd792584ab94fa8cbea168e839cb1711346ac1c73f146e",
+        "tables/parent_anatomy_svc_Mono_Macro.csv": "4e2af2420fd916538bd94e65cca259d6462c362ce2f63b6b1bc5043115250185",
+        "tables/parent_anatomy_svc_T.csv": "3797bc329e5a6716716032e11ad94b607047a39ada0a24077c271fa032d7b9f6",
+        "tables/partition_summary.csv": "013ed3a0d3d8f5086f619b528afda652e6997b86c6fb5ea5e6eacec389022fac",
+        "tables/partitions_raw_All.csv": "1b3271837a5cc20f1543b0b2143f6efea7a94e1d7227ff88f73bae9e086f7a3c",
+        "tables/partitions_raw_Fibroblast.csv": "3af6a4142cdf993c176bc7e0522f2f1c13789bcb36cf51922e8cff7a87d3eb88",
+        "tables/partitions_raw_Mono_Macro.csv": "6ea5e5e979e22153b3535ce191adc54658ebc75ad86b68ba4160a5ff43c33c6f",
+        "tables/partitions_raw_T.csv": "040e75a698460485b29d7f07ff875029affe5912812c4f8bb6499d3fac4d764b",
+        "tables/pathway_raw_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION.csv": "d11f8913b42cc443bf5df1d6c48e434e157966f979c91a89471092726e66a7cf",
+        "tables/pathway_raw_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_metadata.json": "980190dac0556201e4c391fde094d5e0269927d357d9a06c4212918a6379f2b7",
+        "tables/pathway_svc_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION.csv": "7daeebb051a742641762834adbff5e47262bc64a0b58b979b7fd20c59c3defc9",
+        "tables/pathway_svc_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_metadata.json": "a758a58240c0419fd6cbc447d2c9988768fbc7d010dc25db3a19450a961a7008",
+        "tables/raw_level2_baseline.csv": "d31b0e6f25c44bb3bef15e4335df270e1500b841530d8bea11b4917c2a8d4454",
+        "tables/raw_level2_baseline_coverage.csv": "863c80af9f796da23c8135270a4a7b59de3370e250e96cdda715c49e771b0dc6",
+        "tables/raw_level2_baseline_summary.csv": "329258c47550cee7e98d75ff47c004563b07fcb0a949a79520db50088ef46d56",
+        "tables/raw_level2_baseline_vs_svc_All_common_valid_windows.csv": "e9e4ec6bf771de45baf54bbe2deceddfeda1662f5244d3e91d9d408059410c9a",
+        "tables/raw_level2_baseline_vs_svc_Fibroblast_common_valid_windows.csv": "30d9c4882cd273d39e0451fb4b795046c2a88424d7590002a2cb7f0a2d45832f",
+        "tables/raw_level2_baseline_vs_svc_Mono_Macro_common_valid_windows.csv": "c1fbfbfbac1b2b39660883c9fcc978cec2ce42dc82aace843b446515320d813f",
+        "tables/raw_level2_baseline_vs_svc_T_common_valid_windows.csv": "31ec14fbb3bc2cf5f47f88b3db3338d8417b75ad12926cb34231dedf71a3c378",
+        "tables/raw_point_anatomy.csv": "ddf1a548e214bda91a95be879ca1c67b8191cd2c351c3aa22a3307c1c0513fdb",
+        "tables/reconstruction_label_summary.csv": "e46bd326b9cc0bb599a3b31c8cb567ead5c07fea2f2b7976cc1581c834620fa5",
+        "tables/reconstruction_labels_units.csv": "bd9b355be8bb5c5f1d915dfb7699a8b72fbe7061a79429d23bf4920e8c9840e2",
+        "tables/spatial_changed_map_All.csv": "08a307d90e40ba31bd6f49fd8ad9ab35aafe462ff69bea3a45cea118f3ae9ea8",
+        "tables/spatial_changed_map_Fibroblast.csv": "ca75410d82a7d9fa957051b0d8393ca4475f61d07708f9a27246c0993b6c1a44",
+        "tables/spatial_changed_map_Mono_Macro.csv": "db9420bfd192cd50cbfe377b7094a1627ee27ed001ff4916f7dcbc16e463877a",
+        "tables/spatial_changed_map_T.csv": "4e490811b9fd4eda5243e222b76cf4e2db0a26c54cdfa4435c596e85b486f659",
+        "tables/state_All_region_windows.csv": "0d74d8da6e14d796a3671746a05aecddab0a87b015dd997b033410dee9668bf0",
+        "tables/state_All_threshold.json": "44260a0051ef33abf253a5330f285472a49f463490dd66a4032326e0d33027d3",
+        "tables/state_Fibroblast_region_windows.csv": "c431ad6c76bd954108c0aaf4a00775199f28efc8f22b014ac854869a6a081754",
+        "tables/state_Fibroblast_threshold.json": "580d4a6f70cffc8f75d0b2f9a0298b87189499d71571d48bdc9d77d176d62ce9",
+        "tables/state_Mono_Macro_region_windows.csv": "32460470935ccd444b385b088f26e8e01553f1ffb78eaa849e2ab782504b655c",
+        "tables/state_Mono_Macro_threshold.json": "3c0b93583e906db9b886c93c820bc5e4374922734dbf67d795e76c347ee8ba5d",
+        "tables/state_T_region_windows.csv": "35ea0b4e844dc13cf87c23b093bceb2a6ca192520662364c1e9aa716ab3ac4f3",
+        "tables/state_T_threshold.json": "3c0b93583e906db9b886c93c820bc5e4374922734dbf67d795e76c347ee8ba5d",
+        "tables/svc_point_anatomy.csv": "4089cee86973c3afde8d5e77e1e1abbd8865e69d21411e5582c00c75fbbca890",
+        "tables/window_diversity_raw_All.csv": "e13241ded73e716bf3fc33ef2a92df97ccc437e1a8470a01b0433bd436a0679a",
+        "tables/window_diversity_raw_Fibroblast.csv": "2097b821f8b68bf0a88f1fff758fefcbeb00bf7a27fe970ce68f364eb6c10f02",
+        "tables/window_diversity_raw_Mono_Macro.csv": "97a6e9c830803d9f43fd11b5aef6413671d8ee7bc761fb0cdcb2a4a6921ba3c6",
+        "tables/window_diversity_raw_T.csv": "037d8aeb7e59a1a4aa64298ee61f63db3638b583804d10ed7cee6c0b26836de2",
+        "tables/window_diversity_raw_level2_baseline_All.csv": "4ddff1e0747fc46060019944aa017e26fd2fe8eb7d3062aa37680d26157488c4",
+        "tables/window_diversity_raw_level2_baseline_Fibroblast.csv": "7fb9500b1de2b7fc4fca67a1695c966403dfb9010de196d4234fee32f4dadeff",
+        "tables/window_diversity_raw_level2_baseline_Mono_Macro.csv": "14dd0dc10832e341294669283ed2933fc096dc55d351308d1e1d039d674231b5",
+        "tables/window_diversity_raw_level2_baseline_T.csv": "539d11c01047959dacb6bcf5138023bd9ea61a4dc30a7292b223d92e78fb4577",
+        "tables/window_diversity_svc_All.csv": "93964c8cbbe5c6753f6f07764616080907713f5dff3221b630c7a6fc5aeb850f",
+        "tables/window_diversity_svc_Fibroblast.csv": "ab590d068b427555578441de9d90771f9f85fafefb766965dca255e11bef00f4",
+        "tables/window_diversity_svc_Mono_Macro.csv": "aca379637a7807f1f27de97c01015ceb4c6419c844ad42af2d0ef77a84dcb133",
+        "tables/window_diversity_svc_T.csv": "1de4eddf792ffe63d9308f06805383d9a2a1e2c5be39f02fadd23d7125d87fa1",
+        "tables/window_scale_recommendation_All.json": "18c9c3fb27a33dd7ea6d095dd51800e466ac9288bedb32a33f76eb3b356817aa",
+        "tables/window_scale_recommendation_Fibroblast.json": "fd4ba46e2e89c0ed6c12853e11db12a3d2866b137aeba199812e8ed7a2508e7f",
+        "tables/window_scale_recommendation_Mono_Macro.json": "80fa10187e6076a1579a593532d147b92a2650ace17d041429adabb9506cb1ef",
+        "tables/window_scale_recommendation_T.json": "af904efa6bf07bb0ba9d0a917d7573760d991510ea70db771d9d889699fe3d35",
+        "tables/window_scale_support_All.csv": "46346c426ea05a21f42ed2f86f686faae6be0b10df31d2128bc96d29b39afe67",
+        "tables/window_scale_support_Fibroblast.csv": "6f008adc9b12b6d2f36aa470159200884c9c4e195e18cc36d6409ba9623a3ef5",
+        "tables/window_scale_support_Mono_Macro.csv": "e2cfe705e84d80c66299532c8e84ebdc31b4e0e2e99f0b947a214616c4c08bf0",
+        "tables/window_scale_support_T.csv": "e345fac33c6db2ea76caf7fce25ace8abd4d194eb13b48fd6781f8091be79428",
+        "tables/window_support_grid_All.csv": "a5701dc46080277634c9348f971aa22f67395a0618e2b8a825d4ecbf7003a911",
+        "tables/window_support_grid_Fibroblast.csv": "21cb1376866035ba6b0600043eb11da3417e002c0f12a955110ede32c075bbc4",
+        "tables/window_support_grid_Mono_Macro.csv": "eb78d0622c7d7415e26f2c28780277d38c9ca1cb9fbb6f634f91e524a4ea16ee",
+        "tables/window_support_grid_T.csv": "5582600fb791f04bfe0a98a9066e0ffbbed218dee5cd6408fa3f1b22830dfabe"
+      },
+      "batch": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/output/mini-acceptance/20260920/iST/batch/P2CRC_Xenium_mini/reconstruction_impact",
+      "notebook": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/output/mini-acceptance/20260920/iST/notebook"
+    },
+    "hST": {
+      "status": "passed",
+      "n_scientific_tables_json": 11,
+      "parameters_equal": true,
+      "manifest_equal": true,
+      "stage_errors": [],
+      "analysis_status": "partial",
+      "tables_sha256": {
+        "tables/input_manifest.json": "0b90680f0e65ae0aa0f27250d58d2d93b73b93eb1d7af462c65ec549ff03f8c8",
+        "tables/parent_anatomy_raw_All.csv": "e208facd8823389c534b53f0400bd9ff4f2bad063b7644700a9bcaa5df085ca3",
+        "tables/parent_anatomy_raw_Fibroblast.csv": "dfa5a5e1bf17be6b2640436229e7362bd8e1f7d2708ab806ee085e5ac3f4b52f",
+        "tables/parent_anatomy_raw_Mono_Macro.csv": "b4e02a3c05091f2fb2a2260c16f735a7b6f7c61f8ea067bda87f4b031a5d31ae",
+        "tables/parent_anatomy_raw_T.csv": "2781bdd5821401f3f6ade59f3ed786c54665b48564b36b539eda754e86925af9",
+        "tables/parent_anatomy_svc_All.csv": "f5d1b09795b6644a511d33578e6a93919683862e83ba4ba93f2c61ca64132d7a",
+        "tables/parent_anatomy_svc_Fibroblast.csv": "bbf74951d9bbc17eb2f90e200c5fd2e3e86438c28e3acd6306d889fe8f8f51a3",
+        "tables/parent_anatomy_svc_Mono_Macro.csv": "d5a21acb5ce1d851be6c8e9acb349d3dcfcf2a14e9f71d59320834126b476349",
+        "tables/parent_anatomy_svc_T.csv": "9ffd46bcbb3fa3f666d12a4ac292f8798198c831e61ccc2ca6da65fcb4ea13e6",
+        "tables/raw_point_anatomy.csv": "cc0c4cd356e9e70a834e27a2863087adc5a7ef1254154dcd941eab508cb9f224",
+        "tables/svc_point_anatomy.csv": "255d36f784b2d8acff50ed14ba0cca42ba026328a3df206abd6da333bed7a500"
+      },
+      "batch": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/output/mini-acceptance/20260920/hST/batch/P1CRC_HD_mini/reconstruction_impact",
+      "notebook": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/output/mini-acceptance/20260920/hST/notebook"
+    },
+    "sST": {
+      "status": "passed",
+      "n_scientific_tables_json": 44,
+      "parameters_equal": true,
+      "manifest_equal": true,
+      "stage_errors": [],
+      "analysis_status": "partial",
+      "tables_sha256": {
+        "tables/input_manifest.json": "fae6897a3f30f46c745e479be278827797b58e214366370e1535a89a1c4db7f1",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "17ad7f4102a5b7516e8e7d3aff986da682b8ed916a03d0a4bee7791ecb845890",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "1c7db3ee82d5709cfce12e435fe30785e0d23eb651aeb5bd698749afe695025e",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "3353534eb37bf20fc0945734351f96f0fe0fff5c39120f437c8c27b90af742aa",
+        "tables/integrated_program_raw_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "d91dff57dd535fa9f82dd58691f933a5b7aaa293218daa1e5aa3929c629b4929",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "24add4a4e10de00acdd1cc47f30115ab9680fcc5dd80ddd783c19098e84eaa93",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "5195c262a45af8d4ab7d2268bd22f0e374efab0278920dcc38da658383a6f430",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "150749c679324aca028b5f975a5a57d2271416748434e285ee92e1de84da1682",
+        "tables/integrated_program_svc_All_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "f7ea52029983697e4958244ddcddd495beaf6234f0d4485587bd53bede28a943",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "6dbba7407bbec3a43772c2eb9ddda1b46a25ea8848d8cd2a588b06e760080643",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "a89f22d7939f7f526bc031174faa93434e31058a255fd3980b5fd7a1d6b9f302",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "5ca6f539bd1373ef16e9ba7fc5ef6a701494f85762ab940902428f16877b7d10",
+        "tables/integrated_program_svc_Fibroblast_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "f1829bcb61388fcc31e7c05b86cf1fd495c8c8fbcb16411eb701446266dcf2c5",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "9d7caff6dc563cf34b2ac8f6dc15aa7467dcc7c7a6f7b5dd4d015a5e9f64e8a2",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "9d91ca68ed8dc202819ac26990713023ba4050e18a4d569180360ba1ba42a1ec",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "cf0161bd53448882a99aa3298d24458a82ba1fc11b03917cb20fe3d4e89ba9cf",
+        "tables/integrated_program_svc_Mono_Macro_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "9353d4385e3a9c2be9afa3b0ce6840e1158e0b57d25e299117bdab989ba23178",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_anatomy.csv": "30a31bcc54221651b84a06bc9c0d1277705ab667473bd67acd309d5888400b0b",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_region.csv": "3637a74a3fc568cedf3f40158f341cb11243633b179186494fd67c857d767b4e",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_units.csv": "843ea15e10f99ed5642f02a43104eb011d3b1f23963869b75735025b55534cda",
+        "tables/integrated_program_svc_T_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_window.csv": "ad98a3d2f27f505177a8bc34336c8199da8d2053aee0003ef8cdd7f323531fef",
+        "tables/moran_raw_All.csv": "562d7cb803a8d1d4c7279b0f930d1caa52c1218ed49415a8df34beba9c199578",
+        "tables/moran_shared_genes_All.csv": "f4dea233fe351914c4f39b59d00ef3f3c4be07e495380d1350982c36cb408009",
+        "tables/moran_shared_genes_All_metadata.json": "3fe5a8c9836c4df9bfaa6688fb082fbeb38645d7cce38dc9afa4904f6162911f",
+        "tables/moran_svc_All.csv": "3854cb1630479118376b5eba02b3f384126bb1255551e28d83766b7ccd1c4c7a",
+        "tables/moran_svc_Fibroblast.csv": "d8b6476df8a5f2b1ba724e5ecbaf701673ae7571f7400fe6acd1d31288d5214a",
+        "tables/moran_svc_Mono_Macro.csv": "93e7fbdf20ad994b05f1a79c0262b41872f920c75c4ba76c88b58707261f6600",
+        "tables/moran_svc_T.csv": "d1347dd8585baa259fd22373e5f64bf9db8c337abdeb9ce2e339b9ab65b5471b",
+        "tables/parent_anatomy_raw_All.csv": "9f3da3fc53c9d976c09336f99a5bb315ed97ef2389e156c9660c90edf45cfe40",
+        "tables/parent_anatomy_raw_baseline_All.csv": "15463522e270ac7d60dd5d9d2368684419f52c751b9d39e2ac6959fb27e80bb6",
+        "tables/parent_anatomy_svc_All.csv": "c7ee503b18b2d4cd71cf39f67b3dfcdd0839364e3e09533184fdc5480f036276",
+        "tables/parent_anatomy_svc_Fibroblast.csv": "df9b02d100b64b6051e7501aaf9573997654489f014692d55a9ef81f100e169f",
+        "tables/parent_anatomy_svc_Mono_Macro.csv": "d5292c1b92c709ebf570a63b460023534f5fbf29b5fff55e96d0c624b785ed9f",
+        "tables/parent_anatomy_svc_T.csv": "eb71124ffdfb4a3f9d3571b967219d3680b707563c0d9238b9be8782a7ad91b3",
+        "tables/partition_summary.csv": "6d399d2bbe316c7091dacaed09f4eba2996dc9fa5be7730c4a84480f9e9e2f9b",
+        "tables/partitions_raw_All.csv": "34723f83e4bd8482478b1a6217254809ff8d01cf6f9710cdc34bff209cbc073a",
+        "tables/pathway_raw_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION.csv": "8e744654eb260748167f480e88eabb7797c2e198fb827c591bb0ce5e876b7621",
+        "tables/pathway_raw_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_metadata.json": "6bab1bd756d513814cc31ef28a241f29f63cfe26da53d28ea5d38b648774ac48",
+        "tables/pathway_svc_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION.csv": "f39e6c80519ea6c1397ea9b1b822f5a5f3d804b1cb9d90b2e39b549ace71d8f7",
+        "tables/pathway_svc_HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION_metadata.json": "9fb9e1bc7fa7f8346c4a45aee05fdc942168967194aeed0e2276a949913f39e0",
+        "tables/raw_anatomy_context.csv": "d2c3af878e4a50c27d9bc145a56bafd82337ee0d87b3f4714a16b8dcde82abc9",
+        "tables/raw_anatomy_windows.csv": "a8f3bc9e5243e359092cad9a800d9270ae07c432c536c7d38b1a606d1d3a682d",
+        "tables/raw_point_anatomy.csv": "56ebca6c170cd55acc454f5e84cd650a941ae2faf2e09b42abf13731fcd29bda",
+        "tables/svc_point_anatomy.csv": "4cf02a9ad8f888c2bba86ba8979c9f606e9058e5dac064672a02cdd655b17055"
+      },
+      "batch": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/output/mini-acceptance/20260920/sST/batch/P2CRC_Visium_mini/reconstruction_impact",
+      "notebook": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE_Analysis_Agent/output/mini-acceptance/20260920/sST/notebook"
+    }
+  },
+  "final_input_hashes": {
+    "status": "passed",
+    "kind": "original sources, reference, mini inputs and published delivery hashes after all analysis",
+    "files": [
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/P2CRC_Xenium.h5ad",
+        "sha256": "2e0f31756e6dc2f84d258d48ec02ee38b1c188e815eb1910536f348afabaa840",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Xenium_mini.h5ad",
+        "sha256": "a7e30c1c23d0f1ec9a2d6010f7d00b39272edce2373ce02fc9985354ed008481",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/P1CRC_HD.h5ad",
+        "sha256": "45e97b87a5f44d5b66f62603bee15db9b5aa6f9ad6e4d8dd4fddcd0e4b6699a2",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P1CRC_HD_mini.h5ad",
+        "sha256": "63c410b6004f8b2f019a34891b330f2bf74a4e78b8a58b73d395515dd4433e74",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/P2CRC_Visium.h5ad",
+        "sha256": "ad5e207a3f323b3e0cb848b7d1ee50812d62745ecf398276a8f6914b14dc5d73",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/inputs/P2CRC_Visium_mini.h5ad",
+        "sha256": "309f7b9cc7509eb8703f5526fbcfc31ec26a70caa5d93ca6b16e363caae04ade",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/raw.h5ad",
+        "sha256": "87e335fa012ef9100394a78fab50bb1cfd90276a8be3b71ea4f44aedeb5456b9",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/SVC.h5ad",
+        "sha256": "e2595121ea3b8b21b56ca142cefc0a4e01108103a715c3760359b4c6b8edb08c",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P1CRC_HD_mini/default/sample.yaml",
+        "sha256": "e0948bda981cc62657d9fe2c656472ebfe68acb1672cda6c51d8f4a32bd4aa64",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/raw.h5ad",
+        "sha256": "d2f462f5718eedcadaf4d7be509670ecead47959680bf8931b09da8db8b4c1da",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/SVC.h5ad",
+        "sha256": "0bee74e412ccec03663492d0fa32cb01194b145f1586be984e04ab1ac9a1b425",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/random/sample.yaml",
+        "sha256": "169bf50a4cf9537520c611027162da32f8131fbf7a62dd09fd088a6a0a1e2085",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/raw.h5ad",
+        "sha256": "07cca08c91d57a0cea2313732304874c758045ce83e6099172deb3d6a0e0733c",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/SVC.h5ad",
+        "sha256": "0e6aee0810132407d85d6d8d5ef2480c78dc82ce44a48f4fef1b45fb2eddffab",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/within_cluster/sample.yaml",
+        "sha256": "407d8e39feb45d75e1e4b095f75ad5162a330e72f6ed4e8ed9acff560e8b2471",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/raw.h5ad",
+        "sha256": "acb9b9ac5ff1dd2ea82321153b38baa586917510ee95a534c1333d8e94d3ed49",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/SVC.h5ad",
+        "sha256": "5bc83d76fa2b476d0ace8773653904148685d5100f1b1c00ac30d32b6bdb1bcc",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Visium_mini/default/sample.yaml",
+        "sha256": "a208ba858150fc6fb8e960b6b551d7f89c9ca1e5cfb7fe82d2303ee28076986d",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/raw.h5ad",
+        "sha256": "c226b2e9acbf2f8e618ab1dbb9fe5c889e7b06c41b4144b81301ce8264a93cca",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/SVC.h5ad",
+        "sha256": "3005cc564ceff8b70210e98f25e77003203baa5ede4f3d2eecc06623a0725c2e",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/outside_cluster/sample.yaml",
+        "sha256": "546d5f104a475c6b57e97a82e8bd0762bd4990d1ab69bd95db12ef8f1ba1532c",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/raw.h5ad",
+        "sha256": "2528707ce7d5b5548cc351643f3360c19a54bc1f14d5953278fc317f26965118",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/SVC.h5ad",
+        "sha256": "c4a917e8cc4f65fc93e8419e0509a02bf13d847a6ec7777a0cd299d3c50d9bce",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/output/mini-acceptance/20260920/delivery/P2CRC_Xenium_mini/mean/sample.yaml",
+        "sha256": "4db852feca3682b2ce6e163fd1d8fee0e46c3183865914c2f40ec12a349a9b07",
+        "unchanged": true
+      },
+      {
+        "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+        "sha256": "c7c277aad7ccc3b0520eeb3c28fb19d4c89314688f35f04dfb3a8e315c01e714",
+        "unchanged": true
+      }
+    ]
+  },
+  "remaining": [
+    "P1 HD input expression identity unknown; expression analyses not accepted",
+    "sST 821 effectively-zero parent-gene entries: 0.774% global mass; worst parent about19.53%; existing algorithm unchanged",
+    "Visium scale0.73 microns/coordinate provisional",
+    "full-scale/server run and OT capacity not verified; max_cost_entries remains2000000",
+    "scientific interpretation and final assembly choice remain human research decisions"
+  ],
+  "roi_manifest": {
+    "path": "output/mini-acceptance/20260920/input_manifest.json",
+    "sha256": "734a87ff5adce5bb05ea55737acf2a786264aa30c41fc2373cc7d2844e2b10b8"
+  },
+  "documentation_check": {
+    "status": "passed",
+    "local_links_checked": 225,
+    "missing": []
+  }
+}
