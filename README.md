@@ -223,3 +223,5 @@ current project citation. REVISE is released under the [MIT License](LICENSE).
 OT assembly 与比较入口：[两种模式及配置](docs/development/reconstruction-analysis/plans/ot-assembly.md) · [比较 Notebook](reproduce/case/assembly_comparison.ipynb)。
 
 双库审阅入口：[协议对照、浅验收与 GPT 审阅说明](docs/development/reconstruction-analysis/cross-repo-review.md)。
+
+远程数据准备：[六文件上传目录与两仓库运行顺序](docs/development/reconstruction-analysis/remote-inputs.md)。

@@ -1,0 +1,31 @@
+{
+  "status": "full_run_configuration; method_outputs_generated_on_server; historical_baseline",
+  "method_paths": {
+    "mean": "results/acceptance-full/P2CRC_Xenium/mean/SVC.h5ad",
+    "random": "results/acceptance-full/P2CRC_Xenium/random/SVC.h5ad",
+    "within_cluster": "results/acceptance-full/P2CRC_Xenium/within_cluster/SVC.h5ad",
+    "outside_cluster": "results/acceptance-full/P2CRC_Xenium/outside_cluster/SVC.h5ad"
+  },
+  "baseline_path": "output/mini-acceptance/20260920/assembly/original_spatial.h5ad",
+  "cell_types": [
+    "T",
+    "Mono_Macro",
+    "Fibroblast"
+  ],
+  "broad_column": "Level1",
+  "baseline_subtype_column": "SVC_cluster",
+  "spatial_key": "spatial",
+  "coordinate_provenance": {
+    "source": "formal sample.yaml and baseline provenance",
+    "unit": "pixel",
+    "microns_per_coordinate": 0.2125
+  },
+  "seed": 42,
+  "resolutions": [
+    0.6,
+    0.7,
+    0.8
+  ],
+  "plot_resolution": 0.7,
+  "output_dir": "output/full-acceptance/assembly/comparison"
+}

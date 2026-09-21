@@ -40,7 +40,7 @@ nb.cells.insert(0, nbformat.v4.new_code_cell(
     'import sys\nsys.modules["readline"] = None\n%matplotlib inline'
 ))
 record = {'source': str(source), 'source_sha256': source_hash,
-          'kind': 'real-data mini notebook execution', 'kernel': 'python3',
+          'kind': 'acceptance notebook execution', 'kernel': 'python3',
           'scientific_acceptance': False}
 try:
     NotebookClient(nb, timeout=1800, kernel_name='python3',

@@ -78,6 +78,8 @@ H2 baseline为49279×0，历史ID/Level1/SVC_cluster/坐标保留。H3四方法�
 
 ## 服务器全量入口
 
+手动传输的六个输入、校验和及两仓库放置说明见[远程输入准备](remote-inputs.md)。四方法全量比较使用 `examples/assembly-comparison-full.json`，原 mini JSON 保持不变。
+
 两个仓库并列放置。在 REVISE 根目录激活包含 TACCO、POT、Scanpy、AnnData 的科学 Python 环境；Notebook python3 kernel 必须指向同一环境。输入根为 `raw_data/Real_application/`，需要 P2CRC_Xenium.h5ad、P1CRC_HD.h5ad、P2CRC_Visium.h5ad、adata_sc_all_reanno.h5ad。P2 reference 明确过滤 Patient=P2CRC；hST保持原reference范围。
 
 ```bash
@@ -103,6 +105,6 @@ python -m revise_analysis.cli batch --config configs/p2_visium_full_project.yaml
 python ../REVISE/scripts/execute_acceptance_notebook.py --repo . --source notebooks/01_reconstruction_impact.ipynb --project configs/p2_full_project.yaml --output output/acceptance-full/iST/notebook
 ```
 
-其余Notebook换相应项目配置和新输出目录。batch CLI在partial/skipped时返回1，需读batch_result.json与stage_errors区分前提不足和失败。全量comparison复制real JSON，显式替换四个method_paths、baseline_path、output_dir，使用执行脚本的 `--comparison-config` 指定，不覆盖mini证据。
+其余Notebook换相应项目配置和新输出目录。batch CLI在partial/skipped时返回1，需读batch_result.json与stage_errors区分前提不足和失败。全量comparison使用 `examples/assembly-comparison-full.json`，通过执行脚本的 `--comparison-config` 指定，不覆盖mini证据；完整命令见远程输入准备。
 
 mini使用 `configs/acceptance/mini/*.yaml` 和消费端 `configs/p2_project.yaml`、`p1_hd_project.yaml`、`p2_visium_project.yaml`。ROI准备脚本 `scripts/prepare_mini_acceptance.py` 要求全新的output/configs目录，拒绝覆盖已有输入和配置。hST来源确认、sST零支持校正策略、全量容量及科学解释为剩余事项。

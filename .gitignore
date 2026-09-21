@@ -3,6 +3,7 @@
 /output/
 /results/
 /results_unified/
+/upload/
 
 *.tar.gz
 
