@@ -18,6 +18,14 @@ from what one row of the spatial data represents, edit a small YAML request,
 and run one command. The same project also provides the Sim2Real-ST benchmark
 workflows used to study reconstruction under controlled confounding factors.
 
+## 双仓库工作区
+
+REVISE 与独立消费者 `REVISE_Analysis_Agent` 在共同父目录下并列放置。这里的
+项目配置、交付样本和远程输入清单均按这个兄弟仓库关系解析；远程工作区也保留
+同名的 `REVISE/` 与 `REVISE_Analysis_Agent/` 两个目录。公共工作区背景见
+[根目录 README](../../README.md)，本地与远程协同规则见
+[协同协议](../../docs/collaboration.md)。
+
 ## Install
 
 The `revise-2.0` branch also supports [batch reconstruction and analysis](docs/design/batch/README.md):

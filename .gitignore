@@ -7,7 +7,6 @@
 
 *.tar.gz
 
-AGENTS.md
 CLAUDE.md
 
 # Local-only reviewer/development material

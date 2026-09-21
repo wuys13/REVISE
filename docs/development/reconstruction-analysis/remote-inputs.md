@@ -2,6 +2,21 @@
 
 本入口覆盖 P2 Xenium、P1 HD、P2 Visium 全量重建与分析，以及 Xenium 四方法比较。代码和配置随 Git 同步；下面的六个本地资源单独传输。两个远程仓库保持并列，名称为 `REVISE`、`REVISE_Analysis_Agent`。
 
+## 两仓库目录对应
+
+本地开发区和远程运行区都使用同一个相对布局：
+
+```text
+<共同父目录>/
+├── REVISE/
+└── REVISE_Analysis_Agent/
+```
+
+当前脚本从 `REVISE` 根目录解析其兄弟目录 `../REVISE_Analysis_Agent`；Analysis
+Agent 的项目配置从自身根目录以 `../../REVISE/` 读取上游交付。上传清单也只使用
+`REVISE/`、`REVISE_Analysis_Agent/` 这两个相对目标前缀，因此放置到远程时保持
+共同父目录和仓库名即可，不要把旧工作区的绝对路径写入新的配置或输入清单。
+
 ## 准备上传目录
 
 在 REVISE 根目录运行：
