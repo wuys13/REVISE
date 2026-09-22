@@ -235,6 +235,9 @@ def main() -> None:
         }
         record["observed_at"] = now()
         atomic_json(output, record)
+        if "Patient" not in reference.obs:
+            raise KeyError("loaded reference is missing the configured Patient filter column")
+        original_reference_patient = reference.obs["Patient"].copy()
 
         config = bind_expression_sources(config, spatial, reference)
         spatial, reference = preprocess_data(spatial, reference, config)
@@ -242,9 +245,27 @@ def main() -> None:
             "resources": resources(),
             "spatial": adata_record(spatial),
             "reference": adata_record(reference),
+        }
+        record["observed_at"] = now()
+        atomic_json(output, record)
+
+        surviving_reference_patient = original_reference_patient.reindex(reference.obs_names)
+        if surviving_reference_patient.isna().any():
+            missing = surviving_reference_patient.index[surviving_reference_patient.isna()].tolist()
+            raise AssertionError(
+                "preprocessed reference observations are not all traceable to loaded Patient metadata: "
+                f"{missing[:10]}"
+            )
+        unexpected_patient = surviving_reference_patient.astype(str) != "P2CRC"
+        if unexpected_patient.any():
+            raise AssertionError(
+                "preprocessed reference contains observations outside Patient=P2CRC: "
+                f"{surviving_reference_patient[unexpected_patient].value_counts(dropna=False).to_dict()}"
+            )
+        record["stages"]["preprocessed"].update({
             "reference_patient_counts": {
                 str(key): int(value)
-                for key, value in reference.obs["Patient"].value_counts(dropna=False).items()
+                for key, value in surviving_reference_patient.value_counts(dropna=False).items()
             },
             "spatial_broad_counts": {
                 str(key): int(value)
@@ -254,7 +275,7 @@ def main() -> None:
                 str(key): int(value)
                 for key, value in reference.obs[config.broad_column].value_counts(dropna=False).items()
             },
-        }
+        })
         record["status"] = "capacity_observed"
         record["observed_at"] = now()
         atomic_json(output, record)
