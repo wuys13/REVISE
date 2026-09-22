@@ -1,6 +1,6 @@
 # P2 Xenium full random → Impact：真实运行与独立审视
 
-Task ID: `p2-xenium-impact-20260922`。状态：`reconstruction_verified / analysis_ready`；科学接受：尚未授予。
+Task ID: `p2-xenium-impact-20260922`。状态：`reconstruction_verified / analysis_running`；科学接受：尚未授予。
 
 ## 目标与责任
 
@@ -31,10 +31,10 @@ Task ID: `p2-xenium-impact-20260922`。状态：`reconstruction_verified / analy
 |---|---|---|
 | 独立启动审视 | GO_WITH_LIMITS | 必须 run-scoped + Impact-only；未发现必须先修改的科学实现阻塞 |
 | 重建环境与资源 | technical_verified | 正式运行0abf851，峰值RSS约3.57GB、working set约7.39GB，无OOM；见producer-review |
-| 分析环境与资源 | ready | cpu-4 clean `sl@c9e4b74`；真实AUCell及退出验证、真实SVC adapter严格等价均通过；正式Impact启动前仍复核资源与输入 |
+| 分析环境与资源 | technical_verified | cpu-4 clean `sl@c9e4b74`；真实AUCell退出、真实SVC adapter严格等价通过；启动working set848437248/8589934592B，三文件哈希实算匹配 |
 | iter-001 三文件交付 | technical_verified | `results/p2-xenium-impact-20260922/iter-001/P2CRC_Xenium/random`；Raw340837、SVC50626，四类交付 |
-| iter-001 Impact | ready_to_launch | 原定Impact-only配置；内存适配与资源guard均已独立复核 |
-| 独立结果审视 | producer部分完成 / analysis待运行 | [生产交付审视](producer-review.md)；不得将技术完成写为科学接受 |
+| iter-001 Impact | running | QZ job `20260923-023200-biy79t`；guard3955987、child/PGID3955990；2026-09-23T02:32:01+08:00提交；当前结果以Analysis output内receipt为准 |
+| 独立结果审视 | producer部分完成 / analysis待结果 | [生产交付审视](producer-review.md)；不得将技术完成写为科学接受 |
 | 最终判定 | not_started | 尚无全量或科学完成声明 |
 
 ## 运行前实现验证
