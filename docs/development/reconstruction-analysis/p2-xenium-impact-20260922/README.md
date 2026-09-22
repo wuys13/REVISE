@@ -1,6 +1,6 @@
 # P2 Xenium full random → Impact：真实运行与独立审视
 
-Task ID: `p2-xenium-impact-20260922`。状态：`reconstruction_verified / analysis_running`；科学接受：尚未授予。
+Task ID: `p2-xenium-impact-20260922`。状态：`scientific_review_complete_with_limits`；本轮必须完成的工作已达到，整体生物学改善不获接受。最终判断见[审视报告与统一问题表](final-review.md)。
 
 ## 目标与责任
 
@@ -33,12 +33,16 @@ Task ID: `p2-xenium-impact-20260922`。状态：`reconstruction_verified / analy
 | 重建环境与资源 | technical_verified | 正式运行0abf851，峰值RSS约3.57GB、working set约7.39GB，无OOM；见producer-review |
 | 分析环境与资源 | technical_verified | cpu-4 clean `sl@c9e4b74`；真实AUCell退出、真实SVC adapter严格等价通过；启动working set848437248/8589934592B，三文件哈希实算匹配 |
 | iter-001 三文件交付 | technical_verified | `results/p2-xenium-impact-20260922/iter-001/P2CRC_Xenium/random`；Raw340837、SVC50626，四类交付 |
-| iter-001 Impact | running | QZ job `20260923-023200-biy79t`；guard3955987、child/PGID3955990；2026-09-23T02:32:01+08:00提交；当前结果以Analysis output内receipt为准 |
-| 独立结果审视 | producer部分完成 / analysis待结果 | [生产交付审视](producer-review.md)；不得将技术完成写为科学接受 |
-| 最终判定 | not_started | 尚无全量或科学完成声明 |
+| iter-001 Impact | execution_complete / partial | QZ job `20260923-023200-biy79t`；guard于2026-09-22T19:42:02Z确认child exit0、无OOM；322登记产物主代理独立核hash全部一致。partial仅来自SVC常量基因Moran不可计算；stage_errors为空 |
+| 独立结果审视 | complete_with_limits | [最终审视报告](final-review.md)；K-control、共同有序基因轴、donor-aware和表达支持均已独立复核，主代理另核关键底表与哈希 |
+| 最终判定 | scientific_review_complete_with_limits | 本次执行和必须诊断已闭环；Gain对分区粒度敏感、共同轴Moran负方向保留、跨侧EMT改善不支持。未授予生物学改善接受 |
 
 ## 运行前实现验证
 
 分析端 `da097ab` 已通过118项全库测试与16项聚焦测试（有重叠，不相加），独立代码审视关闭已有问题。重建端74项聚焦测试通过；日志 `output/p2-xenium-impact-20260922/iter-001/logs/producer-focused-tests-final.log`，SHA256 `61bcef6ae5c357019dcc62476165c7757293aac57b7cc9ad0ec87eb4e9144cd1`。以上均为技术验证，不是full运行或科学接受。
 
 真实输入的稀疏存储测量见 [输入存储观察](input-storage-observation.json)，不等于运行峰值。结果前的诊断触发与边界见 [必要诊断协议](diagnostic-protocol.md)。
+
+正式结果本地证据：Analysis `output/p2-xenium-impact-20260922/iter-001/_retrieved_final/20260922T194202Z/`；归档SHA256 `b058527f86c3787b0a3134401851e57c3c56f2e0605ac358b1ea2ba3410cd97f`。主代理独立校验与摘要位于该轮 `review/main-native-001/`。58项快照底表与最终同名文件一致；cohort_manifest的唯一变化是补齐pathway记录，最终版为权威。
+
+补充运行：iter-002 K-control `bf3fe5f` / job `20260923-041123-s9hvwo`，exit0，342登记制品均通过哈希；共同有序基因背景job `20260923-041743-01rkwg`，exit0，29登记制品均通过哈希。两轮共同189张原生底表仅input_manifest的raw_k_control开关记录改变，其他188张完全相同。控制诊断不改native membership。
