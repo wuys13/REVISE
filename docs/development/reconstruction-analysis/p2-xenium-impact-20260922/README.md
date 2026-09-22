@@ -1,6 +1,6 @@
 # P2 Xenium full random → Impact：真实运行与独立审视
 
-Task ID: `p2-xenium-impact-20260922`。状态：`preparing`；科学接受：尚未授予。
+Task ID: `p2-xenium-impact-20260922`。状态：`reconstruction_verified / analysis_ready`；科学接受：尚未授予。
 
 ## 目标与责任
 
@@ -30,11 +30,11 @@ Task ID: `p2-xenium-impact-20260922`。状态：`preparing`；科学接受：尚
 | 证据 | 当前状态 | 入口 |
 |---|---|---|
 | 独立启动审视 | GO_WITH_LIMITS | 必须 run-scoped + Impact-only；未发现必须先修改的科学实现阻塞 |
-| 重建环境与资源 | preparing / full gate closed | cpu 实测 cgroup 4 核、8 GiB；baseline 约 2.06 GiB。正在核对稀疏 random 路径的真实容量，不能用宿主机内存代替配额 |
-| 分析环境与资源 | installing | cpu-4 已部署 clean `sl@da097ab`，GMT SHA已复核；CPU-only环境安装中，尚未启动Impact |
-| iter-001 三文件交付 | not_started | `results/p2-xenium-impact-20260922/iter-001/P2CRC_Xenium/random`（预定） |
-| iter-001 Impact | not_started | 待交付配置固定 |
-| 独立结果审视 | not_started | 待真实结果 |
+| 重建环境与资源 | technical_verified | 正式运行0abf851，峰值RSS约3.57GB、working set约7.39GB，无OOM；见producer-review |
+| 分析环境与资源 | ready | cpu-4 clean `sl@c9e4b74`；真实AUCell及退出验证、真实SVC adapter严格等价均通过；正式Impact启动前仍复核资源与输入 |
+| iter-001 三文件交付 | technical_verified | `results/p2-xenium-impact-20260922/iter-001/P2CRC_Xenium/random`；Raw340837、SVC50626，四类交付 |
+| iter-001 Impact | ready_to_launch | 原定Impact-only配置；内存适配与资源guard均已独立复核 |
+| 独立结果审视 | producer部分完成 / analysis待运行 | [生产交付审视](producer-review.md)；不得将技术完成写为科学接受 |
 | 最终判定 | not_started | 尚无全量或科学完成声明 |
 
 ## 运行前实现验证
