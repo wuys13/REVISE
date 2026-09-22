@@ -1,0 +1,37 @@
+{
+  "observed_at": "2026-09-22T15:42:22.434599+00:00",
+  "method": "h5py storage metadata only; no full X read",
+  "proof_boundary": "storage lower bound, not runtime peak or feasibility verdict",
+  "inputs": [
+    {
+      "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/0_REVISE_developing/REVISE_code/REVISE/raw_data/Real_application/P2CRC_Xenium.h5ad",
+      "file_bytes": 264857917,
+      "x_encoding": "csr_matrix",
+      "shape": [
+        340837,
+        422
+      ],
+      "nnz": 17533937,
+      "data_dtype": "float32",
+      "index_dtype": "int32",
+      "matrix_array_bytes": 141634848,
+      "has_raw_X": false,
+      "layers": []
+    },
+    {
+      "path": "/Users/stephen/Documents/wuyushuai_project/wuyushuai_research_project/0_REVISE_developing/REVISE_code/REVISE/raw_data/Real_application/adata_sc_all_reanno.h5ad",
+      "file_bytes": 1600498681,
+      "x_encoding": "csr_matrix",
+      "shape": [
+        222815,
+        18071
+      ],
+      "nnz": 197295585,
+      "data_dtype": "float32",
+      "index_dtype": "int32",
+      "matrix_array_bytes": 1579255944,
+      "has_raw_X": false,
+      "layers": []
+    }
+  ]
+}

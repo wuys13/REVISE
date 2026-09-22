@@ -60,10 +60,13 @@ def test_random_donors_are_seeded_and_reference_order_independent(tmp_path):
     inputs['sc_svc_expr'] = inputs['sc_svc_expr'][[2, 1, 0]].copy()
     second = publish_outputs(cfg, output_paths(cfg), _ctx(tmp_path, inputs))
     assert list(first.obs.revise_ist_donor_id) == list(second.obs.revise_ist_donor_id)
+    assert list(first.obs.revise_ist_donor_cluster) == ['b', 'a', 'a']
+    assert list(first.obs.revise_ist_donor_cluster) == list(second.obs.revise_ist_donor_cluster)
     np.testing.assert_array_equal(first.X.toarray(), second.X.toarray())
     for i, donor in enumerate(first.obs.revise_ist_donor_id):
         np.testing.assert_array_equal(first.X[i].toarray(), inputs['sc_svc_expr'][donor].X.toarray())
     assert first.uns['revise_reconstruction']['effective_seed'] == cfg.seed
+    assert first.uns['revise_reconstruction']['donor_cluster_column'] == 'revise_ist_donor_cluster'
 
 
 def test_switch_mode_cleans_owned_outputs_only_after_commit_and_can_rollback(tmp_path):

@@ -31,8 +31,14 @@ Task ID: `p2-xenium-impact-20260922`。状态：`preparing`；科学接受：尚
 |---|---|---|
 | 独立启动审视 | GO_WITH_LIMITS | 必须 run-scoped + Impact-only；未发现必须先修改的科学实现阻塞 |
 | 重建环境与资源 | preparing / full gate closed | cpu 实测 cgroup 4 核、8 GiB；baseline 约 2.06 GiB。正在核对稀疏 random 路径的真实容量，不能用宿主机内存代替配额 |
-| 分析环境与资源 | pending | 由 Analysis Agent 执行代理生成 |
+| 分析环境与资源 | installing | cpu-4 已部署 clean `sl@da097ab`，GMT SHA已复核；CPU-only环境安装中，尚未启动Impact |
 | iter-001 三文件交付 | not_started | `results/p2-xenium-impact-20260922/iter-001/P2CRC_Xenium/random`（预定） |
 | iter-001 Impact | not_started | 待交付配置固定 |
 | 独立结果审视 | not_started | 待真实结果 |
 | 最终判定 | not_started | 尚无全量或科学完成声明 |
+
+## 运行前实现验证
+
+分析端 `da097ab` 已通过118项全库测试与16项聚焦测试（有重叠，不相加），独立代码审视关闭已有问题。重建端74项聚焦测试通过；日志 `output/p2-xenium-impact-20260922/iter-001/logs/producer-focused-tests-final.log`，SHA256 `61bcef6ae5c357019dcc62476165c7757293aac57b7cc9ad0ec87eb4e9144cd1`。以上均为技术验证，不是full运行或科学接受。
+
+真实输入的稀疏存储测量见 [输入存储观察](input-storage-observation.json)，不等于运行峰值。结果前的诊断触发与边界见 [必要诊断协议](diagnostic-protocol.md)。

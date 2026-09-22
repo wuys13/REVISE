@@ -289,12 +289,20 @@ def assemble_ist(
         rng = np.random.default_rng(seed)
         chosen = [donors[key][int(rng.integers(len(donors[key])))] for key in spatial_keys]
         donor_ids = expression.obs_names[chosen].tolist()
+        donor_clusters = [expression_keys[index][1] for index in chosen]
         output_x = expression.X[chosen].copy()
         obs['revise_ist_donor_id'] = donor_ids
+        # Keep the expression-carrier cluster beside each sampled donor.  The
+        # output cluster normally matches it by construction, but an explicit
+        # donor-side value makes reuse audits independent of that assumption
+        # and avoids retaining the full expression carrier only for provenance.
+        obs['revise_ist_donor_cluster'] = donor_clusters
         metadata.update(
             effective_seed=seed,
             donor_column='revise_ist_donor_id',
+            donor_cluster_column='revise_ist_donor_cluster',
             donor_sha256=hash_jsonable(donor_ids),
+            donor_cluster_sha256=hash_jsonable(donor_clusters),
         )
     elif mapping not in {"within_cluster", "outside_cluster"}:
         raise ValueError(
