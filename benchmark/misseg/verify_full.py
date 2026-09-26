@@ -67,6 +67,34 @@ def write_proseg_correspondence(cells: pd.DataFrame, common_path: Path, output_p
     return len(correspondence)
 
 
+def write_proseg_gene_correspondence(
+    genes: pd.DataFrame, common_path: Path, output_path: Path
+) -> tuple[int, int]:
+    common_obj = ad.read_h5ad(common_path, backed="r")
+    try:
+        common_genes = pd.DataFrame({
+            "gene": common_obj.var_names.astype(str).to_numpy(),
+            "common_col": np.arange(common_obj.n_vars, dtype=np.int64),
+        })
+    finally:
+        common_obj.file.close()
+    if common_genes["gene"].duplicated().any():
+        raise ValueError("Common input has duplicate gene names")
+    proseg_genes = pd.DataFrame({
+        "gene": genes["gene"].astype(str).to_numpy(),
+        "proseg_col": np.arange(len(genes), dtype=np.int64),
+    })
+    duplicate_symbols = int(proseg_genes.loc[
+        proseg_genes["gene"].duplicated(keep=False), "gene"
+    ].nunique())
+    unambiguous = proseg_genes.loc[~proseg_genes["gene"].duplicated(keep=False)]
+    correspondence = common_genes.merge(unambiguous, on="gene", validate="one_to_one")
+    if len(correspondence) < 1000:
+        raise ValueError(f"Only {len(correspondence)} unambiguous common genes")
+    correspondence.to_parquet(output_path, index=False)
+    return len(correspondence), duplicate_symbols
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
@@ -85,9 +113,12 @@ def main() -> None:
     if manifest.get("returncode") != 0:
         raise RuntimeError(f"Proseg did not exit successfully: {manifest.get('returncode')}")
     cells = pd.read_parquet(proseg / "cell_metadata.parquet")
+    genes = pd.read_parquet(proseg / "gene_metadata.parquet")
     count_shape = matrix_market_shape(proseg / "counts.mtx.gz")
     if count_shape[0] != len(cells):
         raise ValueError(f"Proseg counts have {count_shape[0]} rows for {len(cells)} cells")
+    if count_shape[1] != len(genes):
+        raise ValueError(f"Proseg counts have {count_shape[1]} columns for {len(genes)} genes")
     xy = cells[["centroid_x", "centroid_y"]].to_numpy()
     inside = (
         (xy[:, 0] >= x0 * microns) & (xy[:, 0] <= x1 * microns)
@@ -100,6 +131,10 @@ def main() -> None:
     correspondence_path = results / "common/proseg_cell_correspondence.parquet"
     matched_cells = write_proseg_correspondence(
         cells, results / "common/star_dist_cells_5um.h5ad", correspondence_path
+    )
+    gene_correspondence_path = results / "common/proseg_gene_correspondence.parquet"
+    matched_genes, duplicate_gene_symbols = write_proseg_gene_correspondence(
+        genes, results / "common/star_dist_cells_5um.h5ad", gene_correspondence_path
     )
     latent_path = results / "resolvi/full/resolvi_latent.h5ad"
     resolvi = h5ad_summary(latent_path, "X_spatial")
@@ -129,6 +164,9 @@ def main() -> None:
         "common_to_proseg": {
             "matched_cells": matched_cells,
             "correspondence_path": str(correspondence_path),
+            "matched_unambiguous_genes": matched_genes,
+            "duplicate_proseg_gene_symbols_excluded": duplicate_gene_symbols,
+            "gene_correspondence_path": str(gene_correspondence_path),
         },
         "resolvi": {**resolvi, "latent_dimensions": latent_dims, "expression_path": expression["path"]},
         "split": {**split, "input_cells": prepared["spatial_cells"]},
