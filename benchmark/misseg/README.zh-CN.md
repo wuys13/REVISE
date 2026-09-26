@@ -12,6 +12,8 @@
 
 这三个方法解决的问题并不完全相同：Proseg 改变细胞归属和边界；ResolVI 修正环境 RNA 与细胞内表达；SPLIT 依据参考和 RCTD 权重去除错误归属的转录本。因此结果应分别报告细胞数、有效基因、运行时间和下游指标，不把三者的输出当成同一种数值解释。
 
+压缩包中的 `P1CRC_HD.h5ad` 包含 **507,684 个 8 µm bin**，而非 507,684 个分割细胞；其 `obsm['spatial']` 是 BTF 全分辨率像素坐标。脚本可用 `--spatial-scale 0.27380817798463214` 把它换算为 µm，并用 `--spatial-sampling random` 对整张切片固定随机抽样。该输入可作为旧版 benchmark 的对照口径，但必须与本流程由 H&E 核先验得到的约 22.6 万个细胞分开命名和报告。ResolVI 需要先过滤低于 5 UMI 的 bin；RCTD 默认 `UMI_min=100`，直接运行旧 8 µm 输入会过滤较多 bin。
+
 ## 当前 qz 路径
 
 ```bash
@@ -62,6 +64,26 @@ R="$ROOT/envs/split/bin/Rscript"
   --max-spatial-cells 10000 --max-reference-per-type 500 --seed 42
 "$R" "$ROOT/run_split.R" \
   "$ROOT/results/split/full_input" "$ROOT/results/split/full" 16
+```
+
+若需单独复现压缩包中旧 8 µm bin 的输入口径，可在独立结果目录运行：
+
+```bash
+"$RESOLVI_PY" "$ROOT/run_resolvi.py" \
+  --input "$ROOT/P1CRC_HD.h5ad" \
+  --output "$ROOT/results/resolvi/legacy_8um" \
+  --spatial-scale 0.27380817798463214 --min-counts 5 \
+  --epochs 100 --batch-size 256
+"$PY" "$ROOT/prepare_split_inputs.py" \
+  --spatial "$ROOT/P1CRC_HD.h5ad" \
+  --reference "$ROOT/adata_sc_all_reanno.h5ad" \
+  --output "$ROOT/results/split/legacy_8um_input" \
+  --spatial-scale 0.27380817798463214 \
+  --spatial-sampling random --max-spatial-cells 10000 \
+  --max-reference-per-type 500 --seed 42
+"$R" "$ROOT/run_split.R" \
+  "$ROOT/results/split/legacy_8um_input" \
+  "$ROOT/results/split/legacy_8um" 16
 ```
 
 ### 运行与结果检查
