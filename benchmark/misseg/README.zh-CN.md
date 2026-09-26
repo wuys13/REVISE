@@ -68,6 +68,8 @@ R="$ROOT/envs/split/bin/Rscript"
 
 检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx` 和 `cell_metadata.csv`。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
 
+流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。
+
 ## 已验证的小区域
 
 H&E 上 `(10000,20000)..(12048,22048)` 全分辨率像素裁剪得到 3,284 个 StarDist 核。对应的 2 µm bin 小数据有 78,600 个 bin、18,085 个基因。Proseg 试跑产出 3,284 个细胞的计数矩阵，其质心 `x=2739..3297 µm, y=5478..6035 µm` 与该裁剪区域吻合。ResolVI 在 500 个细胞上完成训练并输出解码表达。这些只是流程验证，不作为正式性能结果。
