@@ -1,0 +1,11 @@
+diff --git a/src/sampler/transcripts.rs b/src/sampler/transcripts.rs
+index e13d02b..6371a57 100644
+--- a/src/sampler/transcripts.rs
++++ b/src/sampler/transcripts.rs
+@@ -304 +304 @@ fn read_visium_tissue_positions_parquet(
+-        // TODO: Should row and col be flipped here?
++        // The image x coordinate is the column and y is the row.
+@@ -309 +308,0 @@ fn read_visium_tissue_positions_parquet(
+-                    microns_per_pixel * row_px.unwrap() as f32,
+@@ -310,0 +310 @@ fn read_visium_tissue_positions_parquet(
++                    microns_per_pixel * row_px.unwrap() as f32,
