@@ -92,7 +92,7 @@ R="$ROOT/envs/split/bin/Rscript"
 
 检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx`、`cell_metadata.csv` 和记录输入、线程数、随机种子的 `run_parameters.txt`。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
 
-流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。
+流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。它还将 StarDist 原始细胞标签与 Proseg 细胞矩阵行号对应，保存为 `$ROOT/results/common/proseg_cell_correspondence.parquet`，供后续在同一批细胞上比较。
 
 ## 已验证的小区域
 
