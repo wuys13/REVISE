@@ -27,6 +27,26 @@ RESOLVI_PY="$ROOT/envs/resolvi/bin/python"
 R="$ROOT/envs/split/bin/Rscript"
 ```
 
+首次准备数据时，在 qz 下载与本实验一致的 10x Visium HD P1CRC 样本：
+
+```bash
+set -e
+DOWNLOAD_DIR=/inspire/hdd/global_user/zhangyinghao-240107100021/REVISE_benchmark/misseg/raw_p1crc
+SAMPLE=Visium_HD_Human_Colon_Cancer_P1
+BASE=https://cf.10xgenomics.com/samples/spatial-exp/3.0.0/$SAMPLE
+mkdir -p "$DOWNLOAD_DIR"
+cd "$DOWNLOAD_DIR"
+for SUFFIX in binned_outputs.tar.gz spatial.tar.gz tissue_image.btf; do
+  FILE="${SAMPLE}_${SUFFIX}"
+  curl -fL -C - --retry 10 --retry-delay 15 -o "$FILE" "$BASE/$FILE"
+done
+tar -xzf "${SAMPLE}_binned_outputs.tar.gz"
+tar -xzf "${SAMPLE}_spatial.tar.gz"
+ls -lh
+```
+
+当前 qz 上这三个文件已经下载并解压，本次实验无需重复运行下载命令。
+
 原始数据位于 `$ROOT/raw_p1crc/`，参考在 `$ROOT/adata_sc_all_reanno.h5ad`。结果统一放在 `$ROOT/results/`。运行前确认 BTF 已下载完整、`binned_outputs/` 已解压。完整 H&E 的 StarDist 掩膜由 `segment_p1crc_he.py` 生成，裁剪覆盖组织坐标 `(x=0..26000, y=11000..38000)`，每 2 个 BTF 像素预测 1 个掩膜像素。`*.npy.json` 保存从掩膜像素到 µm 的仿射变换，不能丢弃。
 
 全图分割使用 StarDist `prob_thresh=0.01`、`nms_thresh=0.001`，这是为了保留密集组织中的核候选，应在结果中作为预处理参数报告。同一 1024×1024 小区域里，该设定检出 3,284 个核；模型默认阈值检出 970 个、明显漏掉可见核；`prob_thresh=0.2,nms_thresh=0.3` 检出 2,790 个。宽松阈值耗时较长，性能指标可能受多检出的核影响。
