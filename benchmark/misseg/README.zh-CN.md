@@ -129,6 +129,15 @@ ResolVI 两种表达输出的含义遵循 [scvi-tools 官方教程](https://docs
 
 流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。它还将 StarDist 原始细胞标签与 Proseg 细胞矩阵行号对应，保存为 `$ROOT/results/common/proseg_cell_correspondence.parquet`；唯一基因名的列号对应保存为 `$ROOT/results/common/proseg_gene_correspondence.parquet`，供后续在相同细胞和基因上比较。Proseg 中有 3 组重复基因符号，基因对应表排除这些歧义列。
 
+长任务可预先启动收尾检查器，它会等待 SPLIT H5AD 和 ResolVI 校正计数各自的完成标记，再运行上述校验；日志为 `$ROOT/results/full_verification.log`：
+
+```bash
+PIPELINE_PID=2008445  # 当前 qz 运行；新运行应替换为新进程号
+CORRECTED_PID=1453601 # 当前 qz 运行；新运行应替换为新进程号
+nohup env PIPELINE_PID="$PIPELINE_PID" CORRECTED_PID="$CORRECTED_PID" \
+  bash "$ROOT/run_verify_when_ready.sh" >/dev/null 2>&1 &
+```
+
 ## 已验证的小区域
 
 H&E 上 `(10000,20000)..(12048,22048)` 全分辨率像素裁剪得到 3,284 个 StarDist 核。对应的 2 µm bin 小数据有 78,600 个 bin、18,085 个基因。Proseg 试跑产出 3,284 个细胞的计数矩阵，其质心 `x=2739..3297 µm, y=5478..6035 µm` 与该裁剪区域吻合。ResolVI 在 500 个细胞上完成训练并输出解码表达。这些只是流程验证，不作为正式性能结果。
