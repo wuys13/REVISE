@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | Proseg | 2 µm bins、H&E 上 StarDist 的细胞核先验、Space Ranger 坐标 | 修正后的细胞分配、计数矩阵、细胞元数据 | 在整个组织区域运行 |
 | ResolVI | 同一 StarDist 核先验聚合得到的原始细胞×基因 UMI、细胞坐标 | 潜变量、解码表达矩阵 | 无监督模式；不读取 Proseg 输出 |
-| SPLIT | 同一原始细胞 UMI、坐标、P1CRC scRNA 参考 | RCTD 双细胞分解、SPLIT 纯化计数 | 正式运行取中心连续区域约 1 万细胞，保存筛选名单和 RCTD 拒绝细胞统计 |
+| SPLIT | 同一原始细胞 UMI、坐标、P1CRC scRNA 参考 | RCTD 双细胞分解、SPLIT 纯化计数 | 正式运行取中心连续区域约 1 万细胞，随机种子 42，保存筛选名单和 RCTD 拒绝细胞统计 |
 
 这三个方法解决的问题并不完全相同：Proseg 改变细胞归属和边界；ResolVI 修正环境 RNA 与细胞内表达；SPLIT 依据参考和 RCTD 权重去除错误归属的转录本。因此结果应分别报告细胞数、有效基因、运行时间和下游指标，不把三者的输出当成同一种数值解释。
 
@@ -90,7 +90,7 @@ R="$ROOT/envs/split/bin/Rscript"
 
 ### 运行与结果检查
 
-检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx` 和 `cell_metadata.csv`。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
+检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx`、`cell_metadata.csv` 和记录输入、线程数、随机种子的 `run_parameters.txt`。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
 
 流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。
 

@@ -15,6 +15,12 @@ input <- normalizePath(args[[1]], mustWork = TRUE)
 output <- args[[2]]
 cores <- as.integer(args[[3]])
 dir.create(output, recursive = TRUE, showWarnings = FALSE)
+seed <- 42L
+set.seed(seed)
+writeLines(
+  c(sprintf("input=%s", input), sprintf("cores=%d", cores), sprintf("seed=%d", seed)),
+  file.path(output, "run_parameters.txt")
+)
 
 read_lines <- function(name) readLines(file.path(input, name), warn = FALSE)
 genes <- read_lines("genes.tsv")
