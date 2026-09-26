@@ -27,19 +27,29 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--max-cells", type=int, default=None, help="Pilot only; omit for full run")
     parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--min-counts", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-expression", action="store_true", help="Pilot only")
+    parser.add_argument(
+        "--spatial-scale", type=float, default=1.0,
+        help="Multiply obsm['spatial'] by this factor when X_spatial is absent",
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
     scvi.settings.seed = args.seed
     adata = ad.read_h5ad(args.input)
+    input_cells = adata.n_obs
+    sc.pp.filter_cells(adata, min_counts=args.min_counts)
+    if adata.n_obs < 20:
+        raise ValueError(f"Only {adata.n_obs} cells remain after min_counts={args.min_counts}")
+    cells_after_count_filter = adata.n_obs
     if args.max_cells and args.max_cells < adata.n_obs:
         rng = np.random.default_rng(args.seed)
         selected = np.sort(rng.choice(adata.n_obs, args.max_cells, replace=False))
         adata = adata[selected].copy()
     if "X_spatial" not in adata.obsm:
-        adata.obsm["X_spatial"] = adata.obsm["spatial"].copy()
+        adata.obsm["X_spatial"] = np.asarray(adata.obsm["spatial"]) * args.spatial_scale
     sc.pp.filter_genes(adata, min_cells=3)
     if adata.n_obs < 20 or adata.n_vars < 100:
         raise ValueError(f"Too few observations/features after filtering: {adata.shape}")
@@ -63,6 +73,10 @@ def main() -> None:
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "seed": args.seed,
+        "input_cells": input_cells,
+        "cells_after_count_filter": cells_after_count_filter,
+        "min_counts": args.min_counts,
+        "spatial_scale": args.spatial_scale,
         "semisupervised": False,
         "shape": list(adata.shape),
         "expression_output": "normalized decoded gene expression" if not args.skip_expression else None,

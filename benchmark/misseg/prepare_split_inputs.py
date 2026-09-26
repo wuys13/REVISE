@@ -25,19 +25,29 @@ def main() -> None:
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-spatial-cells", type=int, default=10000)
+    parser.add_argument("--spatial-sampling", choices=("central", "random"), default="central")
     parser.add_argument("--max-reference-per-type", type=int, default=500)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--spatial-scale", type=float, default=1.0,
+        help="Multiply obsm['spatial'] by this factor when X_spatial is absent",
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(args.seed)
 
     spatial = ad.read_h5ad(args.spatial)
+    if "X_spatial" not in spatial.obsm:
+        spatial.obsm["X_spatial"] = np.asarray(spatial.obsm["spatial"]) * args.spatial_scale
     if args.max_spatial_cells and spatial.n_obs > args.max_spatial_cells:
-        xy = np.asarray(spatial.obsm["X_spatial"])
-        # A contiguous central field preserves spatial neighborhoods for SPLIT.
-        center = np.median(xy, axis=0)
-        distance = np.sum(((xy - center) / np.std(xy, axis=0)) ** 2, axis=1)
-        selected = np.sort(np.argpartition(distance, args.max_spatial_cells)[: args.max_spatial_cells])
+        if args.spatial_sampling == "central":
+            xy = np.asarray(spatial.obsm["X_spatial"])
+            # A contiguous central field preserves spatial neighborhoods for SPLIT.
+            center = np.median(xy, axis=0)
+            distance = np.sum(((xy - center) / np.std(xy, axis=0)) ** 2, axis=1)
+            selected = np.sort(np.argpartition(distance, args.max_spatial_cells)[: args.max_spatial_cells])
+        else:
+            selected = np.sort(rng.choice(spatial.n_obs, args.max_spatial_cells, replace=False))
         spatial = spatial[selected].copy()
 
     reference = ad.read_h5ad(args.reference, backed="r")
@@ -85,8 +95,10 @@ def main() -> None:
         "genes": len(common),
         "cell_type_counts": ref.obs["Level1"].astype(str).value_counts().to_dict(),
         "max_spatial_cells": args.max_spatial_cells,
+        "spatial_sampling": args.spatial_sampling,
         "max_reference_per_type": args.max_reference_per_type,
         "seed": args.seed,
+        "spatial_scale": args.spatial_scale,
     }
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps(manifest, indent=2), flush=True)
