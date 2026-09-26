@@ -67,6 +67,10 @@ CUDA_VISIBLE_DEVICES=2 "$RESOLVI_PY" "$ROOT/export_resolvi_corrected.py" \
   --output "$ROOT/results/resolvi/full/resolvi_corrected_counts.h5ad" \
   --block-size 2048 --batch-size 256 --num-samples 3 --seed 42
 
+# 长时间训练时，也可在流水线启动后运行下面的等待器；训练完成后它会自动执行上面的导出。
+nohup env CUDA_VISIBLE_DEVICES=2 \
+  bash "$ROOT/run_corrected_when_ready.sh" >/dev/null 2>&1 &
+
 # 5. SPLIT：先用 P1CRC scRNA 构建参考，然后运行 RCTD 双细胞模型与 SPLIT。
 "$PY" "$ROOT/prepare_split_inputs.py" \
   --spatial "$ROOT/results/common/star_dist_cells_5um.h5ad" \
@@ -100,6 +104,8 @@ CUDA_VISIBLE_DEVICES=2 "$RESOLVI_PY" "$ROOT/export_resolvi_corrected.py" \
 ### 运行与结果检查
 
 检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad` 和 `resolvi_corrected_counts.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx`、`cell_metadata.csv` 和记录输入、线程数、随机种子的 `run_parameters.txt`。ResolVI 的前一个表达文件是解码后的归一化真实表达，后一个是从 `model_corrected` 导出的连续期望计数，均不能当作整数原始 UMI。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
+
+ResolVI 两种表达输出的含义遵循 [scvi-tools 官方教程](https://docs.scvi-tools.org/en/latest/tutorials/notebooks/spatial/resolVI_tutorial.html)：`get_normalized_expression()` 返回潜在真实表达频率，`model_corrected` 的 `px_rate` 用于得到考虑错误归属和背景后的校正计数。
 
 流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。它还将 StarDist 原始细胞标签与 Proseg 细胞矩阵行号对应，保存为 `$ROOT/results/common/proseg_cell_correspondence.parquet`；唯一基因名的列号对应保存为 `$ROOT/results/common/proseg_gene_correspondence.parquet`，供后续在相同细胞和基因上比较。Proseg 中有 3 组重复基因符号，基因对应表排除这些歧义列。
 
