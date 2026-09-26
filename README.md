@@ -171,6 +171,10 @@ After the Benchmark run, use the notebooks in
 single-family or batch commands, or the [Benchmark documentation](https://revise-svc.readthedocs.io/en/latest/)
 for the current reference.
 
+The [spot super-resolution benchmark handoff](benchmark/spot_sr/README.md)
+contains the TESLA and iStar baseline adapters, a REVISE spot runner, and
+the small 3-region benchmark result summaries.
+
 ### Real-world ST Application
 
 Run an Application template through the Quick run section, then use the

@@ -1,0 +1,3 @@
+part,spot_size_microns,n_spots,n_cells,n_genes,wall_seconds,run_status,measurement_scope,input_note
+part2,200,61,6292,324,34,passed,startup_to_evaluation_complete,reconstructed_reference_and_synthetic_pm_prior
+part1,50,2363,37837,324,25,passed,startup_to_evaluation_complete,reconstructed_reference_and_synthetic_pm_prior

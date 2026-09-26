@@ -1,0 +1,16 @@
+diff --git a/impute.py b/impute.py
+index e625b04..2af0ce0 100644
+--- a/impute.py
++++ b/impute.py
+@@ -1,5 +1,10 @@
+ import argparse
+ import multiprocessing
++import os
++
++# Limit BLAS/OpenMP oversubscription when multiple benchmark cases share qz.
++for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
++    os.environ[variable] = "1"
+-
++
+ import torch
+ from torch.utils.data import Dataset
