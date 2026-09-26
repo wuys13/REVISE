@@ -98,7 +98,7 @@ H&E 上 `(10000,20000)..(12048,22048)` 全分辨率像素裁剪得到 3,284 个 
 
 ## Proseg 坐标修补
 
-当前克隆的 Proseg 3.2.0 在 Visium HD 读取时把 `pxl_row_in_fullres` 用作 x，把 `pxl_col_in_fullres` 用作 y。H&E 掩膜的变换使用列作为 x、行作为 y；`proseg-coordinate-fix.patch` 将读取改为 `x = col_px × microns_per_pixel`、`y = row_px × microns_per_pixel`。未应用这个补丁时核先验与转录本坐标错位。该补丁应与所用 commit 一起保存。
+当前克隆的 Proseg 3.2.0（commit `4caa6f3`）在 Visium HD 读取时把 `pxl_row_in_fullres` 用作 x，把 `pxl_col_in_fullres` 用作 y。H&E 掩膜的变换使用列作为 x、行作为 y；`proseg-coordinate-fix.patch` 将读取改为 `x = col_px × microns_per_pixel`、`y = row_px × microns_per_pixel`。未应用这个补丁时核先验与转录本坐标错位。正式运行保留该版本的默认迭代数：200 次 burn-in、200 次采样、50 次 hill-climb。SPLIT 使用 commit `e880e39`（0.3.0），ResolVI 使用 scvi-tools 1.3.3。
 
 ## 可比性限制
 
