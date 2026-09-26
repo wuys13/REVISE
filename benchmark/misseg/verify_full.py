@@ -148,6 +148,20 @@ def main() -> None:
     expression = h5ad_summary(results / "resolvi/full/resolvi_expression.h5ad", "X_spatial")
     if (resolvi["cells"], resolvi["genes"]) != (expression["cells"], expression["genes"]):
         raise ValueError("ResolVI latent and expression outputs have different dimensions")
+    corrected_path = results / "resolvi/full/resolvi_corrected_counts.h5ad"
+    corrected = h5ad_summary(corrected_path, "X_spatial")
+    if (resolvi["cells"], resolvi["genes"]) != (corrected["cells"], corrected["genes"]):
+        raise ValueError("ResolVI latent and corrected-count outputs have different dimensions")
+    corrected_obj = ad.read_h5ad(corrected_path, backed="r")
+    try:
+        method = corrected_obj.uns["resolvi_corrected_run"]["method"]
+        if method != "median posterior px_rate from model_corrected":
+            raise ValueError(f"Unexpected ResolVI corrected-count method: {method}")
+        sample = np.asarray(corrected_obj.X[: min(5, corrected_obj.n_obs), : min(5, corrected_obj.n_vars)])
+        if not np.isfinite(sample).all() or (sample < 0).any():
+            raise ValueError("ResolVI corrected counts include invalid sample values")
+    finally:
+        corrected_obj.file.close()
     split = h5ad_summary(results / "split/full/split_purified.h5ad", "X_spatial")
     prepared = json.loads((results / "split/full_input/manifest.json").read_text())
     if split["cells"] > prepared["spatial_cells"]:
@@ -168,7 +182,12 @@ def main() -> None:
             "duplicate_proseg_gene_symbols_excluded": duplicate_gene_symbols,
             "gene_correspondence_path": str(gene_correspondence_path),
         },
-        "resolvi": {**resolvi, "latent_dimensions": latent_dims, "expression_path": expression["path"]},
+        "resolvi": {
+            **resolvi,
+            "latent_dimensions": latent_dims,
+            "expression_path": expression["path"],
+            "corrected_count_path": corrected["path"],
+        },
         "split": {**split, "input_cells": prepared["spatial_cells"]},
     }
     path = results / "full_verification.json"

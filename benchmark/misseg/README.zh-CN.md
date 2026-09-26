@@ -7,7 +7,7 @@
 | 方法 | 输入 | 输出 | 备注 |
 | --- | --- | --- | --- |
 | Proseg | 2 µm bins、H&E 上 StarDist 的细胞核先验、Space Ranger 坐标 | 修正后的细胞分配、计数矩阵、细胞元数据 | 在整个组织区域运行 |
-| ResolVI | 同一 StarDist 核先验聚合得到的原始细胞×基因 UMI、细胞坐标 | 潜变量、解码表达矩阵 | 无监督模式；不读取 Proseg 输出 |
+| ResolVI | 同一 StarDist 核先验聚合得到的原始细胞×基因 UMI、细胞坐标 | 潜变量、归一化表达、错误归属和背景校正后的期望计数 | 无监督模式；不读取 Proseg 输出 |
 | SPLIT | 同一原始细胞 UMI、坐标、P1CRC scRNA 参考 | RCTD 双细胞分解、SPLIT 纯化计数 | 正式运行取中心连续区域约 1 万细胞，随机种子 42，保存筛选名单和 RCTD 拒绝细胞统计 |
 
 这三个方法解决的问题并不完全相同：Proseg 改变细胞归属和边界；ResolVI 修正环境 RNA 与细胞内表达；SPLIT 依据参考和 RCTD 权重去除错误归属的转录本。因此结果应分别报告细胞数、有效基因、运行时间和下游指标，不把三者的输出当成同一种数值解释。
@@ -60,6 +60,13 @@ R="$ROOT/envs/split/bin/Rscript"
   --input "$ROOT/results/common/star_dist_cells_5um.h5ad" \
   --output "$ROOT/results/resolvi/full" --epochs 100 --batch-size 256
 
+# 4b. 训练结束后，另行导出 model_corrected 的 px_rate 后验中位数。
+CUDA_VISIBLE_DEVICES=2 "$RESOLVI_PY" "$ROOT/export_resolvi_corrected.py" \
+  --input "$ROOT/results/resolvi/full/resolvi_latent.h5ad" \
+  --model "$ROOT/results/resolvi/full/model" \
+  --output "$ROOT/results/resolvi/full/resolvi_corrected_counts.h5ad" \
+  --block-size 2048 --batch-size 256 --num-samples 3 --seed 42
+
 # 5. SPLIT：先用 P1CRC scRNA 构建参考，然后运行 RCTD 双细胞模型与 SPLIT。
 "$PY" "$ROOT/prepare_split_inputs.py" \
   --spatial "$ROOT/results/common/star_dist_cells_5um.h5ad" \
@@ -92,7 +99,7 @@ R="$ROOT/envs/split/bin/Rscript"
 
 ### 运行与结果检查
 
-检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx`、`cell_metadata.csv` 和记录输入、线程数、随机种子的 `run_parameters.txt`。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
+检查每个脚本的退出码。Proseg 应产出 `counts.mtx.gz`、`cell_metadata.parquet` 和 `proseg-output.zarr/`；ResolVI 应产出 `model/`、`resolvi_latent.h5ad`、`resolvi_expression.h5ad` 和 `resolvi_corrected_counts.h5ad`；SPLIT 应产出 `rctd.rds`、`split_result.rds`、`purified_counts.mtx`、`cell_metadata.csv` 和记录输入、线程数、随机种子的 `run_parameters.txt`。ResolVI 的前一个表达文件是解码后的归一化真实表达，后一个是从 `model_corrected` 导出的连续期望计数，均不能当作整数原始 UMI。每个方法需记录实际参与指标计算的细胞数。旧聊天中的 SPLIT 大约 1 万输入、最终 7 千多用于指标只是历史观察值，不能代替本次运行的真实数值。
 
 流水线完整结束后，运行 `"$PY" "$ROOT/verify_full.py" --root "$ROOT"`。该命令检查各阶段完成标记、矩阵维度、空间坐标、Proseg 退出码和 ResolVI/SPLIT 输出，并写入 `$ROOT/results/full_verification.json`。它还将 StarDist 原始细胞标签与 Proseg 细胞矩阵行号对应，保存为 `$ROOT/results/common/proseg_cell_correspondence.parquet`；唯一基因名的列号对应保存为 `$ROOT/results/common/proseg_gene_correspondence.parquet`，供后续在相同细胞和基因上比较。Proseg 中有 3 组重复基因符号，基因对应表排除这些歧义列。
 
