@@ -47,6 +47,22 @@ ls -lh
 
 当前 qz 上这三个文件已经下载并解压，本次实验无需重复运行下载命令。
 
+## 本次全量运行结果（2026-09-27）
+
+在 qz 上按 Proseg → ResolVI → SPLIT 的顺序完成运行，`$ROOT/results/full_pipeline.log` 记录各阶段开始和结束时间，`$ROOT/results/full_verification.json` 为最终校验报告。三种方法均已产出可读取的矩阵；这里记录的是流程和产物，不是 ARI、NMI、Moran's I 等性能指标。
+
+| 阶段 | 实际输入与输出 | 耗时 |
+| --- | --- | --- |
+| Proseg | 全组织 2 µm binned outputs；输出 226,214 个细胞 × 18,965 个基因 | 1 小时 41 分钟 |
+| 原始细胞聚合 | 同一 H&E StarDist 核先验；输出 200,191 个细胞 × 18,085 个基因 | 1 分 26 秒 |
+| ResolVI | 原始细胞计数；输出 199,317 个细胞 × 18,041 个基因的潜变量和归一化表达 | 1 小时 42 分钟 |
+| ResolVI 校正计数导出 | `model_corrected` 的 `px_rate` 后验中位数；与 ResolVI 输出同维度 | 约 1 小时 31 分钟，和 SPLIT 并行 |
+| SPLIT（含 RCTD） | 中心连续区域 10,000 个细胞、5,443 个 P1CRC 参考细胞、18,071 个共同基因；输出 8,344 个细胞 × 18,071 个基因 | 3 小时 59 分钟 |
+
+RCTD 在达到默认 100 UMI 下限的 8,876 个细胞中拒绝 532 个；后处理后其余细胞为 6,080 个 singlet、1,503 个 doublet_certain、761 个 doublet_uncertain，SPLIT 最终保留 8,344 个。`split_purified.h5ad` 有 2,547,246 个非零项。Proseg 与原始聚合输入通过 StarDist 标签对应到 200,191 个共同细胞，另有 18,050 个无歧义共同基因可用于后续公平比较。
+
+最终校验于 2026-09-27 02:52（UTC+8）通过：检查了 Proseg 退出码、计数矩阵维度与 H&E 坐标范围，各 H5AD 的维度和空间坐标，SPLIT 与输入的细胞、基因及坐标对应，以及 ResolVI 校正计数样本值。另对 SPLIT 全矩阵检查了非负有限值、非零项数和计数总和，并重新读取 RCTD 与 SPLIT 的 RDS 文件。正式性能评估脚本与历史 ARI/NMI/Moran 指标不在提供的旧压缩包中，尚未计算这些指标。
+
 原始数据位于 `$ROOT/raw_p1crc/`，参考在 `$ROOT/adata_sc_all_reanno.h5ad`。结果统一放在 `$ROOT/results/`。运行前确认 BTF 已下载完整、`binned_outputs/` 已解压。完整 H&E 的 StarDist 掩膜由 `segment_p1crc_he.py` 生成，裁剪覆盖组织坐标 `(x=0..26000, y=11000..38000)`，每 2 个 BTF 像素预测 1 个掩膜像素。`*.npy.json` 保存从掩膜像素到 µm 的仿射变换，不能丢弃。
 
 全图分割使用 StarDist `prob_thresh=0.01`、`nms_thresh=0.001`，这是为了保留密集组织中的核候选，应在结果中作为预处理参数报告。同一 1024×1024 小区域里，该设定检出 3,284 个核；模型默认阈值检出 970 个、明显漏掉可见核；`prob_thresh=0.2,nms_thresh=0.3` 检出 2,790 个。宽松阈值耗时较长，性能指标可能受多检出的核影响。
@@ -132,9 +148,8 @@ ResolVI 两种表达输出的含义遵循 [scvi-tools 官方教程](https://docs
 长任务可预先启动收尾检查器，它会等待 SPLIT H5AD 和 ResolVI 校正计数各自的完成标记，再运行上述校验；日志为 `$ROOT/results/full_verification.log`：
 
 ```bash
-PIPELINE_PID=2008445  # 当前 qz 运行；新运行应替换为新进程号
-CORRECTED_PID=1453601 # 当前 qz 运行；新运行应替换为新进程号
-nohup env PIPELINE_PID="$PIPELINE_PID" CORRECTED_PID="$CORRECTED_PID" \
+# 可选：启动流水线和校正计数等待器后，分别用 $! 保存 PIPELINE_PID 和 CORRECTED_PID。
+nohup env PIPELINE_PID="${PIPELINE_PID:-}" CORRECTED_PID="${CORRECTED_PID:-}" \
   bash "$ROOT/run_verify_when_ready.sh" >/dev/null 2>&1 &
 ```
 
