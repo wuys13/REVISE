@@ -1,0 +1,175 @@
+{
+  "expected_runs": 24,
+  "validated_runs": 24,
+  "errors": [],
+  "results": [
+    {
+      "case": "part1/spot_50/tesla",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.16979305105761186,
+      "run_seconds": 1686.0567462444305
+    },
+    {
+      "case": "part1/spot_50/istar",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.2810572032509153,
+      "run_seconds": 422
+    },
+    {
+      "case": "part1/spot_100/tesla",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.1421027858405559,
+      "run_seconds": 322.2070927619934
+    },
+    {
+      "case": "part1/spot_100/istar",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.24983028348469158,
+      "run_seconds": 284
+    },
+    {
+      "case": "part1/spot_150/tesla",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.13038327864590926,
+      "run_seconds": 151.47568035125732
+    },
+    {
+      "case": "part1/spot_150/istar",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.23673032789072637,
+      "run_seconds": 270
+    },
+    {
+      "case": "part1/spot_200/tesla",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.12310931375644991,
+      "run_seconds": 98.43438720703125
+    },
+    {
+      "case": "part1/spot_200/istar",
+      "cells": 37837,
+      "genes": 324,
+      "PCC": 0.21952246927648247,
+      "run_seconds": 273
+    },
+    {
+      "case": "part2/spot_50/tesla",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.1781643088541851,
+      "run_seconds": 188.71273732185364
+    },
+    {
+      "case": "part2/spot_50/istar",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.27877611160893895,
+      "run_seconds": 397
+    },
+    {
+      "case": "part2/spot_100/tesla",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.15104867281809536,
+      "run_seconds": 67.94312596321106
+    },
+    {
+      "case": "part2/spot_100/istar",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.24171087786537507,
+      "run_seconds": 232
+    },
+    {
+      "case": "part2/spot_150/tesla",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.1523832341513699,
+      "run_seconds": 46.43900465965271
+    },
+    {
+      "case": "part2/spot_150/istar",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.21969204878571053,
+      "run_seconds": 215
+    },
+    {
+      "case": "part2/spot_200/tesla",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.1407084215805083,
+      "run_seconds": 26.442248582839966
+    },
+    {
+      "case": "part2/spot_200/istar",
+      "cells": 6292,
+      "genes": 324,
+      "PCC": 0.1974112042173875,
+      "run_seconds": 434
+    },
+    {
+      "case": "part3/spot_50/tesla",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.12205628082616019,
+      "run_seconds": 208.8116159439087
+    },
+    {
+      "case": "part3/spot_50/istar",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.23152913690993127,
+      "run_seconds": 295
+    },
+    {
+      "case": "part3/spot_100/tesla",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.09632611740539591,
+      "run_seconds": 72.51616525650024
+    },
+    {
+      "case": "part3/spot_100/istar",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.19164832404112825,
+      "run_seconds": 1286
+    },
+    {
+      "case": "part3/spot_150/tesla",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.08179604235753886,
+      "run_seconds": 57.301979780197144
+    },
+    {
+      "case": "part3/spot_150/istar",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.171519458571633,
+      "run_seconds": 219
+    },
+    {
+      "case": "part3/spot_200/tesla",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.07534938956047664,
+      "run_seconds": 51.45828413963318
+    },
+    {
+      "case": "part3/spot_200/istar",
+      "cells": 14944,
+      "genes": 324,
+      "PCC": 0.12861660920337295,
+      "run_seconds": 220
+    }
+  ]
+}

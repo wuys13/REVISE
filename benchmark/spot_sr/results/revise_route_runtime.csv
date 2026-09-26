@@ -1,0 +1,2 @@
+sample,route,n_spot_sizes,wall_seconds,status,measurement_scope,input_note
+P1CRC/cut_part2,spot_size,4,58,passed,startup_to_four_evaluations_complete,reconstructed_reference_and_synthetic_pm_prior
