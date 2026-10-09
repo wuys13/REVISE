@@ -1,0 +1,30 @@
+schema_version: 2
+input_root: ST
+output_root: output
+modality: iST
+coordinates:
+  unit: pixel
+  microns_per_coordinate: 0.2125
+algorithm:
+  ot_method: tacco
+preprocessing:
+  spatial:
+    min_transcript_counts: 60
+    min_cell_counts: 100
+  reference:
+    min_transcript_counts: null
+    min_cell_counts: 100
+global_anchoring:
+  broad_column: Level1
+local_refinement:
+  subtype_column: Level2
+  alpha: 0.2
+  resolutions:
+  - 0.6
+  - 0.7
+  - 0.8
+output:
+  ist_mapping: within_cluster
+execution:
+  seed: 42
+analysis: {}
