@@ -12,7 +12,7 @@ import yaml
 
 ROOT_FIELDS = {'schema_version', 'input_root', 'output_root'}
 MAPPING_FIELDS = {'coordinates', 'inputs', 'algorithm', 'preprocessing', 'global_anchoring',
-                  'local_refinement', 'output', 'execution', 'analysis'}
+                  'local_refinement', 'output', 'execution', 'analysis', 'metadata'}
 FIELDS = ROOT_FIELDS | MAPPING_FIELDS | {'modality', 'enabled'}
 
 
