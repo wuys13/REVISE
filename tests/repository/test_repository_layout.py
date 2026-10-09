@@ -68,6 +68,7 @@ def test_case_notebooks_are_the_canonical_application_gallery():
         "Xenium_sc_SVC_Monocyte.ipynb",
         "VisiumHD_sp_SVC.ipynb",
         "Visium_sc_SVC_mouse_brain.ipynb",
+        "Visium_sc_SVC_P2CRC.ipynb",
     }
     retired = {
         "sc_SVC_case_T_analysis.ipynb",
@@ -98,6 +99,7 @@ def test_public_notebook_indexes_use_only_canonical_application_names():
         "Xenium_sc_SVC_Monocyte.ipynb",
         "VisiumHD_sp_SVC.ipynb",
         "Visium_sc_SVC_mouse_brain.ipynb",
+        "Visium_sc_SVC_P2CRC.ipynb",
     ):
         assert canonical in combined
     for retired in (

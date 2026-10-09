@@ -85,6 +85,7 @@ The preserved Application analysis notebooks are organized in website order:
 9. [osmFISH sc-SVC cluster](case/osmFISH_sc_SVC_cluster.ipynb)
 10. [MERFISH Allen VISp sc-SVC cluster](case/MERFISH_Allen_VISp_sc_SVC_cluster.ipynb)
 11. [Visium sc-SVC mouse brain](case/Visium_sc_SVC_mouse_brain.ipynb) — SR mode
+12. [Visium sc-SVC P2CRC](case/Visium_sc_SVC_P2CRC.ipynb) — post-reconstruction tutorial using historical RNA-corrected results
 
 Benchmark notebooks are under [`benchmark/`](benchmark/). The docs website
 links these notebooks without executing them.
