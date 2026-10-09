@@ -4,6 +4,9 @@
 /results/
 /results_unified/
 /upload/
+/ST/
+/SC/
+*.h5ad
 
 *.tar.gz
 
