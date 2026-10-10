@@ -102,7 +102,7 @@ python reconstruct.py --config configs/acceptance/full/P2CRC_Visium-default.yaml
 python -m revise_analysis.cli batch --config configs/p2_full_project.yaml
 python -m revise_analysis.cli batch --config configs/p1_hd_full_project.yaml
 python -m revise_analysis.cli batch --config configs/p2_visium_full_project.yaml
-python ../REVISE/scripts/execute_acceptance_notebook.py --repo . --source notebooks/01_reconstruction_impact.ipynb --project configs/p2_full_project.yaml --output output/acceptance-full/iST/notebook
+python ../REVISE/scripts/execute_acceptance_notebook.py --repo . --source notebooks/3_standard_pipeline/01_reconstruction_impact.ipynb --project configs/p2_full_project.yaml --output output/acceptance-full/iST/notebook
 ```
 
 其余Notebook换相应项目配置和新输出目录。batch CLI在partial/skipped时返回1，需读batch_result.json与stage_errors区分前提不足和失败。全量comparison使用 `examples/assembly-comparison-full.json`，通过执行脚本的 `--comparison-config` 指定，不覆盖mini证据；完整命令见远程输入准备。
