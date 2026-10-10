@@ -83,6 +83,8 @@ def preprocess_data(
             reference_adata,
             broad_column=config.broad_column,
             subtype_column=config.subtype_column,
+            include_cell_types=config.include_cell_types,
+            exclude_cell_types=config.exclude_cell_types,
         )
     return spatial_adata, normalize_reference_labels(
         reference_adata,

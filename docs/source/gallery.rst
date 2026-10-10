@@ -19,3 +19,4 @@ section.
    osmFISH (iST platform) sc-SVC cluster <../case/osmFISH_sc_SVC_cluster>
    MERFISH (iST platform) Allen VISp sc-SVC cluster <../case/MERFISH_Allen_VISp_sc_SVC_cluster>
    Visium (sST platform) sc-SVC mouse brain (SR mode) <../case/Visium_sc_SVC_mouse_brain>
+   Visium (sST platform) sc-SVC P2CRC analysis <../case/Visium_sc_SVC_P2CRC>

@@ -260,3 +260,37 @@ def test_cyto_linear_v1_preserves_supplied_spot_cell_mapping():
 
     assert adata.uns["all_cells_in_spot"] == supplied
     assert adata.obs["estimated_cell_count"].tolist() == [2]
+
+
+def test_prepare_sc_svc_pair_filters_by_include_and_exclude_cell_types():
+    from revise.application.preprocess import prepare_sc_svc_pair
+
+    spatial = AnnData(
+        X=np.ones((4, 2)),
+        obs=pd.DataFrame({"Level1": ["Fibroblast", "Tumor", "T", "Intestinal Epithelial"]}, index=[f"s-{i}" for i in range(4)]),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+    reference = AnnData(
+        X=np.ones((4, 2)),
+        obs=pd.DataFrame(
+            {"Level1": ["Fibroblast", "Tumor", "T", "Intestinal Epithelial"], "Level2": ["F1", "Tum1", "T1", "Epi1"]},
+            index=[f"c-{i}" for i in range(4)],
+        ),
+        var=pd.DataFrame(index=["g1", "g2"]),
+    )
+
+    # Exclude epithelial types
+    sp1, ref1 = prepare_sc_svc_pair(
+        spatial, reference, broad_column="Level1", subtype_column="Level2",
+        exclude_cell_types=["Tumor", "Intestinal Epithelial"]
+    )
+    assert set(ref1.obs["Level1"]) == {"Fibroblast", "T"}
+    assert set(sp1.obs["Level1"]) == {"Fibroblast", "T"}
+
+    # Include specific types only
+    sp2, ref2 = prepare_sc_svc_pair(
+        spatial, reference, broad_column="Level1", subtype_column="Level2",
+        include_cell_types=["Fibroblast"]
+    )
+    assert set(ref2.obs["Level1"]) == {"Fibroblast"}
+    assert set(sp2.obs["Level1"]) == {"Fibroblast"}

@@ -16,6 +16,10 @@ preprocessing:
     min_cell_counts: 100
 global_anchoring:
   broad_column: Level1
+  include_cell_types: null
+  exclude_cell_types:
+  - Tumor
+  - Intestinal Epithelial
 local_refinement:
   subtype_column: Level2
   alpha: 0.2
