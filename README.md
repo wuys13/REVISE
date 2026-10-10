@@ -28,7 +28,7 @@ REVISE 与独立消费者 `REVISE_Analysis_Agent` 在共同父目录下并列放
 
 ## Install
 
-The `revise-2.0` branch also supports [batch reconstruction and analysis](docs/design/batch/README.md):
+The `revise-2.0` branch also supports [batch reconstruction and analysis](docs/development/batch/protocol.md):
 standard `spatial.h5ad` sample directories, inherited `batch.yaml` configuration,
 shared references, separate outputs, resumable reconstruction and analysis adapters. Start with the
 [batch templates](configs/batch/). Reconstruction-impact algorithms remain in
@@ -173,7 +173,10 @@ for the data-shape and evidence boundaries.
 
 ### Sim2Real-ST Benchmark
 
-Run the bounded benchmark batch launcher once from the repository root:
+Prepare the route-specific input tree first; the bounded launcher does not
+download or rearrange benchmark inputs. The local layout and a direct
+single-family example are documented in [`reproduce/README.md`](reproduce/README.md).
+Then run the launcher from the repository root:
 
 ```bash
 BENCHMARK_MAX_JOBS=1 bash reproduce/benchmark_main.sh
@@ -209,6 +212,7 @@ The README is the first-run guide. Each detailed rule has one canonical owner:
 | How do I reproduce the paper workflows? | [`reproduce/README.md`](reproduce/README.md) |
 | How is the repository verified? | [`tests/README.md`](tests/README.md) |
 | How do I prepare a reference and use it in reconstruction or batch? | [Reference preparation](docs/development/reconstruction-analysis/plans/reference-preparation.md) |
+| What is the current batch input/output contract? | [Batch protocol](docs/development/batch/protocol.md) |
 | What reconstruction/analysis protocol work is discussed, planned, or implemented? | [Development roadmap](docs/development/reconstruction-analysis/README.md) |
 
 ## Repository layout

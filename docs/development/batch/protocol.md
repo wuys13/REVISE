@@ -1,8 +1,10 @@
 # Batch input and output protocol
 
+> This is the tracked batch input/output contract. Historical design pages under `docs/design/batch/` are retired; current behavior is defined by this document, `configs/batch/`, `revise/batch/`, and the batch tests.
+
 本文统一定义批量输入输出协议，包括已实现的 schema 2、按需分析输入视图和结构化分析结果。协议中的文件、字段和状态语义以当前代码为准；科学算法仍由方面适配器负责。不再另维护一份计划输入协议。
 
-[总入口与状态](README.md#contract-and-status) · [代码框架](framework.md) · [开发顺序](plan.md#implementation-order) · [验收](plan-validation.md#acceptance-scenarios)
+[REVISE README](../../../README.md#documentation-index) · [批量实现入口](../../../revise/batch/) · [开发路线](../reconstruction-analysis/README.md) · [批量测试](../../../tests/batch/)
 
 | 协议部分 | 实现状态 |
 |---|---|
@@ -20,7 +22,7 @@ The project `batch.yaml` declares `schema_version: 2`, `input_root` and
 not contain one another. The input tree contains ST samples; shared SC files may
 live beside that tree or elsewhere and are referenced by path.
 
-SC 通常按癌种组织，例如 `SC/CRC/`、`SC/BRCA/`；这只是数据组织方式，不引入 SC 配置继承或自动 reference 匹配。标准样式与可复制 YAML 见[独立示例](input-output-example.md#configuration-files)。
+SC 通常按癌种组织，例如 `SC/CRC/`、`SC/BRCA/`；这只是数据组织方式，不引入 SC 配置继承或自动 reference 匹配。标准样式与可复制 YAML 见[批量配置模板](../../../configs/batch/)。
 
 Settings inherit in order: project, input root, each intermediate directory,
 then sample. Each optional override file is named `batch.yaml`. Missing files
@@ -35,7 +37,7 @@ filters for one reference from leaking into another.
 Every configured filesystem path resolves relative to the YAML declaring it,
 before inheritance. Absolute paths are allowed. Adapter parameters are passed to
 the adapter unchanged; they do not define additional framework filesystem fields.
-The [group and sample YAML examples](input-output-example.md#configuration-files) demonstrate shared CRC reference paths and a sample-specific replacement. A replacement does not retain any upper-level reference filter, and no per-sample copy is created.
+The [batch YAML templates](../../../configs/batch/) demonstrate shared CRC reference paths and a sample-specific replacement. A replacement does not retain any upper-level reference filter, and no per-sample copy is created.
 
 | Field | Meaning |
 | --- | --- |
@@ -48,7 +50,7 @@ The [group and sample YAML examples](input-output-example.md#configuration-files
 | `global_anchoring`, `local_refinement` | Existing GA/LR settings; iST `cell_types` is optional. Omitting it selects the whole-sample path; an explicit list remains the legacy per-type compatibility path. |
 | `output` | iST `ist_mapping` only; whole-sample defaults to `random`, explicit per-type compatibility defaults to `paired`; locations and filenames are batch-owned. |
 | `execution` | Existing execution settings, including seed. |
-| `analysis` | Per-aspect adapter specifications; see [Connect an analysis module](framework.md#connect-an-analysis-module). |
+| `analysis` | Per-aspect adapter specifications; see [analysis executor](../../../revise/batch/analysis.py). |
 
 Required protocol fields cannot be null. `inputs.pm_on_cell` is optional but
 cannot be null when declared; it must specify a path, as in the single-run
@@ -65,7 +67,7 @@ batch YAML declaring it, before inheritance. It cannot be combined with path,
 format or filters. Preparation is a separate explicit step; batch never runs
 candidate screening. The selected whole-file reference replaces legacy filters
 before input validation and fingerprinting. Config/report identities and selected
-file content participate in reuse checks. See the [two-step guide](../../development/reconstruction-analysis/plans/reference-preparation.md).
+file content participate in reuse checks. See the [two-step guide](../reconstruction-analysis/plans/reference-preparation.md).
 
 ## Standard ST and reference files
 
@@ -112,7 +114,7 @@ and zero valid subtypes fails. Labels must be safe, unique path components;
 whole-sample cluster names are namespaced before concatenation. An eligible
 type failure fails the sample and protects the previous complete result.
 
-完整目录样式统一见[paired 输出示例](input-output-example.md#ist-output-tree)和[hST/sST 示例](input-output-example.md#hst-and-sst-output-tree)，此处只定义角色和状态语义。
+完整目录样式统一见[batch templates](../../../configs/batch/)，此处只定义角色和状态语义。
 
 hST/sST place `SVC.h5ad`, their handoff, controls and analysis at sample level.
 Whole-sample iST also places `SVC.h5ad`, `raw.h5ad`, `sample.yaml`, its handoff,
@@ -218,11 +220,11 @@ raw_baseline[c, g] = raw.X[parent(c), g] / n[parent(c)]
 
 iST raw 使用实测 panel，重建使用自己的基因范围。单基因差值只对实际共有且可比的基因计算；重建独有基因可报告新增可评估信息，不报告由补零制造的变化。其他分数的可比性、常量基因排除和最小样本条件由模块定义。
 
-验证定义集中在[输入验收](plan-validation.md#input-scenarios)，计算视图与来源的落盘要求见[结果交接](protocol.md#analysis-results)。
+验证定义集中在[batch tests](../../../tests/batch/)，计算视图与来源的落盘要求见[结果交接](protocol.md#analysis-results)。
 
 ## Analysis configuration
 
-**已实现。** 分析方面采用显式、可追踪的适配器规格；当前可运行入口见[接入分析模块](framework.md#connect-an-analysis-module)。
+**已实现。** 分析方面采用显式、可追踪的适配器规格；当前可运行入口见[analysis executor](../../../revise/batch/analysis.py)。
 
 配置示例：
 
@@ -274,6 +276,6 @@ analysis:
 
 ## OT assembly 与表达来源声明
 
-`output.ist_mapping` 新增 `within_cluster` / `outside_cluster`；`output.ist_ot` 与 Application 共用配置与默认值，输出位置仍由 batch 管理。详情见[本批协议](../../development/reconstruction-analysis/plans/ot-assembly.md)。模式与参数进入 fingerprint，不能复用其他模式结果。
+`output.ist_mapping` 新增 `within_cluster` / `outside_cluster`；`output.ist_ot` 与 Application 共用配置与默认值，输出位置仍由 batch 管理。详情见[OT assembly notes](../reconstruction-analysis/plans/ot-assembly.md)。模式与参数进入 fingerprint，不能复用其他模式结果。
 
 自动发现的 ST 可以声明 `inputs.st.expression: {identity: measured_expression, scale: untransformed_nonnegative}`，该 `st` 块不能设置路径。直接 reference 的 `expression` 字段同理。`inputs.reference.config` 保持与直接字段互斥；实际选中文件可用显式 `uns.revise_expression` 声明其来源。未提供来源仍为 unknown，不从非负数值猜测处理历史。

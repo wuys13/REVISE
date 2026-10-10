@@ -16,22 +16,63 @@ and are not downloaded during package installation.
 
 ## Benchmark
 
-Run one benchmark family from the repository root:
+The benchmark CLI resolves route inputs below
+`<data-root>/<dataset-task>/<sample-name>`. The local checkout stores the
+available inputs by route family rather than under the older
+`P2CRC/cut_part1` example:
+
+```text
+raw_data/Sim2Real-ST/
+├── imputation/part{1,2,3}/
+│   ├── selected_xenium.h5ad
+│   ├── real_sc_ref.h5ad
+│   └── cut.png
+├── seg/part{1,2,3}/
+│   ├── selected_xenium.h5ad
+│   ├── real_sc_ref.h5ad
+│   ├── PM_on_cell.csv
+│   └── spot_{1,2,3,4,8}/xenium_spot.h5ad
+└── spot/part{1,2,3}/
+    ├── selected_xenium.h5ad
+    ├── simulated_xenium.h5ad
+    ├── real_sc_ref_{part,all,others}.h5ad
+    └── spot_{20,50,100,150,200}/
+        ├── xenium_spot.h5ad
+        ├── simulated_xenium_spot.h5ad
+        └── cell_num_distribution.csv
+```
+
+The spot route also uses the shared `spot/PM_on_cell.csv` table; the three
+`real_sc_ref_*` files live at each `spot/partN/` directory as shown above.
+
+`gene_dropout` and `gene_panel` use the co-located `imputation/partN`
+inputs. For example:
 
 ```bash
 python reproduce/benchmark_main.py \
-  --config configs/benchmark/segmentation.yaml \
+  --config configs/benchmark/gene_dropout.yaml \
   --data-root raw_data/Sim2Real-ST \
-  --dataset-task segmentation \
-  --sample-name P2CRC/cut_part1 \
+  --dataset-task imputation \
+  --sample-name part1 \
   --output-root output/benchmark
 ```
 
-For the bounded batch launcher, set its input/output environment variables and
-run:
+The `seg` and `spot` trees keep shared reference files at `partN/` and put
+route-specific spatial files under `spot_*`. The current benchmark input
+resolver expects the reference and ground-truth roles under the selected
+sample directory, so those routes need a prepared tree matching the YAML
+contract before execution. The README's old `P2CRC/cut_part1` path and the
+route names `segmentation`/`spot_size` do not describe the local storage tree.
+This is an input-layout requirement; it does not change the benchmark
+algorithm or rename the route API.
+
+The bounded batch launcher expands all six benchmark route names. It assumes
+that a matching input tree has already been prepared; it does not download,
+rename, or rearrange data. Set its input/output environment variables only
+after that preparation:
 
 ```bash
-RAW_DATA_PATH=raw_data/Sim2Real-ST \
+RAW_DATA_PATH=/data/Sim2Real-ST \
 SAVE_PATH=output/benchmark \
 SAMPLE_PATIENT=P2CRC \
 SAMPLE_PARTS="part1" \
