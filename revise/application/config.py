@@ -81,6 +81,8 @@ class ApplicationConfig:
     ist_ot: dict[str, Any] | None = None
     st_expression: dict[str, str] | None = None
     reference_expression: dict[str, str] | None = None
+    include_cell_types: tuple[str, ...] | None = None
+    exclude_cell_types: tuple[str, ...] | None = None
 
     @property
     def source_path(self) -> str:
@@ -128,6 +130,10 @@ def _compile_engine_config(
         algorithm["columns"]["sub_cell_type_col"] = config.subtype_column
     if config.select_cell_type is not None:
         algorithm["sc"] = {"select_ct": config.select_cell_type}
+    if config.include_cell_types is not None:
+        algorithm.setdefault("sc", {})["include_cell_types"] = list(config.include_cell_types)
+    if config.exclude_cell_types is not None:
+        algorithm.setdefault("sc", {})["exclude_cell_types"] = list(config.exclude_cell_types)
     if config.local_refinement_strength is not None:
         algorithm["local_refinement"] = {"strength": config.local_refinement_strength}
     if config.local_refinement_alpha is not None:
@@ -247,6 +253,23 @@ def _concrete_cell_type(value: Any, field: str) -> str:
             f"{field} must name one concrete broad cell type safe for an output directory"
         )
     return selected
+
+
+def _optional_cell_types_tuple(value: Any, field: str) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        raise ApplicationConfigError(f"{field} must be a list of cell type strings or null")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ApplicationConfigError(f"{field} entries must be non-empty strings")
+        cleaned = item.strip()
+        if cleaned not in result:
+            result.append(cleaned)
+    return tuple(result)
 
 
 def _number(value: Any, field: str) -> float:
@@ -647,17 +670,36 @@ def compile_application_config(
     )
 
     anchoring = _mapping(document["global_anchoring"], "global_anchoring")
-    _reject_unknown(anchoring, {"broad_column"}, "global_anchoring")
+    _reject_unknown(
+        anchoring,
+        {"broad_column", "include_cell_types", "exclude_cell_types"},
+        "global_anchoring",
+    )
     broad_column = _string(_required(anchoring, "broad_column", "global_anchoring"), "global_anchoring.broad_column")
+    ga_include = _optional_cell_types_tuple(
+        anchoring.get("include_cell_types"), "global_anchoring.include_cell_types"
+    )
+    ga_exclude = _optional_cell_types_tuple(
+        anchoring.get("exclude_cell_types"), "global_anchoring.exclude_cell_types"
+    )
 
     refinement = _mapping(document["local_refinement"], "local_refinement")
     subtype = select = strength = alpha = resolutions = None
     graph_method = graph_alpha = graph_n_neighbors = None
     graph_exp_neighbors = graph_spatial_neighbors = None
+    lr_include = lr_exclude = None
     if mode == "cluster":
         _reject_unknown(
             refinement,
-            {"subtype_column", "select_cell_type", "alpha", "resolutions"},
+            {
+                "subtype_column",
+                "select_cell_type",
+                "include_cell_types",
+                "exclude_cell_types",
+                "cell_types",
+                "alpha",
+                "resolutions",
+            },
             "local_refinement",
         )
         subtype = _string(_required(refinement, "subtype_column", "local_refinement"), "local_refinement.subtype_column")
@@ -666,6 +708,12 @@ def compile_application_config(
                 refinement["select_cell_type"],
                 "local_refinement.select_cell_type",
             )
+        lr_include = _optional_cell_types_tuple(
+            refinement.get("include_cell_types"), "local_refinement.include_cell_types"
+        )
+        lr_exclude = _optional_cell_types_tuple(
+            refinement.get("exclude_cell_types"), "local_refinement.exclude_cell_types"
+        )
         alpha = _number(
             _required(refinement, "alpha", "local_refinement"),
             "local_refinement.alpha",
@@ -776,6 +824,9 @@ def compile_application_config(
     if not 0 <= seed <= 2**32 - 1:
         raise ApplicationConfigError("execution.seed must be between 0 and 4294967295")
 
+    effective_include = lr_include if lr_include is not None else ga_include
+    effective_exclude = lr_exclude if lr_exclude is not None else ga_exclude
+
     return ApplicationConfig(
         config_path=source.path,
         config_sha256=sha256(source.payload).hexdigest(),
@@ -823,6 +874,8 @@ def compile_application_config(
         ist_ot=ist_ot,
         st_expression=st_expression,
         reference_expression=reference_expression,
+        include_cell_types=effective_include,
+        exclude_cell_types=effective_exclude,
     )
 
 

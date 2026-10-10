@@ -100,6 +100,8 @@ def prepare_sc_svc_pair(
     *,
     broad_column: str,
     subtype_column: str | None = None,
+    include_cell_types: tuple[str, ...] | list[str] | None = None,
+    exclude_cell_types: tuple[str, ...] | list[str] | None = None,
 ) -> tuple[AnnData, AnnData]:
     """Prepare the standard sc-SVC pair after generic preprocessing."""
     required_columns = list(dict.fromkeys([broad_column, subtype_column]))
@@ -119,14 +121,37 @@ def prepare_sc_svc_pair(
     result_reference = result_reference[
         valid_label_mask(result_reference.obs[broad_column]), :
     ].copy()
+
+    # Filter reference by include_cell_types and exclude_cell_types
+    if include_cell_types:
+        incl_set = {str(x).strip().casefold() for x in include_cell_types}
+        mask = result_reference.obs[broad_column].astype(str).str.casefold().isin(incl_set)
+        result_reference = result_reference[mask, :].copy()
+    if exclude_cell_types:
+        excl_set = {str(x).strip().casefold() for x in exclude_cell_types}
+        mask = ~result_reference.obs[broad_column].astype(str).str.casefold().isin(excl_set)
+        result_reference = result_reference[mask, :].copy()
+
     if result_reference.n_obs == 0:
         raise ValueError(
-            f"Reference column {broad_column!r} contains no valid broad labels"
+            f"Reference column {broad_column!r} contains no valid broad labels after include/exclude filtering"
         )
-    overlap_genes = spatial.var_names.intersection(result_reference.var_names)
+
+    result_spatial = spatial
+    if broad_column in result_spatial.obs:
+        if include_cell_types:
+            incl_set = {str(x).strip().casefold() for x in include_cell_types}
+            mask = result_spatial.obs[broad_column].astype(str).str.casefold().isin(incl_set)
+            result_spatial = result_spatial[mask, :].copy()
+        if exclude_cell_types:
+            excl_set = {str(x).strip().casefold() for x in exclude_cell_types}
+            mask = ~result_spatial.obs[broad_column].astype(str).str.casefold().isin(excl_set)
+            result_spatial = result_spatial[mask, :].copy()
+
+    overlap_genes = result_spatial.var_names.intersection(result_reference.var_names)
     if overlap_genes.empty:
         raise ValueError("No overlapping genes between spatial and sc reference data")
-    return spatial[:, overlap_genes].copy(), result_reference
+    return result_spatial[:, overlap_genes].copy(), result_reference
 
 
 __all__ = [

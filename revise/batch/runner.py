@@ -125,13 +125,28 @@ def _cell_types(document: dict) -> list[str | None]:
     if modality != 'iST':
         return [None]
     local = document.get('local_refinement', {})
-    if 'cell_types' not in local:
+    anchoring = document.get('global_anchoring', {})
+
+    include_cts = local.get('include_cell_types') or anchoring.get('include_cell_types')
+    exclude_cts = local.get('exclude_cell_types') or anchoring.get('exclude_cell_types') or []
+    if isinstance(exclude_cts, str):
+        exclude_cts = [exclude_cts]
+    excl_set = {str(x).strip().casefold() for x in exclude_cts}
+
+    if include_cts is not None:
+        if isinstance(include_cts, str):
+            include_cts = [include_cts]
+        raw_list = [x for x in include_cts if str(x).strip().casefold() not in excl_set]
+    elif 'cell_types' in local:
+        raw_list = [x for x in local['cell_types'] if str(x).strip().casefold() not in excl_set]
+    else:
         return [None]
-    labels = local['cell_types']
-    if not isinstance(labels, list) or not labels:
-        raise ValueError('local_refinement.cell_types must be a non-empty list')
+
+    if not raw_list:
+        raise ValueError('No cell types remaining after include/exclude cell type filtering')
+
     normalized = []
-    for label in labels:
+    for label in raw_list:
         _validate_cell_type_label(label)
         value = normalize_cell_type_label(label)
         if value not in normalized:
@@ -561,7 +576,11 @@ def _validate_task_selection(resolved: ResolvedSample, cell_type: str | None) ->
         if cell_type is not None:
             _validate_cell_type_label(cell_type)
             cell_type = normalize_cell_type_label(cell_type)
-        has_explicit_list = 'cell_types' in resolved.document.get('local_refinement', {})
+        has_explicit_list = (
+            'cell_types' in resolved.document.get('local_refinement', {})
+            or 'include_cell_types' in resolved.document.get('local_refinement', {})
+            or 'include_cell_types' in resolved.document.get('global_anchoring', {})
+        )
         if not has_explicit_list and cell_type is not None:
             return cell_type
         if cell_type not in labels:
