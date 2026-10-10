@@ -516,10 +516,12 @@ def test_compile_application_config_with_include_and_exclude_cell_types(tmp_path
     from revise.application.config import compile_application_config, load_application_yaml
 
     doc = _document("sc-SVC", "cluster")
-    doc["global_anchoring"]["include_cell_types"] = ["Fibroblast", "T"]
-    doc["global_anchoring"]["exclude_cell_types"] = ["Tumor", "Intestinal Epithelial"]
+    doc["local_refinement"]["include_cell_types"] = ["Fibroblast", "T"]
+    doc["local_refinement"]["exclude_cell_types"] = ["Tumor", "Intestinal Epithelial"]
+    doc["local_refinement"]["mapping"] = "within_cluster"
     source, effective = load_application_yaml(_write_config(tmp_path, doc))
     cfg = compile_application_config(effective, source=source)
 
     assert cfg.include_cell_types == ("Fibroblast", "T")
     assert cfg.exclude_cell_types == ("Tumor", "Intestinal Epithelial")
+    assert cfg.ist_mapping == "within_cluster"

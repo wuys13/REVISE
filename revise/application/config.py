@@ -670,24 +670,14 @@ def compile_application_config(
     )
 
     anchoring = _mapping(document["global_anchoring"], "global_anchoring")
-    _reject_unknown(
-        anchoring,
-        {"broad_column", "include_cell_types", "exclude_cell_types"},
-        "global_anchoring",
-    )
+    _reject_unknown(anchoring, {"broad_column"}, "global_anchoring")
     broad_column = _string(_required(anchoring, "broad_column", "global_anchoring"), "global_anchoring.broad_column")
-    ga_include = _optional_cell_types_tuple(
-        anchoring.get("include_cell_types"), "global_anchoring.include_cell_types"
-    )
-    ga_exclude = _optional_cell_types_tuple(
-        anchoring.get("exclude_cell_types"), "global_anchoring.exclude_cell_types"
-    )
 
     refinement = _mapping(document["local_refinement"], "local_refinement")
     subtype = select = strength = alpha = resolutions = None
     graph_method = graph_alpha = graph_n_neighbors = None
     graph_exp_neighbors = graph_spatial_neighbors = None
-    lr_include = lr_exclude = None
+    lr_include = lr_exclude = lr_mapping = None
     if mode == "cluster":
         _reject_unknown(
             refinement,
@@ -697,6 +687,8 @@ def compile_application_config(
                 "include_cell_types",
                 "exclude_cell_types",
                 "cell_types",
+                "mapping",
+                "ist_mapping",
                 "alpha",
                 "resolutions",
             },
@@ -713,6 +705,10 @@ def compile_application_config(
         )
         lr_exclude = _optional_cell_types_tuple(
             refinement.get("exclude_cell_types"), "local_refinement.exclude_cell_types"
+        )
+        lr_mapping = _optional_string(
+            refinement.get("mapping") or refinement.get("ist_mapping"),
+            "local_refinement.mapping",
         )
         alpha = _number(
             _required(refinement, "alpha", "local_refinement"),
@@ -769,9 +765,11 @@ def compile_application_config(
     _reject_unknown(output, {"dir", "name", "ist_mapping", "ist_ot"}, "output")
     if "ist_mapping" in output and (svc_type != "sc-SVC" or mode != "cluster"):
         raise ApplicationConfigError("output.ist_mapping is only valid for sc-SVC cluster")
-    ist_mapping_explicit = "ist_mapping" in output
+    ist_mapping_explicit = ("ist_mapping" in output) or (lr_mapping is not None)
     default_ist_mapping = (
-        "random" if mode == "cluster" and select is None else "paired"
+        lr_mapping
+        if lr_mapping is not None
+        else ("random" if mode == "cluster" and select is None else "paired")
     )
     ist_mapping = _string(
         output.get("ist_mapping", default_ist_mapping), "output.ist_mapping"
@@ -824,8 +822,8 @@ def compile_application_config(
     if not 0 <= seed <= 2**32 - 1:
         raise ApplicationConfigError("execution.seed must be between 0 and 4294967295")
 
-    effective_include = lr_include if lr_include is not None else ga_include
-    effective_exclude = lr_exclude if lr_exclude is not None else ga_exclude
+    effective_include = lr_include
+    effective_exclude = lr_exclude
 
     return ApplicationConfig(
         config_path=source.path,
