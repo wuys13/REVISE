@@ -15,3 +15,5 @@ def run_analysis_task(config_path, sample_id, aspect, *, cell_type=None):
     from .analysis import run_analysis_task as execute
 
     return execute(config_path, sample_id, aspect, cell_type=cell_type)
+
+from .catalog_dispatcher import CatalogBatchDispatcher
