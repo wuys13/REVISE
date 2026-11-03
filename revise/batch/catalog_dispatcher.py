@@ -10,7 +10,18 @@ import yaml
 class CatalogBatchDispatcher:
     """Resolves ST Bank sample manifests and single-cell reference catalogs
     to dispatch standardized reconstruction pipelines.
+    
+    Routing Principles:
+      - iST (Imaging-based, e.g. Xenium, CosMx) -> sc-SVC (cluster / within_cluster)
+      - sST (Spot-based, e.g. Visium 55um) -> sc-SVC-sr (super-resolution virtual single-cell restoration)
+      - HST (High-res bin, e.g. VisiumHD, Stereo-seq) -> sp-SVC (continuous 2um grid super-resolution)
     """
+
+    DEFAULT_ROUTING = {
+        "iST": "sc-SVC",
+        "sST": "sc-SVC-sr",
+        "HST": "sp-SVC",
+    }
 
     def __init__(self, spec_path: str | Path) -> None:
         self.spec_path = Path(spec_path).resolve()
@@ -23,7 +34,7 @@ class CatalogBatchDispatcher:
         self.st_bank_root = self.base_dir / self.spec.get("st_bank_root", "data/input/st_bank")
         self.sc_ref_root = self.base_dir / self.spec.get("sc_ref_root", "data/input/sc_ref")
         self.output_root = self.base_dir / self.spec.get("output_root", "data/output")
-        self.routing_policy = self.spec.get("routing_policy", {"iST": "sc-SVC", "sST": "sp-SVC", "HST": "sp-SVC"})
+        self.routing_policy = self.spec.get("routing_policy", self.DEFAULT_ROUTING)
 
     def load_catalog(self) -> Dict[str, Any]:
         if not self.catalog_path.exists():
